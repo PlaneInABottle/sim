@@ -65,7 +65,6 @@ function buildCompletedMarkerPersistenceQuery(params: {
         ''
       ) <= ${params.marker.endedAt}`
 }
-
 const logger = createLogger('LoggingSession')
 
 type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused'

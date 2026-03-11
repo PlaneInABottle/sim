@@ -391,7 +391,7 @@ vi.mock('@/lib/core/utils/request', () => requestUtilsMock)
 
 process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test'
 
-import { GET, POST } from '@/app/api/webhooks/trigger/[path]/route'
+import { GET, POST } from './route'
 
 describe('Webhook Trigger API Route', () => {
   beforeEach(() => {
