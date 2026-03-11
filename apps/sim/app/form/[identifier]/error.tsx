@@ -2,6 +2,7 @@
 
 import { useEffect } from 'react'
 import { createLogger } from '@sim/logger'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { BrandedButton } from '@/app/(auth)/components/branded-button'
 import { StatusPageLayout } from '@/app/(auth)/components/status-page-layout'
 
@@ -21,6 +22,8 @@ export default function FormError({ error, reset }: FormErrorProps) {
     <StatusPageLayout
       title='Something went wrong'
       description='We encountered an error loading this form. Please try again.'
+      hideNav
+      showSupportFooter={isHosted}
     >
       <BrandedButton onClick={reset}>Try again</BrandedButton>
     </StatusPageLayout>

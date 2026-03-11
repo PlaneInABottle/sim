@@ -17,6 +17,7 @@ import {
 } from '@/components/emcn'
 import { client } from '@/lib/auth/auth-client'
 import { getEnv, isFalsy, isTruthy } from '@/lib/core/config/env'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { validateCallbackUrl } from '@/lib/core/security/input-validation'
 import { cn } from '@/lib/core/utils/cn'
 import { getBaseUrl } from '@/lib/core/utils/urls'
@@ -527,8 +528,8 @@ export default function LoginPage({
         </div>
       )}
 
-      {/* Only show signup link if email/password signup is enabled */}
-      {!isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
+      {/* Only show signup link if email/password signup is enabled and hosted */}
+      {isHosted && !isFalsy(getEnv('NEXT_PUBLIC_EMAIL_PASSWORD_SIGNUP_ENABLED')) && (
         <div className='pt-6 text-center font-light text-[14px]'>
           <span className='font-normal'>Don't have an account? </span>
           <Link
@@ -540,79 +541,83 @@ export default function LoginPage({
         </div>
       )}
 
-      <div className='absolute right-0 bottom-0 left-0 px-8 pb-8 text-center font-[340] text-[#999] text-[13px] leading-relaxed sm:px-8 md:px-[44px]'>
-        By signing in, you agree to our{' '}
-        <Link
-          href='/terms'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='text-[#999] underline-offset-4 transition hover:text-[#ECECEC] hover:underline'
-        >
-          Terms of Service
-        </Link>{' '}
-        and{' '}
-        <Link
-          href='/privacy'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='text-[#999] underline-offset-4 transition hover:text-[#ECECEC] hover:underline'
-        >
-          Privacy Policy
-        </Link>
-      </div>
+      {isHosted && (
+        <div className='absolute right-0 bottom-0 left-0 px-8 pb-8 text-center font-[340] text-[#999] text-[13px] leading-relaxed sm:px-8 md:px-[44px]'>
+          By signing in, you agree to our{' '}
+          <Link
+            href='/terms'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-[#999] underline-offset-4 transition hover:text-[#ECECEC] hover:underline'
+          >
+            Terms of Service
+          </Link>{' '}
+          and{' '}
+          <Link
+            href='/privacy'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-[#999] underline-offset-4 transition hover:text-[#ECECEC] hover:underline'
+          >
+            Privacy Policy
+          </Link>
+        </div>
+      )}
 
-      <Modal open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
-        <ModalContent className='dark' size='sm'>
-          <ModalHeader>Reset Password</ModalHeader>
-          <ModalBody>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault()
-                handleForgotPassword()
-              }}
-            >
-              <ModalDescription className='mb-4 text-[var(--text-muted)] text-sm'>
-                Enter your email address and we'll send you a link to reset your password if your
-                account exists.
-              </ModalDescription>
-              <div className='space-y-4'>
-                <div className='space-y-2'>
-                  <Label htmlFor='reset-email'>Email</Label>
-                  <Input
-                    id='reset-email'
-                    value={forgotPasswordEmail}
-                    onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                    placeholder='Enter your email'
-                    required
-                    type='email'
-                    className={cn(
-                      resetStatus.type === 'error' && 'border-red-500 focus:border-red-500'
+      {isHosted && (
+        <Modal open={forgotPasswordOpen} onOpenChange={setForgotPasswordOpen}>
+          <ModalContent className='dark' size='sm'>
+            <ModalHeader>Reset Password</ModalHeader>
+            <ModalBody>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault()
+                  handleForgotPassword()
+                }}
+              >
+                <ModalDescription className='mb-4 text-[var(--text-muted)] text-sm'>
+                  Enter your email address and we'll send you a link to reset your password if your
+                  account exists.
+                </ModalDescription>
+                <div className='space-y-4'>
+                  <div className='space-y-2'>
+                    <Label htmlFor='reset-email'>Email</Label>
+                    <Input
+                      id='reset-email'
+                      value={forgotPasswordEmail}
+                      onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                      placeholder='Enter your email'
+                      required
+                      type='email'
+                      className={cn(
+                        resetStatus.type === 'error' && 'border-red-500 focus:border-red-500'
+                      )}
+                    />
+                    {resetStatus.type === 'error' && (
+                      <div className='mt-1 text-red-400 text-xs'>
+                        <p>{resetStatus.message}</p>
+                      </div>
                     )}
-                  />
-                  {resetStatus.type === 'error' && (
-                    <div className='mt-1 text-red-400 text-xs'>
+                  </div>
+                  {resetStatus.type === 'success' && (
+                    <div className='mt-1 text-[#4CAF50] text-xs'>
                       <p>{resetStatus.message}</p>
                     </div>
                   )}
+                  <BrandedButton
+                    type='submit'
+                    disabled={isSubmittingReset}
+                    loading={isSubmittingReset}
+                    loadingText='Sending'
+                  >
+                    Send Reset Link
+                  </BrandedButton>
                 </div>
-                {resetStatus.type === 'success' && (
-                  <div className='mt-1 text-[#4CAF50] text-xs'>
-                    <p>{resetStatus.message}</p>
-                  </div>
-                )}
-                <BrandedButton
-                  type='submit'
-                  disabled={isSubmittingReset}
-                  loading={isSubmittingReset}
-                  loadingText='Sending'
-                >
-                  Send Reset Link
-                </BrandedButton>
-              </div>
-            </form>
-          </ModalBody>
-        </ModalContent>
-      </Modal>
+              </form>
+            </ModalBody>
+          </ModalContent>
+        </Modal>
+      )}
     </>
   )
 }

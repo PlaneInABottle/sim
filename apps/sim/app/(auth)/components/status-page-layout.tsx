@@ -9,6 +9,7 @@ export interface StatusPageLayoutProps {
   title: string
   description: string | ReactNode
   children?: ReactNode
+  hideNav?: boolean
   showSupportFooter?: boolean
 }
 
@@ -16,14 +17,17 @@ export function StatusPageLayout({
   title,
   description,
   children,
+  hideNav = false,
   showSupportFooter = true,
 }: StatusPageLayoutProps) {
   return (
     <AuthBackground className='dark font-[430] font-season'>
       <main className='relative flex min-h-full flex-col text-[#ECECEC]'>
-        <header className='shrink-0 bg-[#1C1C1C]'>
-          <Navbar logoOnly />
-        </header>
+        {!hideNav && (
+          <header className='shrink-0 bg-[#1C1C1C]'>
+            <Navbar logoOnly />
+          </header>
+        )}
         <div className='relative z-30 flex flex-1 items-center justify-center px-4 pb-24'>
           <div className='w-full max-w-lg px-4'>
             <div className='flex flex-col items-center justify-center'>

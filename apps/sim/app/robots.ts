@@ -1,4 +1,5 @@
 import type { MetadataRoute } from 'next'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export default function robots(): MetadataRoute.Robots {
@@ -16,6 +17,19 @@ export default function robots(): MetadataRoute.Robots {
     '/_next/',
     '/private/',
   ]
+
+  // For self-hosted, also block marketing routes from crawlers
+  if (!isHosted) {
+    disallowedPaths.push(
+      '/careers/',
+      '/studio/',
+      '/changelog/',
+      '/templates/',
+      '/terms/',
+      '/privacy/',
+      '/signup/'
+    )
+  }
 
   return {
     rules: [

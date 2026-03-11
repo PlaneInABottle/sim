@@ -1,12 +1,23 @@
 import type { MetadataRoute } from 'next'
 import { getAllPostMeta } from '@/lib/blog/registry'
+import { isHosted } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const baseUrl = getBaseUrl()
-
   const now = new Date()
 
+  // For self-hosted, only include essential pages
+  if (!isHosted) {
+    return [
+      {
+        url: baseUrl,
+        lastModified: now,
+      },
+    ]
+  }
+
+  // For hosted (sim.ai), include all marketing pages
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: baseUrl,
