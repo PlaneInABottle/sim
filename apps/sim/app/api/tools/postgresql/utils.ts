@@ -38,7 +38,9 @@ export async function executeQuery(
   query: string,
   params: unknown[] = []
 ): Promise<{ rows: unknown[]; rowCount: number }> {
-  const result = await sql.unsafe(query, params)
+  // [budget-system] Normalize literal \n, \r, \t from MCP/JSON transport
+  const normalizedQuery = normalizeSqlWhitespace(query)
+  const result = await sql.unsafe(normalizedQuery, params)
   const rowCount = result.count ?? result.length ?? 0
   return {
     rows: Array.isArray(result) ? result : [result],
@@ -46,8 +48,15 @@ export async function executeQuery(
   }
 }
 
+// [budget-system] Normalize literal escape sequences that arrive from MCP/JSON transport
+// (e.g., \n stored as two chars backslash+n instead of real newline U+000A).
+function normalizeSqlWhitespace(query: string): string {
+  return query.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t')
+}
+
 export function validateQuery(query: string): { isValid: boolean; error?: string } {
-  const trimmedQuery = query.trim().toLowerCase()
+  // [budget-system] Normalize literal \n/\r/\t escape sequences from MCP/JSON transport before validation.
+  const trimmedQuery = normalizeSqlWhitespace(query).trim().toLowerCase()
 
   const allowedStatements = /^(select|insert|update|delete|with|explain|analyze|show)\s+/i
   if (!allowedStatements.test(trimmedQuery)) {

@@ -1166,3 +1166,34 @@ export async function listWorkflowVersions(workflowId: string): Promise<{
 
   return { versions }
 }
+
+/**
+ * Remaps variableId references in subBlocks using a variable ID mapping.
+ * When duplicating workflows or using templates, variables get new IDs but
+ * block subBlocks (e.g. variables-input) still reference old variable IDs.
+ * This function updates those references so they point to the new variable IDs.
+ */
+export function remapVariableReferences(
+  subBlocks: Record<string, any>,
+  variableIdMapping: Map<string, string>
+): Record<string, any> {
+  if (!subBlocks || typeof subBlocks !== 'object') return subBlocks
+
+  const updated: Record<string, any> = {}
+  for (const [subId, subBlock] of Object.entries(subBlocks)) {
+    if (subBlock?.type === 'variables-input' && Array.isArray(subBlock.value)) {
+      updated[subId] = {
+        ...subBlock,
+        value: subBlock.value.map((assignment: any) => ({
+          ...assignment,
+          variableId: assignment.variableId
+            ? (variableIdMapping.get(assignment.variableId) ?? assignment.variableId)
+            : assignment.variableId,
+        })),
+      }
+    } else {
+      updated[subId] = subBlock
+    }
+  }
+  return updated
+}

@@ -233,6 +233,7 @@ export async function POST(
       // For forms, we don't stream back - we wait for completion and return success
       // Consume the stream to wait for completion
       const reader = stream.getReader()
+      const decoder = new TextDecoder()
       let lastOutput: any = null
 
       try {
@@ -241,7 +242,9 @@ export async function POST(
           if (done) break
 
           // Parse SSE data if present
-          const text = new TextDecoder().decode(value)
+          // Use stream: true to properly handle multi-byte UTF-8 characters
+          // that may be split across chunk boundaries (e.g., Turkish "Ö", emoji)
+          const text = decoder.decode(value, { stream: true })
           const lines = text.split('\n')
           for (const line of lines) {
             if (line.startsWith('data: ')) {

@@ -11,6 +11,7 @@ import { canAccessTemplate, verifyTemplateOwnership } from '@/lib/templates/perm
 import {
   type RegenerateStateInput,
   regenerateWorkflowStateIds,
+  remapVariableReferences,
 } from '@/lib/workflows/persistence/utils'
 import { deduplicateWorkflowName } from '@/lib/workflows/utils'
 import { getUserEntityPermissions, getWorkspaceById } from '@/lib/workspaces/permissions/utils'
@@ -100,12 +101,17 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const templateVariables = (templateData.state as any)?.variables as
       | Record<string, any>
       | undefined
+    const variableIdMapping = new Map<string, string>()
     const remappedVariables: Record<string, any> = (() => {
       if (!templateVariables || typeof templateVariables !== 'object') return {}
       const mapped: Record<string, any> = {}
       for (const [, variable] of Object.entries(templateVariables)) {
+        const v = variable as any
         const newVarId = uuidv4()
-        mapped[newVarId] = { ...variable, id: newVarId, workflowId: newWorkflowId }
+        if (v.id) {
+          variableIdMapping.set(v.id, newVarId)
+        }
+        mapped[newVarId] = { ...v, id: newVarId, workflowId: newWorkflowId }
       }
       return mapped
     })()
@@ -135,10 +141,22 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // When using template (copy mode), regenerate all IDs to avoid conflicts
     const templateState = templateData.state as RegenerateStateInput
     const workflowState = connectToTemplate
-      ? templateState
+      ? (JSON.parse(JSON.stringify(templateState)) as RegenerateStateInput)
       : regenerateWorkflowStateIds(templateState)
 
-    // Step 3: Save the workflow state using the existing state endpoint (like imports do)
+    // Step 3: Remap variableId references in block subBlocks so they point to the new variable IDs
+    if (variableIdMapping.size > 0 && workflowState.blocks) {
+      for (const block of Object.values(workflowState.blocks)) {
+        if (block.subBlocks && typeof block.subBlocks === 'object') {
+          block.subBlocks = remapVariableReferences(
+            block.subBlocks as Record<string, any>,
+            variableIdMapping
+          ) as typeof block.subBlocks
+        }
+      }
+    }
+
+    // Step 4: Save the workflow state using the existing state endpoint (like imports do)
     // Ensure variables in state are remapped for the new workflow as well
     const workflowStateWithVariables = { ...workflowState, variables: remappedVariables }
     const stateResponse = await fetch(

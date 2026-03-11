@@ -1435,4 +1435,758 @@ describe('Database Helpers', () => {
       expect(messages2).toEqual([{ role: 'system', content: 'System' }])
     })
   })
+
+  describe('regenerateWorkflowStateIds', () => {
+    it('should regenerate all block IDs to new unique values', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'block-a': createBlock({
+            id: 'block-a',
+            type: 'agent',
+            name: 'Agent',
+            position: { x: 0, y: 0 },
+          }),
+          'block-b': createBlock({
+            id: 'block-b',
+            type: 'api',
+            name: 'API',
+            position: { x: 100, y: 0 },
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      // Block IDs should all be different from originals
+      const newBlockIds = Object.keys(result.blocks)
+      expect(newBlockIds).not.toContain('block-a')
+      expect(newBlockIds).not.toContain('block-b')
+      expect(newBlockIds).toHaveLength(2)
+
+      // Block internal id field should match the key
+      for (const [id, block] of Object.entries(result.blocks)) {
+        expect(block.id).toBe(id)
+      }
+    })
+
+    it('should regenerate edge IDs and update source/target references', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'block-a': createBlock({
+            id: 'block-a',
+            type: 'starter',
+            name: 'Start',
+            position: { x: 0, y: 0 },
+          }),
+          'block-b': createBlock({
+            id: 'block-b',
+            type: 'agent',
+            name: 'Agent',
+            position: { x: 200, y: 0 },
+          }),
+        },
+        edges: [
+          createEdge({
+            id: 'edge-1',
+            source: 'block-a',
+            target: 'block-b',
+            sourceHandle: 'out',
+            targetHandle: 'in',
+          }),
+        ],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      expect(result.edges).toHaveLength(1)
+      const edge = result.edges[0]
+
+      // Edge ID should be new
+      expect(edge.id).not.toBe('edge-1')
+
+      // Source and target should point to the new block IDs
+      const newBlockIds = Object.keys(result.blocks)
+      expect(newBlockIds).toContain(edge.source)
+      expect(newBlockIds).toContain(edge.target)
+
+      // Source and target should be different blocks
+      expect(edge.source).not.toBe(edge.target)
+
+      // Handles should be preserved
+      expect(edge.sourceHandle).toBe('out')
+      expect(edge.targetHandle).toBe('in')
+    })
+
+    it('should regenerate loop IDs and update node references', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'loop-1': createLoopBlock({
+            id: 'loop-1',
+            name: 'Loop',
+            position: { x: 0, y: 0 },
+          }),
+          'child-1': createBlock({
+            id: 'child-1',
+            type: 'agent',
+            name: 'Child',
+            position: { x: 50, y: 50 },
+            data: { parentId: 'loop-1' },
+          }),
+        },
+        edges: [],
+        loops: {
+          'loop-1': {
+            id: 'loop-1',
+            nodes: ['child-1'],
+            iterations: 3,
+            loopType: 'for' as const,
+            forEachItems: '',
+            whileCondition: '',
+            doWhileCondition: '',
+            enabled: true,
+          },
+        },
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      // Loop should have a new ID
+      const loopIds = Object.keys(result.loops)
+      expect(loopIds).toHaveLength(1)
+      expect(loopIds[0]).not.toBe('loop-1')
+
+      const loop = result.loops[loopIds[0]]
+      expect(loop.id).toBe(loopIds[0])
+
+      // Nodes should reference the new child block ID
+      expect(loop.nodes).toHaveLength(1)
+      expect(loop.nodes[0]).not.toBe('child-1')
+
+      // The node reference should match an actual block ID
+      expect(Object.keys(result.blocks)).toContain(loop.nodes[0])
+
+      // Loop config should be preserved
+      expect(loop.iterations).toBe(3)
+      expect(loop.loopType).toBe('for')
+    })
+
+    it('should regenerate parallel IDs and update node references', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'par-1': createParallelBlock({
+            id: 'par-1',
+            name: 'Parallel',
+            position: { x: 0, y: 0 },
+          }),
+          'par-child-1': createBlock({
+            id: 'par-child-1',
+            type: 'api',
+            name: 'API Child',
+            position: { x: 50, y: 50 },
+            data: { parentId: 'par-1' },
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {
+          'par-1': {
+            id: 'par-1',
+            nodes: ['par-child-1'],
+            count: 5,
+            distribution: '',
+            parallelType: 'count' as const,
+            enabled: true,
+          },
+        },
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      const parallelIds = Object.keys(result.parallels)
+      expect(parallelIds).toHaveLength(1)
+      expect(parallelIds[0]).not.toBe('par-1')
+
+      const parallel = result.parallels[parallelIds[0]]
+      expect(parallel.id).toBe(parallelIds[0])
+      expect(parallel.nodes).toHaveLength(1)
+      expect(parallel.nodes[0]).not.toBe('par-child-1')
+      expect(Object.keys(result.blocks)).toContain(parallel.nodes[0])
+      expect(parallel.count).toBe(5)
+      expect(parallel.parallelType).toBe('count')
+    })
+
+    it('should update parentId references in block data', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'loop-1': createLoopBlock({
+            id: 'loop-1',
+            name: 'Loop',
+            position: { x: 0, y: 0 },
+          }),
+          'child-1': createBlock({
+            id: 'child-1',
+            type: 'agent',
+            name: 'Child',
+            position: { x: 50, y: 50 },
+            data: { parentId: 'loop-1' },
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      // Find the child block (the one that's not the loop)
+      const childBlock = Object.values(result.blocks).find((b) => b.type !== 'loop')!
+      const loopBlock = Object.values(result.blocks).find((b) => b.type === 'loop')!
+
+      // Child's parentId should reference the new loop ID
+      expect(childBlock.data?.parentId).toBe(loopBlock.id)
+    })
+
+    it('should unlock all duplicated blocks', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'locked-1': createBlock({
+            id: 'locked-1',
+            type: 'agent',
+            name: 'Locked Block',
+            position: { x: 0, y: 0 },
+            locked: true,
+          }),
+          'unlocked-1': createBlock({
+            id: 'unlocked-1',
+            type: 'api',
+            name: 'Unlocked Block',
+            position: { x: 100, y: 0 },
+            locked: false,
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      for (const block of Object.values(result.blocks)) {
+        expect(block.locked).toBe(false)
+      }
+    })
+
+    it('should handle empty state gracefully', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      expect(result.blocks).toEqual({})
+      expect(result.edges).toEqual([])
+      expect(result.loops).toEqual({})
+      expect(result.parallels).toEqual({})
+    })
+
+    it('should handle completely undefined state fields', () => {
+      const state: dbHelpers.RegenerateStateInput = {}
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      expect(result.blocks).toEqual({})
+      expect(result.edges).toEqual([])
+      expect(result.loops).toEqual({})
+      expect(result.parallels).toEqual({})
+    })
+
+    it('should preserve variables and metadata if present', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+        variables: { myVar: 'hello' },
+        metadata: { author: 'test' },
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      expect(result.variables).toEqual({ myVar: 'hello' })
+      expect(result.metadata).toEqual({ author: 'test' })
+    })
+
+    it('should not include variables/metadata keys if not in input', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {},
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      expect('variables' in result).toBe(false)
+      expect('metadata' in result).toBe(false)
+    })
+
+    it('should update subBlock values that reference other block IDs', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'block-a': createBlock({
+            id: 'block-a',
+            type: 'agent',
+            name: 'Agent',
+            position: { x: 0, y: 0 },
+            subBlocks: {
+              ref: { id: 'ref', type: 'short-input' as const, value: 'block-b' },
+            },
+          }),
+          'block-b': createBlock({
+            id: 'block-b',
+            type: 'api',
+            name: 'API',
+            position: { x: 100, y: 0 },
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      // Find the block that was originally 'block-a'
+      const agentBlock = Object.values(result.blocks).find((b) => b.name === 'Agent')!
+      const apiBlock = Object.values(result.blocks).find((b) => b.name === 'API')!
+
+      // The subBlock reference should point to the new API block ID
+      expect(agentBlock.subBlocks.ref.value).toBe(apiBlock.id)
+    })
+
+    it('should generate unique IDs across all regenerated elements', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'b1': createBlock({ id: 'b1', type: 'starter', name: 'Start', position: { x: 0, y: 0 } }),
+          'b2': createBlock({ id: 'b2', type: 'agent', name: 'Agent', position: { x: 100, y: 0 } }),
+          'b3': createBlock({ id: 'b3', type: 'api', name: 'API', position: { x: 200, y: 0 } }),
+        },
+        edges: [
+          createEdge({ id: 'e1', source: 'b1', target: 'b2' }),
+          createEdge({ id: 'e2', source: 'b2', target: 'b3' }),
+        ],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      // All block IDs should be unique
+      const blockIds = Object.keys(result.blocks)
+      expect(new Set(blockIds).size).toBe(3)
+
+      // All edge IDs should be unique
+      const edgeIds = result.edges.map((e) => e.id)
+      expect(new Set(edgeIds).size).toBe(2)
+
+      // No overlap between any IDs
+      const allIds = [...blockIds, ...edgeIds]
+      expect(new Set(allIds).size).toBe(allIds.length)
+    })
+
+    it('should preserve block positions, names, and types', () => {
+      const state: dbHelpers.RegenerateStateInput = {
+        blocks: {
+          'block-1': createBlock({
+            id: 'block-1',
+            type: 'agent',
+            name: 'My Agent',
+            position: { x: 42, y: 99 },
+            height: 300,
+          }),
+        },
+        edges: [],
+        loops: {},
+        parallels: {},
+      }
+
+      const result = dbHelpers.regenerateWorkflowStateIds(state)
+
+      const block = Object.values(result.blocks)[0]
+      expect(block.type).toBe('agent')
+      expect(block.name).toBe('My Agent')
+      expect(block.position).toEqual({ x: 42, y: 99 })
+      expect(block.height).toBe(300)
+    })
+  })
+
+  describe('remapVariableReferences', () => {
+    it('should remap variableId in variables-input subBlocks', () => {
+      const subBlocks = {
+        vars: {
+          id: 'vars',
+          type: 'variables-input',
+          value: [
+            { variableId: 'old-var-1', value: 'hello' },
+            { variableId: 'old-var-2', value: 'world' },
+          ],
+        },
+      }
+
+      const mapping = new Map([
+        ['old-var-1', 'new-var-1'],
+        ['old-var-2', 'new-var-2'],
+      ])
+
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      expect(result.vars.value).toEqual([
+        { variableId: 'new-var-1', value: 'hello' },
+        { variableId: 'new-var-2', value: 'world' },
+      ])
+    })
+
+    it('should preserve variableIds not in the mapping', () => {
+      const subBlocks = {
+        vars: {
+          id: 'vars',
+          type: 'variables-input',
+          value: [
+            { variableId: 'known-var', value: 'mapped' },
+            { variableId: 'unknown-var', value: 'not-mapped' },
+          ],
+        },
+      }
+
+      const mapping = new Map([['known-var', 'new-known-var']])
+
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      expect(result.vars.value[0].variableId).toBe('new-known-var')
+      expect(result.vars.value[1].variableId).toBe('unknown-var')
+    })
+
+    it('should not modify non-variables-input subBlocks', () => {
+      const subBlocks = {
+        prompt: {
+          id: 'prompt',
+          type: 'long-input',
+          value: 'some text with old-var-1',
+        },
+        model: {
+          id: 'model',
+          type: 'dropdown',
+          value: 'gpt-4o',
+        },
+      }
+
+      const mapping = new Map([['old-var-1', 'new-var-1']])
+
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      expect(result.prompt).toEqual(subBlocks.prompt)
+      expect(result.model).toEqual(subBlocks.model)
+    })
+
+    it('should handle empty subBlocks', () => {
+      const result = dbHelpers.remapVariableReferences({}, new Map())
+      expect(result).toEqual({})
+    })
+
+    it('should handle null/undefined subBlocks', () => {
+      expect(dbHelpers.remapVariableReferences(null as any, new Map())).toBeNull()
+      expect(dbHelpers.remapVariableReferences(undefined as any, new Map())).toBeUndefined()
+    })
+
+    it('should handle non-object subBlocks', () => {
+      expect(dbHelpers.remapVariableReferences('invalid' as any, new Map())).toBe('invalid')
+    })
+
+    it('should handle variables-input with empty array value', () => {
+      const subBlocks = {
+        vars: {
+          id: 'vars',
+          type: 'variables-input',
+          value: [],
+        },
+      }
+
+      const mapping = new Map([['old', 'new']])
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      expect(result.vars.value).toEqual([])
+    })
+
+    it('should handle assignments with falsy variableId', () => {
+      const subBlocks = {
+        vars: {
+          id: 'vars',
+          type: 'variables-input',
+          value: [
+            { variableId: '', value: 'empty' },
+            { variableId: null, value: 'null' },
+            { variableId: undefined, value: 'undefined' },
+          ],
+        },
+      }
+
+      const mapping = new Map([['', 'new-empty']])
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      // Empty string is falsy, so it should NOT be remapped (code checks `assignment.variableId ?`)
+      expect(result.vars.value[0].variableId).toBe('')
+      expect(result.vars.value[1].variableId).toBeNull()
+      expect(result.vars.value[2].variableId).toBeUndefined()
+    })
+
+    it('should handle mixed subBlock types correctly', () => {
+      const subBlocks = {
+        vars: {
+          id: 'vars',
+          type: 'variables-input',
+          value: [{ variableId: 'v1', value: 'test' }],
+        },
+        prompt: {
+          id: 'prompt',
+          type: 'long-input',
+          value: 'Hello',
+        },
+        config: {
+          id: 'config',
+          type: 'variables-input',
+          value: [{ variableId: 'v2', value: 'config' }],
+        },
+      }
+
+      const mapping = new Map([
+        ['v1', 'new-v1'],
+        ['v2', 'new-v2'],
+      ])
+
+      const result = dbHelpers.remapVariableReferences(subBlocks, mapping)
+
+      expect(result.vars.value[0].variableId).toBe('new-v1')
+      expect(result.prompt.value).toBe('Hello')
+      expect(result.config.value[0].variableId).toBe('new-v2')
+    })
+  })
+
+  describe('blockExistsInDeployment', () => {
+    it('should return true when block exists in active deployment state', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                state: {
+                  blocks: {
+                    'target-block': { id: 'target-block', type: 'agent', name: 'Agent' },
+                  },
+                },
+              },
+            ]),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'target-block')
+      expect(result).toBe(true)
+    })
+
+    it('should return false when block does not exist in deployment state', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([
+              {
+                state: {
+                  blocks: {
+                    'other-block': { id: 'other-block', type: 'api', name: 'API' },
+                  },
+                },
+              },
+            ]),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'nonexistent-block')
+      expect(result).toBe(false)
+    })
+
+    it('should return false when no active deployment exists', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([]),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'any-block')
+      expect(result).toBe(false)
+    })
+
+    it('should return false when state is null', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ state: null }]),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'any-block')
+      expect(result).toBe(false)
+    })
+
+    it('should return false when state has no blocks property', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ state: { edges: [] } }]),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'any-block')
+      expect(result).toBe(false)
+    })
+
+    it('should return false on database error', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockRejectedValue(new Error('DB error')),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.blockExistsInDeployment('wf-1', 'any-block')
+      expect(result).toBe(false)
+    })
+  })
+
+  describe('loadDeployedWorkflowState', () => {
+    it('should load deployed state successfully', async () => {
+      const mockState = {
+        blocks: {
+          'block-1': { id: 'block-1', type: 'starter', name: 'Start' },
+        },
+        edges: [{ id: 'edge-1', source: 'block-1', target: 'block-2' }],
+        loops: { 'loop-1': { id: 'loop-1', nodes: ['block-3'] } },
+        parallels: {},
+        variables: { myVar: { type: 'string', value: 'test' } },
+      }
+
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: 'deploy-v1',
+                  state: mockState,
+                  createdAt: new Date('2024-01-01'),
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.loadDeployedWorkflowState('wf-1')
+
+      expect(result.deploymentVersionId).toBe('deploy-v1')
+      expect(result.isFromNormalizedTables).toBe(false)
+      expect(result.blocks).toEqual(mockState.blocks)
+      expect(result.edges).toEqual(mockState.edges)
+      expect(result.loops).toEqual(mockState.loops)
+      expect(result.parallels).toEqual({})
+      expect(result.variables).toEqual(mockState.variables)
+    })
+
+    it('should default empty arrays/objects for missing state fields', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([
+                {
+                  id: 'deploy-v2',
+                  state: {},
+                  createdAt: new Date(),
+                },
+              ]),
+            }),
+          }),
+        }),
+      })
+
+      const result = await dbHelpers.loadDeployedWorkflowState('wf-1')
+
+      expect(result.blocks).toEqual({})
+      expect(result.edges).toEqual([])
+      expect(result.loops).toEqual({})
+      expect(result.parallels).toEqual({})
+      expect(result.variables).toEqual({})
+    })
+
+    it('should throw when no active deployment exists', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([]),
+            }),
+          }),
+        }),
+      })
+
+      await expect(dbHelpers.loadDeployedWorkflowState('wf-missing')).rejects.toThrow(
+        'Workflow wf-missing has no active deployment'
+      )
+    })
+
+    it('should throw when active deployment has null state', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockResolvedValue([{ id: 'v1', state: null, createdAt: new Date() }]),
+            }),
+          }),
+        }),
+      })
+
+      await expect(dbHelpers.loadDeployedWorkflowState('wf-null')).rejects.toThrow(
+        'Workflow wf-null has no active deployment'
+      )
+    })
+
+    it('should propagate database errors', async () => {
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            orderBy: vi.fn().mockReturnValue({
+              limit: vi.fn().mockRejectedValue(new Error('Connection lost')),
+            }),
+          }),
+        }),
+      })
+
+      await expect(dbHelpers.loadDeployedWorkflowState('wf-error')).rejects.toThrow(
+        'Connection lost'
+      )
+    })
+  })
 })
