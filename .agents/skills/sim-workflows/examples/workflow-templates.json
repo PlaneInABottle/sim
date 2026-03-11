@@ -1,0 +1,497 @@
+{
+  "simple_agent": {
+    "name": "Simple Agent Workflow",
+    "description": "Basic workflow with Start trigger and AI agent",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 100 },
+        "data": {}
+      },
+      {
+        "id": "agent_1",
+        "type": "agent",
+        "name": "AI Assistant",
+        "position": { "x": 400, "y": 100 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "You are a helpful assistant."}],
+          "temperature": 0.7
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Response",
+        "position": { "x": 700, "y": 100 },
+        "data": {
+          "dataMode": "json",
+          "data": "<AI Assistant.content>"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "id": "edge_1",
+        "source": "trigger_1",
+        "target": "agent_1"
+      },
+      {
+        "id": "edge_2",
+        "source": "agent_1",
+        "target": "response_1"
+      }
+    ]
+  },
+
+  "conditional_routing": {
+    "name": "Conditional Routing",
+    "description": "Route to different agents based on condition. Uses <BlockName.field> tag syntax for expressions and condition-{id} sourceHandles.",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 150 }
+      },
+      {
+        "id": "condition_1",
+        "type": "condition",
+        "name": "Check Priority",
+        "position": { "x": 350, "y": 150 },
+        "data": {
+          "conditions": [
+            { "id": "is_high", "title": "if", "value": "<Start.input.priority> === 'high'" },
+            { "id": "fallback", "title": "else", "value": "" }
+          ]
+        }
+      },
+      {
+        "id": "agent_high",
+        "type": "agent",
+        "name": "Priority Agent",
+        "position": { "x": 600, "y": 50 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "You are a priority support agent."}]
+        }
+      },
+      {
+        "id": "agent_standard",
+        "type": "agent",
+        "name": "Standard Agent",
+        "position": { "x": 600, "y": 250 },
+        "data": {
+          "model": "gpt-3.5-turbo",
+          "messages": [{"role": "system", "content": "You are a standard support agent."}]
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Response",
+        "position": { "x": 900, "y": 150 }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "condition_1"
+      },
+      {
+        "source": "condition_1",
+        "target": "agent_high",
+        "sourceHandle": "condition-is_high"
+      },
+      {
+        "source": "condition_1",
+        "target": "agent_standard",
+        "sourceHandle": "condition-fallback"
+      },
+      {
+        "source": "agent_high",
+        "target": "response_1"
+      },
+      {
+        "source": "agent_standard",
+        "target": "response_1"
+      }
+    ]
+  },
+
+  "api_integration": {
+    "name": "API Integration",
+    "description": "Fetch data from external API and process with agent",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 100 }
+      },
+      {
+        "id": "api_1",
+        "type": "api",
+        "name": "Fetch User Data",
+        "position": { "x": 350, "y": 100 },
+        "data": {
+          "method": "GET",
+          "url": "https://api.example.com/users/<Start.input.userId>",
+          "headers": [["Authorization", "Bearer <variable.apiKey>"]]
+        }
+      },
+      {
+        "id": "agent_1",
+        "type": "agent",
+        "name": "Process Data",
+        "position": { "x": 600, "y": 100 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "Analyze the user data and provide insights."}]
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Response",
+        "position": { "x": 850, "y": 100 }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "api_1"
+      },
+      {
+        "source": "api_1",
+        "target": "agent_1"
+      },
+      {
+        "source": "agent_1",
+        "target": "response_1"
+      }
+    ],
+    "variables": [
+      {
+        "id": "var_1",
+        "name": "apiKey",
+        "type": "string",
+        "value": "your-api-key-here"
+      }
+    ]
+  },
+
+  "loop_processing": {
+    "name": "Loop Processing",
+    "description": "Process array items with agent in a loop",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 100 }
+      },
+      {
+        "id": "loop_1",
+        "type": "loop",
+        "name": "Process Items",
+        "position": { "x": 350, "y": 100 },
+        "data": {
+          "type": "forEach",
+          "array": "<Start.input.items>",
+          "maxIterations": 100
+        }
+      },
+      {
+        "id": "agent_1",
+        "type": "agent",
+        "name": "Process Item",
+        "position": { "x": 600, "y": 100 },
+        "data": {
+          "model": "gpt-3.5-turbo",
+          "messages": [{"role": "system", "content": "Analyze the provided item."}],
+          "parentId": "loop_1"
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Results",
+        "position": { "x": 850, "y": 100 },
+        "data": {
+          "dataMode": "json",
+          "data": "<Process Items.results>"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "loop_1"
+      },
+      {
+        "source": "loop_1",
+        "target": "agent_1"
+      },
+      {
+        "source": "agent_1",
+        "target": "response_1"
+      }
+    ],
+    "loops": {
+      "loop_1": {
+        "nodes": ["agent_1"]
+      }
+    }
+  },
+
+  "knowledge_base_rag": {
+    "name": "Knowledge Base RAG",
+    "description": "Retrieval augmented generation using knowledge base",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 100 }
+      },
+      {
+        "id": "kb_1",
+        "type": "knowledge",
+        "name": "Search Knowledge Base",
+        "position": { "x": 350, "y": 100 },
+        "data": {
+          "knowledgeBaseId": "kb_123",
+          "query": "<Start.input.question>",
+          "topK": "5",
+          "operation": "search"
+        }
+      },
+      {
+        "id": "agent_1",
+        "type": "agent",
+        "name": "Answer Question",
+        "position": { "x": 600, "y": 100 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "Answer the question using the provided context."}]
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Answer",
+        "position": { "x": 850, "y": 100 }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "kb_1"
+      },
+      {
+        "source": "kb_1",
+        "target": "agent_1"
+      },
+      {
+        "source": "agent_1",
+        "target": "response_1"
+      }
+    ]
+  },
+
+  "parallel_processing": {
+    "name": "Parallel Processing",
+    "description": "Execute multiple agents in parallel",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 200 }
+      },
+      {
+        "id": "parallel_1",
+        "type": "parallel",
+        "name": "Parallel Agents",
+        "position": { "x": 350, "y": 200 },
+        "data": {
+          "waitForAll": true
+        }
+      },
+      {
+        "id": "agent_1",
+        "type": "agent",
+        "name": "Sentiment Analysis",
+        "position": { "x": 600, "y": 50 },
+        "data": {
+          "model": "gpt-3.5-turbo",
+          "messages": [{"role": "system", "content": "Analyze sentiment of the provided text."}],
+          "parentId": "parallel_1"
+        }
+      },
+      {
+        "id": "agent_2",
+        "type": "agent",
+        "name": "Entity Extraction",
+        "position": { "x": 600, "y": 200 },
+        "data": {
+          "model": "gpt-3.5-turbo",
+          "messages": [{"role": "system", "content": "Extract entities from the provided text."}],
+          "parentId": "parallel_1"
+        }
+      },
+      {
+        "id": "agent_3",
+        "type": "agent",
+        "name": "Summarization",
+        "position": { "x": 600, "y": 350 },
+        "data": {
+          "model": "gpt-3.5-turbo",
+          "messages": [{"role": "system", "content": "Summarize the provided text."}],
+          "parentId": "parallel_1"
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Combined Results",
+        "position": { "x": 900, "y": 200 },
+        "data": {
+          "dataMode": "json",
+          "data": "{\"sentiment\": \"<Sentiment Analysis.content>\", \"entities\": \"<Entity Extraction.content>\", \"summary\": \"<Summarization.content>\"}"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "parallel_1"
+      },
+      {
+        "source": "parallel_1",
+        "target": "agent_1"
+      },
+      {
+        "source": "parallel_1",
+        "target": "agent_2"
+      },
+      {
+        "source": "parallel_1",
+        "target": "agent_3"
+      },
+      {
+        "source": "agent_1",
+        "target": "response_1"
+      },
+      {
+        "source": "agent_2",
+        "target": "response_1"
+      },
+      {
+        "source": "agent_3",
+        "target": "response_1"
+      }
+    ],
+    "parallels": {
+      "parallel_1": {
+        "nodes": ["agent_1", "agent_2", "agent_3"]
+      }
+    }
+  },
+
+  "error_handling": {
+    "name": "Error Handling",
+    "description": "Workflow with error handling and fallback using condition-{id} handles",
+    "blocks": [
+      {
+        "id": "trigger_1",
+        "type": "start_trigger",
+        "name": "Start",
+        "position": { "x": 100, "y": 150 }
+      },
+      {
+        "id": "api_1",
+        "type": "api",
+        "name": "External API Call",
+        "position": { "x": 350, "y": 150 },
+        "data": {
+          "method": "GET",
+          "url": "<Start.input.apiUrl>",
+          "timeout": 5000,
+          "onError": {
+            "continueOnError": true
+          }
+        }
+      },
+      {
+        "id": "condition_1",
+        "type": "condition",
+        "name": "Check Success",
+        "position": { "x": 600, "y": 150 },
+        "data": {
+          "conditions": [
+            { "id": "success", "title": "if", "value": "<External API Call.status> === 200" },
+            { "id": "error", "title": "else", "value": "" }
+          ]
+        }
+      },
+      {
+        "id": "agent_success",
+        "type": "agent",
+        "name": "Process Success",
+        "position": { "x": 850, "y": 50 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "Process successful API response"}]
+        }
+      },
+      {
+        "id": "agent_error",
+        "type": "agent",
+        "name": "Handle Error",
+        "position": { "x": 850, "y": 250 },
+        "data": {
+          "model": "gpt-4",
+          "messages": [{"role": "system", "content": "Generate fallback response for API error"}]
+        }
+      },
+      {
+        "id": "response_1",
+        "type": "response",
+        "name": "Return Response",
+        "position": { "x": 1100, "y": 150 }
+      }
+    ],
+    "edges": [
+      {
+        "source": "trigger_1",
+        "target": "api_1"
+      },
+      {
+        "source": "api_1",
+        "target": "condition_1"
+      },
+      {
+        "source": "condition_1",
+        "target": "agent_success",
+        "sourceHandle": "condition-success"
+      },
+      {
+        "source": "condition_1",
+        "target": "agent_error",
+        "sourceHandle": "condition-error"
+      },
+      {
+        "source": "agent_success",
+        "target": "response_1"
+      },
+      {
+        "source": "agent_error",
+        "target": "response_1"
+      }
+    ]
+  }
+}
