@@ -22,6 +22,7 @@ import {
   validateWorkflowSchedules,
 } from '@/lib/workflows/schedules'
 import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
 
@@ -30,19 +31,58 @@ const logger = createLogger('WorkflowDeployAPI')
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+async function validateLifecycleAdminAccess(
+  request: NextRequest,
+  workflowId: string,
+  requestId: string
+) {
+  const hybridAccess = await validateWorkflowAccess(request, workflowId, {
+    requireDeployment: false,
+    action: 'admin',
+  })
+
+  if (hybridAccess.error) {
+    return {
+      error: hybridAccess.error,
+      auth: null,
+      session: null,
+      workflow: null,
+    }
+  }
+
+  if (hybridAccess.auth?.authType === 'session') {
+    const sessionAccess = await validateWorkflowPermissions(workflowId, requestId, 'admin')
+
+    return {
+      error: sessionAccess.error,
+      auth: null,
+      session: sessionAccess.session,
+      workflow: sessionAccess.workflow,
+    }
+  }
+
+  return {
+    error: null,
+    auth: hybridAccess.auth,
+    session: null,
+    workflow: hybridAccess.workflow,
+  }
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = generateRequestId()
   const { id } = await params
 
   try {
-    const { error, workflow: workflowData } = await validateWorkflowPermissions(
-      id,
-      requestId,
-      'read'
-    )
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'read',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const workflowData = access.workflow
 
     if (!workflowData.isDeployed) {
       logger.info(`[${requestId}] Workflow is not deployed: ${id}`)
@@ -116,15 +156,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
   try {
     const {
+      auth,
       error,
       session,
       workflow: workflowData,
-    } = await validateWorkflowPermissions(id, requestId, 'admin')
+    } = await validateLifecycleAdminAccess(request, id, requestId)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
 
-    const actorUserId: string | null = session?.user?.id ?? null
+    const actorUserId: string | null = session?.user?.id ?? auth?.userId ?? null
     if (!actorUserId) {
       logger.warn(`[${requestId}] Unable to resolve actor user for workflow deployment: ${id}`)
       return createErrorResponse('Unable to determine deploying user', 400)
@@ -322,7 +363,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params
 
   try {
-    const { error, session } = await validateWorkflowPermissions(id, requestId, 'admin')
+    const { error, session } = await validateLifecycleAdminAccess(request, id, requestId)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
@@ -369,12 +410,18 @@ export async function DELETE(
 
   try {
     const {
+      auth,
       error,
       session,
       workflow: workflowData,
-    } = await validateWorkflowPermissions(id, requestId, 'admin')
+    } = await validateLifecycleAdminAccess(request, id, requestId)
     if (error) {
       return createErrorResponse(error.message, error.status)
+    }
+
+    const actorUserId = session?.user?.id ?? auth?.userId ?? null
+    if (!actorUserId) {
+      return createErrorResponse('Unable to determine undeploying user', 400)
     }
 
     const result = await undeployWorkflow({ workflowId: id })
@@ -397,7 +444,7 @@ export async function DELETE(
 
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
-      actorId: session!.user.id,
+      actorId: actorUserId,
       actorName: session?.user?.name,
       actorEmail: session?.user?.email,
       action: AuditAction.WORKFLOW_UNDEPLOYED,
