@@ -5,7 +5,10 @@ import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
+import {
+  executeWorkflowCore,
+  wasExecutionFinalizedByCore,
+} from '@/lib/workflows/executor/execution-core'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { ExecutionSnapshot } from '@/executor/execution/snapshot'
 import type { ExecutionMetadata } from '@/executor/execution/types'
@@ -177,6 +180,10 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       error: error instanceof Error ? error.message : String(error),
       executionId,
     })
+
+    if (wasExecutionFinalizedByCore(error, executionId)) {
+      throw error
+    }
 
     const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
     const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }

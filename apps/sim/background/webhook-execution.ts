@@ -12,7 +12,10 @@ import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
 import { WebhookAttachmentProcessor } from '@/lib/webhooks/attachment-processor'
 import { fetchAndProcessAirtablePayloads, formatWebhookInput } from '@/lib/webhooks/utils.server'
-import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
+import {
+  executeWorkflowCore,
+  wasExecutionFinalizedByCore,
+} from '@/lib/workflows/executor/execution-core'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
 import { resolveOAuthAccountId } from '@/app/api/auth/oauth/utils'
@@ -622,6 +625,10 @@ async function executeWebhookJobInternal(
       workflowId: payload.workflowId,
       provider: payload.provider,
     })
+
+    if (wasExecutionFinalizedByCore(error, executionId)) {
+      throw error
+    }
 
     try {
       await loggingSession.safeStart({

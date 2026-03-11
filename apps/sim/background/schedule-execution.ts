@@ -8,7 +8,10 @@ import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import { buildTraceSpans } from '@/lib/logs/execution/trace-spans/trace-spans'
-import { executeWorkflowCore } from '@/lib/workflows/executor/execution-core'
+import {
+  executeWorkflowCore,
+  wasExecutionFinalizedByCore,
+} from '@/lib/workflows/executor/execution-core'
 import { PauseResumeManager } from '@/lib/workflows/executor/human-in-the-loop-manager'
 import {
   blockExistsInDeployment,
@@ -248,6 +251,10 @@ async function runWorkflowExecution({
     return { status: 'failure', blocks, executionResult }
   } catch (error: unknown) {
     logger.error(`[${requestId}] Early failure in scheduled workflow ${payload.workflowId}`, error)
+
+    if (wasExecutionFinalizedByCore(error, executionId)) {
+      throw error
+    }
 
     const executionResult = hasExecutionResult(error) ? error.executionResult : undefined
     const { traceSpans } = executionResult ? buildTraceSpans(executionResult) : { traceSpans: [] }

@@ -690,7 +690,10 @@ export class LoggingSession {
 
   async safeComplete(params: SessionCompleteParams = {}): Promise<void> {
     if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteImpl(params)
+    this.completionPromise = this._safeCompleteImpl(params).catch((error) => {
+      this.completionPromise = null
+      throw error
+    })
     return this.completionPromise
   }
 
@@ -715,7 +718,10 @@ export class LoggingSession {
 
   async safeCompleteWithError(params?: SessionErrorCompleteParams): Promise<void> {
     if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithErrorImpl(params)
+    this.completionPromise = this._safeCompleteWithErrorImpl(params).catch((error) => {
+      this.completionPromise = null
+      throw error
+    })
     return this.completionPromise
   }
 
@@ -742,7 +748,10 @@ export class LoggingSession {
 
   async safeCompleteWithCancellation(params?: SessionCancelledParams): Promise<void> {
     if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithCancellationImpl(params)
+    this.completionPromise = this._safeCompleteWithCancellationImpl(params).catch((error) => {
+      this.completionPromise = null
+      throw error
+    })
     return this.completionPromise
   }
 
@@ -768,7 +777,10 @@ export class LoggingSession {
 
   async safeCompleteWithPause(params?: SessionPausedParams): Promise<void> {
     if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithPauseImpl(params)
+    this.completionPromise = this._safeCompleteWithPauseImpl(params).catch((error) => {
+      this.completionPromise = null
+      throw error
+    })
     return this.completionPromise
   }
 
