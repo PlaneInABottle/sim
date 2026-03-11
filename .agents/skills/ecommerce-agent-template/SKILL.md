@@ -123,7 +123,7 @@ Without context capture, every follow-up question about orders (cargo status, pa
 ```
 ┌─────────────────────┐
 │ 1. Tool Call         │  Agent or router calls ikas_lookup_customer_orders(phone)
-│    (ikas API)        │  → Returns raw order JSON (customer, orders, tracking)
+│    (ikas API)        │  → Returns order lookup data (raw ikas fields or your wrapper's normalized shape)
 └────────┬────────────┘
          ▼
 ┌─────────────────────┐
@@ -154,7 +154,7 @@ The function block collects tool outputs and formats them into human-readable co
 // extractSearchContext — collects results from tool blocks
 const CONFIG = {
   toolNames: [
-    'ikas_browse_products',
+    'ikas_browse',
     'ikas_lookup_customer_orders',
     'get_products_by_main_category',
     'calculate_product_price'
@@ -180,12 +180,12 @@ function formatOrdersResult(response) {
   let text = `[Order Lookup]\nCustomer: ${customer.fullName} (${customer.phone})\n`
   orders.forEach(o => {
     text += `Order #${o.orderNumber}: ${o.status}`
-    text += ` | Payment: ${o.paymentStatus}`
-    text += ` | Package: ${o.packageStatus}\n`
+    text += ` | Payment: ${o.orderPaymentStatus}`
+    text += ` | Package: ${o.orderPackageStatus}\n`
     // Append tracking info when available
-    o.packages?.forEach(p => {
-      text += `  Tracking: ${p.trackingNumber} (${p.cargoCompany})`
-      text += ` - ${p.fulfillStatus}\n`
+    o.orderPackages?.forEach(p => {
+      text += `  Tracking: ${p.trackingInfo?.trackingNumber} (${p.trackingInfo?.cargoCompany})`
+      text += ` - ${p.orderPackageFulfillStatus}\n`
     })
   })
   return text

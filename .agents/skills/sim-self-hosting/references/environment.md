@@ -22,12 +22,11 @@ required across every target:
 
 - `apps/docs/.../environment-variables.mdx` lists it under **Optional**
 - `helm/sim/README.md` lists it as **Optional Security (Recommended for Production)**
-- `README.md` and `RENDER_DEPLOYMENT.md` document deployment flows where it may be
-  provided or auto-generated for that target
+- `render.yaml` defines `API_ENCRYPTION_KEY` with `sync: false`, so Render does **not**
+  auto-generate it in the checked-in blueprint
 
-When a deployment target or template auto-generates it, keep that target-specific
-behavior. When self-hosting manually, generate it if you want API keys encrypted
-at rest.
+When self-hosting manually or on Render, generate it yourself if you want API keys
+encrypted at rest. Do not assume the checked-in Render blueprint creates it for you.
 
 ## Other Optional Variables
 

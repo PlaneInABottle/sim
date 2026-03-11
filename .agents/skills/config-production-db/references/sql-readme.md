@@ -1,47 +1,51 @@
-# Config Production SQL Migrations
+# Config Production SQL Rollout Notes
 
 **Schema:** `config_production`  
-**Database:** `sim_production` (Render PostgreSQL)  
-**Architecture Version:** v4.4 (Webhook Token Authentication)
+**Target database in rollout notes:** `sim_production` (Render PostgreSQL)  
+**Architecture label in notes:** v4.4 (Webhook Token Authentication)
 
 ---
 
 ## Source of Truth
 
-- The migration SQL files listed below were executed directly against production.
-- Those SQL files are currently **not committed** in this repository.
-- For current schema and constraints, use `references/current-state.md` as the authoritative source.
+- This file preserves rollout notes about SQL reportedly applied to production.
+- The named SQL files are currently **not committed** in this repository, so
+  this file is not an executable repo-local migration set.
+- For current schema and constraints, use `references/current-state.md` as the
+  authoritative local source.
 
 ---
 
-## Execution Order
+## Recorded Rollout Order
 
-Execute these files in order:
+The rollout notes recorded this order, but the SQL files themselves are absent
+from the repo. Treat the list below as historical provenance, not runnable repo
+instructions.
 
-1. **00_preflight_checks.sql** ✅ Executed
-   - Safety checks before schema creation
-   - Verifies database state
+1. **00_preflight_checks.sql**
+   - Reported safety checks before schema creation
+   - Reported database-state verification
 
-2. **01_create_schema.sql** ✅ Executed
-   - Creates `config_production` schema
-   - Enables `pgcrypto` extension
+2. **01_create_schema.sql**
+   - Reported creation of `config_production` schema
+   - Reported `pgcrypto` enablement
 
-3. **02_create_tables.sql** ✅ Executed
-   - Creates 3 tables: `companies`, `platform_configs`, `agent_prompts`
-   - Adds indexes, constraints, triggers
+3. **02_create_tables.sql**
+   - Reported creation of `companies`, `platform_configs`, `agent_prompts`
+   - Reported indexes, constraints, and triggers
 
-4. **04_add_webhook_token.sql** ✅ Executed
-   - Adds `webhook_token` column to companies table
-   - Creates `sim_workflow_reader` read-only role
+4. **04_add_webhook_token.sql**
+   - Reported `webhook_token` column addition on `companies`
+   - Reported `sim_workflow_reader` read-only role creation
 
-5. **05_seed_kamatas.sql** ✅ Executed
-   - Sample data for Kamatas company (account_id 1001)
-   - 2 platforms, 3 agent prompts
+5. **05_seed_kamatas.sql**
+   - Reported Kamatas seed data (account_id 1001)
+   - Reported 2 platforms and 3 agent prompts
 
-6. **06_security_and_integrity_fixes_v2.sql** ✅ Executed
-   - Rotates compromised webhook token
-   - Adds unique constraint for default prompts
-   - Adds 200KB size limit on prompts
+6. **06_security_and_integrity_fixes_v2.sql**
+   - Reported webhook-token rotation
+   - Reported unique constraint for default prompts
+   - Reported 200KB prompt-size limit
 
 ---
 

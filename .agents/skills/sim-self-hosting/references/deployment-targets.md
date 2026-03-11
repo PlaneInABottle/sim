@@ -11,12 +11,12 @@ This skill only wraps deployment targets already documented in the repo.
 | Docker Compose + Ollama | `README.md` | Local-model variant using `docker-compose.ollama.yml` |
 | Dev Containers | `README.md` | Containerized development environment, not a production deploy target |
 | Manual self-hosting | `README.md` | Bun + PostgreSQL + pgvector manual setup |
-| Render Blueprint | `RENDER_DEPLOYMENT.md` | Creates web, realtime, db-migrations, and PostgreSQL services |
+| Render Blueprint | `render.yaml` + `README.md` | Creates `engine`, `engine-realtime`, and `engine-db`; migrations run from `engine`'s `preDeployCommand` |
 | Helm chart | `helm/sim/README.md` | Kubernetes deployment path documented in the chart README |
 
 ## Operator Notes
 
 - Use `README.md` for high-level setup paths and compose/npm entrypoints.
-- Use `RENDER_DEPLOYMENT.md` for Render-specific service layout and post-deploy steps.
+- Use `render.yaml` for the checked-in Render service layout and env wiring.
 - Use `helm/sim/README.md` for chart values, secrets, ingress, and production security notes.
 - Keep packaged `.skill` archives outside `.agents/skills/`; deployment docs should point at runtime artifacts, not the live skill tree.

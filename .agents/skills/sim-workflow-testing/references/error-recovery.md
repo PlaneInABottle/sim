@@ -18,26 +18,31 @@ Complements the core 6-phase protocol in `testing-protocol.md`.
 
 ### Test Execution Fails
 
-If `execute_workflow` returns an error:
+If a draft test run (`sim_test` / `run_workflow`) returns an error:
 
-1. Record the error in SQL
-2. Check if blocks need restoring (they might — always restore)
-3. Diagnose: Is the payload valid? Are required blocks enabled?
-4. Retry once with corrected payload if the error is payload-related
-5. Mark as `error` if still failing
+1. Record the failing request, payload, and exact error text
+2. Reproduce once with the same draft path so the failure is deterministic
+3. Diagnose with `sim_debug` or the current verification surface
+4. Retry once only if the issue is clearly payload- or input-shape-related
+5. Mark the scenario as `error` if it still fails after one evidence-based retry
 
-### Block Toggle Fails
+### Legacy Block-State Recovery (historical only)
 
-If `toggle_block_enabled` fails:
+The current default testing flow does **not** require block toggles, block
+snapshots, or restore loops. The notes below are only for older sessions that
+already used `toggle_block_enabled` and snapshot tables before the workflow
+surface moved to the current `sim_test` / `run_*` pattern.
+
+If a historical `toggle_block_enabled` step fails:
 
 1. Retry the toggle operation once
 2. If still failing, fetch the workflow to check current state
 3. If the block doesn't exist, the workflow may have been modified — abort test run
 4. Report the issue and any un-restored blocks
 
-### Partial Restore Failure
+### Legacy Partial Restore Failure (historical only)
 
-If some blocks can't be restored:
+If some historically toggled blocks can't be restored:
 
 1. List all un-restored blocks clearly
 2. Try restoring each one individually
@@ -48,21 +53,29 @@ If some blocks can't be restored:
 
 If the agent session is interrupted mid-test:
 
-1. On next session, check for un-completed test runs:
+1. On next session, first re-run the failing draft scenario with the current
+   `sim_test` / `run_workflow` surface to confirm whether manual recovery is
+   still needed
+2. Only if the interrupted run was using the older block-snapshot workflow,
+   check for un-completed test runs:
    ```sql
    SELECT * FROM test_runs WHERE status = 'running';
    ```
-2. For each running test, check block snapshots:
+3. For each running historical test, check block snapshots:
    ```sql
    SELECT block_id, block_name FROM block_snapshots
    WHERE run_id = '<RUN_ID>' AND restored = 0 AND test_enabled IS NOT NULL;
    ```
-3. Restore any un-restored blocks immediately
-4. Mark the test run as `error`
+4. Restore any un-restored blocks immediately
+5. Mark the test run as `error`
 
 ---
 
-## Rollback Procedure
+## Legacy Rollback Procedure (historical only)
+
+Use this section only when you are cleaning up an older run that already relied
+on block toggles and snapshot tables. It is **not** part of the default current
+testing workflow.
 
 ### Emergency Full Rollback (If Restore Phase Fails Catastrophically)
 
@@ -127,9 +140,9 @@ If the agent session is interrupted mid-test:
 
 ---
 
-## Multi-Scenario Batch Protocol
+## Legacy Multi-Scenario Batch Protocol (historical only)
 
-When running multiple scenarios under the same test profile:
+When running multiple scenarios under the same historical block-toggle profile:
 
 1. **Snapshot once** — All blocks have the same starting state
 2. **Disable once** — Same blocks disabled for all scenarios in the profile
@@ -145,23 +158,23 @@ This saves time by avoiding repeated disable/restore cycles for the same profile
 
 ### Error Handling During Batch
 
-If a scenario errors (execute_workflow fails, assertion fails, etc.):
+If a scenario errors (draft run fails, assertion fails, etc.):
 
 1. Record the error in test_results
 2. **CONTINUE to the next scenario** (do NOT restore yet, do NOT abort)
 3. Keep all blocks disabled for the next scenario
 4. Only restore after ALL scenarios complete OR on a CRITICAL error
 
-**CRITICAL Error** = toggle_block_enabled fails, workflow structure changed mid-batch, sim-mcp API error
-**NON-CRITICAL Error** = execute_workflow timeout, assertion mismatch, empty response
+**CRITICAL Error** = toggle/block-state operation fails, workflow structure changed mid-batch, or the MCP surface itself errors
+**NON-CRITICAL Error** = draft run timeout, assertion mismatch, empty response
 
 Example: 3 scenarios, Scenario 1 fails assertion → continue to Scenario 2, keep disabled, test Scenario 2, restore after Scenario 3 completes.
 
 ---
 
-## Profile Transition Protocol
+## Legacy Profile Transition Protocol (historical only)
 
-When switching between test profiles (e.g., CONDITION_ONLY → PATH_ISOLATION):
+When switching between historical test profiles (e.g., CONDITION_ONLY → PATH_ISOLATION):
 
 1. **Restore all blocks** from the previous profile
 2. **Verify restoration** — All blocks back to original state

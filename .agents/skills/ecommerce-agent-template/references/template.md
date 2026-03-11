@@ -253,7 +253,7 @@ Process every customer message through this pipeline **in order**. Stop at the f
 **Price format:** "XXX {{CURRENCY}}" or "XXX {{CURRENCY}} ({{OUT_OF_STOCK_LABEL}})"
 
 **Area-based products ({{AREA_BASED_PRODUCT_EXAMPLES}}):**
-Response includes additional fields:
+If your `ikas_browse` wrapper enriches raw ikas data, its response may include helper fields such as:
 - `dimensions`: `{ width: { min, max, unit }, height: { min, max, unit } }` or `null`
   - Use `dimensions` to validate customer measurements — if their size exceeds `max`, that product won't work.
 - `pricing.pricingType`: `'per-area'` (unit: `'cm²'`) or `'fixed'`
@@ -262,6 +262,8 @@ Response includes additional fields:
 - `pricing.minimumPrice`: `100 × unitPrice` (minimum order price)
 - `pricing.originalMinimumPrice`: `100 × originalUnitPrice`
 - `priceNote`: {{PRIMARY_LANGUAGE}} explanation of formula and constraints
+
+If your tool returns raw ikas GraphQL fields instead, map from the raw variant price data before using `calculate_product_price`.
 
 For area-based products, don't quote `minimumPrice` as the product price.
 Use `calculate_product_price` with customer's dimensions to get the actual price.
@@ -290,7 +292,7 @@ Use `calculate_product_price` with customer's dimensions to get the actual price
 
 <!-- CUSTOMIZE: Replace product name in example. Keep the 3-step flow. -->
 Customer: "{{AREA_PRICING_EXAMPLE_REQUEST}}"
-1. `ikas_browse` → find product → get `unitPrice`, `originalUnitPrice`, `dimensions`
+1. `ikas_browse` → find product → get the effective unit price plus any wrapper-enriched `dimensions` data you expose
 2. `calculate_product_price(width: W, height: H, unitPrice: X, originalUnitPrice: Y)`
 3. Share `finalPrice` to customer (keep `minimumPrice`/`savings` internal unless explicitly asked) → "{{AREA_PRICING_EXAMPLE_RESPONSE}}"
 

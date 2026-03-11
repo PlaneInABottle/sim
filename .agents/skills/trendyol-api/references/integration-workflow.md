@@ -1,6 +1,6 @@
 # Integration Workflow: Customer Questions + Product Filtering
 
-This document describes how the **Customer Questions API** and the **Product Filtering API** connect to enable richer support workflows.
+This document describes a **derived integration pattern** that combines the **Customer Questions API** and the **Product Filtering API** into a richer support workflow.
 
 **Source APIs:**
 - [Müşteri Sorularını Çekme](https://developers.trendyol.com/docs/müşteri-sorularını-çekme) (Customer Questions)
@@ -12,7 +12,7 @@ This document describes how the **Customer Questions API** and the **Product Fil
 
 When a customer asks a question about a product on Trendyol, the **Customer Questions API** returns the question along with a `productMainId`. This ID can be used as a query parameter in the **Product Filtering API** to fetch detailed product information — including pricing, variants, stock status, delivery options, and attributes.
 
-This enables workflows where an agent can:
+This derived pattern enables workflows where an agent can:
 1. Retrieve unanswered customer questions
 2. Look up the product the question is about
 3. Use the product details to formulate an informed answer
@@ -35,6 +35,8 @@ Additional shared context:
 | Supplier ID | `supplierId` (path parameter) | `supplierId` (query parameter) + `sellerId` (path parameter) |
 | Product name | `productName` (in question object) | `title` (in content object) |
 | Product image | `imageUrl` (in question object) | `images[].url` (in content object) |
+
+Follow the identifier name exactly as documented for each endpoint: the official material uses both `supplierId` and `sellerId` rather than one globally consistent term.
 
 ---
 
@@ -121,7 +123,7 @@ Content-Type: application/json
 
 ## Combined Output Example
 
-A workflow combining both APIs produces a unified view:
+One possible combined output from this derived pattern:
 
 ```json
 {

@@ -295,8 +295,9 @@ echo "Then apply skipped migrations manually and insert tracking rows."
 ## Prevention
 
 1. The dual-config setup (`drizzle.config.ts` + `drizzle-local.config.ts`)
-   prevents future watermark contamination by isolating local migration
-   timestamps into a separate tracking table.
+   separates upstream and fork migration outputs, but the checked-in configs do
+   not prove separate tracking tables. Verify the target database before
+   relying on table-level isolation to prevent future watermark contamination.
 
 2. On rebase, always accept upstream's `_journal.json` entirely.
 

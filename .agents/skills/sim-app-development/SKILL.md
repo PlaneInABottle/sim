@@ -1,6 +1,6 @@
 ---
 name: sim-app-development
-description: Narrow repo-local guide for general Sim application development and integration touchpoints. Use when changing the app codebase itself, adding an integration surface, tracing which directories/files own a feature, or applying the repository's integration checklist outside pure workflow editing, runtime operations, deployment, or skill governance.
+description: Narrow repo-local guide for Sim application code changes and integration touchpoints. Use when changing the app codebase itself, adding an integration surface, tracing which directories own a feature, or applying the repository integration checklist outside workflow-only editing, runtime operations, deployment, or skill governance.
 ---
 
 # Sim App Development
@@ -12,6 +12,7 @@ Do not use it for:
 - local runtime lifecycle and health checks — use `../sim-runtime/SKILL.md`
 - deployment and self-hosting operations — use `../sim-self-hosting/SKILL.md`
 - skill auditing/packaging — use external authority skills
+- workflow behavior verification after your code change — use `../sim-workflow-testing/SKILL.md`
 
 ## Reference File
 

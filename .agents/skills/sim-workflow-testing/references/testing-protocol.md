@@ -1,18 +1,18 @@
 # Testing Protocol
 
-Run every workflow test with the same six phases so block state is restored and
-results stay comparable across sessions.
+Run every workflow test with the same current six phases. Block-state restore
+loops belong only to older fallback runs that already used toggles.
 
 ---
 
 ## Overview
 
 ```text
-Phase 1: PREPARE   → identify workflow, snapshot state, choose scenario
-Phase 2: CONFIGURE → apply CONDITION_ONLY / PATH_ISOLATION / FULL_INTEGRATION
-Phase 3: EXECUTE   → run execute_workflow with crafted payload
+Phase 1: PREPARE   → identify workflow, choose scenario, confirm current surface
+Phase 2: CONFIGURE → craft the lightest safe draft-run setup
+Phase 3: EXECUTE   → run `sim_test` or `run_workflow` with one crafted payload
 Phase 4: VERIFY    → inspect trace spans, outputs, and errors
-Phase 5: RESTORE   → return all toggled blocks to original state
+Phase 5: DEBUG     → use `sim_debug`; only then consider a legacy fallback
 Phase 6: RECORD    → save pass/fail notes and next actions
 ```
 
@@ -21,31 +21,32 @@ Phase 6: RECORD    → save pass/fail notes and next actions
 ## Phase 1: PREPARE
 
 1. Fetch the workflow and confirm you have the right `workflowId`.
-2. Record block names, IDs, enabled states, and relevant condition handles.
+2. Record block names, IDs, and relevant condition handles when they matter for assertions or a documented fallback profile.
 3. Choose one scenario only.
 4. Create SQL tracking rows if you need structured reporting.
 
 ## Phase 2: CONFIGURE
 
-Select the lightest profile that can prove the behavior:
+Select the lightest setup that can prove the behavior:
 
-- **CONDITION_ONLY** — keep only trigger + condition blocks enabled.
-- **PATH_ISOLATION** — keep only the path under test enabled.
-- **FULL_INTEGRATION** — keep the full workflow enabled except destructive final sends.
+- **Default current path** — keep the draft workflow as-is and prove behavior with one crafted payload.
+- **CONDITION_ONLY** — legacy low-level fallback profile; keep only trigger + condition blocks enabled.
+- **PATH_ISOLATION** — legacy low-level fallback profile; keep only the path under test enabled.
+- **FULL_INTEGRATION** — current end-to-end profile; run the full workflow, disabling destructive final sends only when needed. If older notes use `FULL_INTEGRATION` for a block-toggle variant, treat that as a legacy fallback form of the same profile, not the default path.
 
 Rules:
 
-- Disable the earliest block in an unwanted branch when possible.
-- Re-fetch the workflow after toggles and confirm the expected blocks changed.
 - Do not edit logic or subblocks during a verification-only run.
+- Only use low-level block toggles when the current draft execution surface cannot isolate behavior safely.
+- If you do use legacy toggles, re-fetch the workflow and confirm the expected blocks changed.
 
 ## Phase 3: EXECUTE
 
-Run `execute_workflow` with:
+Run the draft workflow with `sim_test` or `run_workflow` using:
 
-- `useDraftState: true`
 - one crafted payload
 - identifiers and message fields matched to the scenario
+- draft state unless you intentionally need deployed behavior
 
 If the workflow has side-effecting blocks, prefer test-safe IDs or temporary mock
 blocks before using `FULL_INTEGRATION`.
@@ -63,17 +64,15 @@ Inspect:
 Use `verification-rules.md` for assertion patterns. If the workflow fails, capture
 the failing block and the exact error text before making more changes.
 
-## Phase 5: RESTORE
+## Phase 5: DEBUG
 
-Always restore all toggled blocks, even if execution fails or times out.
+If the run fails, diagnose first with `sim_debug`, execution logs, and trace
+spans.
 
-Minimum restore loop:
-
-1. Re-enable the blocks you disabled.
-2. Re-fetch the workflow.
-3. Confirm the enabled state matches the original snapshot.
-
-Use `error-recovery.md` if the workflow is left in an uncertain state.
+1. Capture the failing block, exact error text, and payload.
+2. Reproduce once on the same current draft path if the failure is ambiguous.
+3. Only if the run already used block toggles, follow the historical recovery
+   steps in `error-recovery.md`.
 
 ## Phase 6: RECORD
 
@@ -88,8 +87,9 @@ Record:
 
 ## Concurrency Rule
 
-Only one agent should test a workflow at a time. Parallel block toggles corrupt
-the test state and make restore steps unreliable.
+Only one agent should actively test a workflow at a time. If a run drops into
+legacy block toggles, parallel edits corrupt the test state and make recovery
+unreliable.
 
 ## Side-Effect Rule
 

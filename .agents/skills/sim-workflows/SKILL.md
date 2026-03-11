@@ -1,16 +1,16 @@
 ---
 name: sim-workflows
-description: Use when building or modifying Sim workflows programmatically via MCP tools - adding/removing blocks, connecting edges, managing workflow state, importing/exporting workflows, or automating workflow creation. Provides comprehensive guide for all sim-mcp operations including block types, API operations, variables, subflows, templates, and best practices.
+description: Use when building or modifying Sim workflows via the current Sim MCP workflow tools. Best for workflow creation, sim_build / sim_plan / sim_edit changes, execution/testing flows, deployment, and block/output conventions. Load the references here for block semantics and patterns, but verify exact tool names against the current MCP definitions when the surface changes.
 ---
 
 # AI-Native Workflow Management
 
-Autonomous guide for creating, building, executing, and monitoring Sim Studio workflows via the 28 sim-mcp tools. All operations update the UI in real-time.
+Autonomous guide for creating, building, testing, and debugging Sim Studio workflows via the current workflow MCP surface. Tool names evolve faster than block semantics; use this skill for workflow patterns and treat the current MCP definitions as the authority for exact tool names.
 
-> **Deep dives:** [MCP Tools](references/mcp-tools-reference.md) · [Block Types](references/block-types.md) · [Function Patterns](references/function-block-patterns.md) · [API Patterns](references/api-block-patterns.md) · [Troubleshooting](references/troubleshooting.md) · [Templates](examples/workflow-templates.json)
+> **Deep dives:** [Legacy MCP parameter appendix](references/mcp-tools-reference.md) · [Block Types](references/block-types.md) · [Function Patterns](references/function-block-patterns.md) · [API Patterns](references/api-block-patterns.md) · [Troubleshooting](references/troubleshooting.md) · [Templates](examples/workflow-templates.json)
 
 **When to read references:**
-- **Detailed tool parameters** → [MCP Tools Reference](references/mcp-tools-reference.md)
+- **Historical parameter examples from the older fine-grained surface** → [MCP Tools Reference](references/mcp-tools-reference.md) (legacy only; use current MCP definitions for the live surface)
 - **Subblock IDs, formats, output fields** → [Block Types](references/block-types.md)
 - **Function block sandbox & code patterns** → [Function Patterns](references/function-block-patterns.md)
 - **API block headers, body, tag resolution** → [API Patterns](references/api-block-patterns.md)
@@ -24,60 +24,45 @@ Create → Build → Configure → Execute → Monitor → Debug → Iterate
 
 | Phase | Tools | Purpose |
 |-------|-------|---------|
-| **Create** | `create_workflow` | Create empty workflow |
-| **Build** | `add_blocks`, `add_edge`, `add_variable` | Add blocks, connect them, define variables |
-| **Configure** | `update_subblock`, `update_block_name`, `toggle_block_enabled`, `update_block_parent` | Set block parameters |
-| **Execute** | `execute_workflow` | Run with any trigger type |
-| **Monitor** | `get_execution_logs`, `get_execution_log_detail` | Retrieve logs, trace spans, costs |
-| **Inspect** | `list_workflows`, `get_workflow`, `get_block` | Read workflow state |
-| **Manage** | `remove_blocks`, `remove_edge`, `remove_variable` | Remove components |
-| **Skills** | `list_skills`, `get_skill`, `create_skill`, `update_skill`, `delete_skill` | Manage workspace skills for agents |
-| **Advanced** | `replace_workflow_state`, `update_subflow`, `list_custom_tools`, `get_custom_tool`, `upsert_custom_tools` | Bulk ops, loops, custom tools |
+| **Create** | `create_workflow` | Create an empty workflow shell |
+| **Build** | `sim_build` or `sim_plan` → `sim_edit` | Make workflow changes through the current editing surface |
+| **Execute / Test** | `sim_test`, `run_workflow`, `run_workflow_until_block`, `run_block`, `run_from_block` | Verify full or partial behavior without deploying |
+| **Inspect** | `list_workspaces`, `list_workflows`, `get_workflow`, `get_deployed_workflow_state` | Discover workflows and compare draft vs deployed state |
+| **Deploy** | `sim_deploy`, `generate_api_key` | Expose a workflow externally after draft verification |
+| **Debug** | `sim_debug` | Diagnose failures or unexpected behavior |
 
 ---
 
 ## Tool Quick Reference
 
-> **Full parameter tables:** [MCP Tools Reference](references/mcp-tools-reference.md)
+> **Historical parameter appendix only:** [MCP Tools Reference](references/mcp-tools-reference.md). For current tool names and parameters, use the live MCP definitions first.
 
-### Creation & Building
+### Create & Change
 
-- **`create_workflow`**`({ name, workspaceId })` → `{ id, name }`
-- **`add_blocks`**`({ workflowId, blocks: [{ type, name, position: {x,y} }] })` — configure with `update_subblock` after
-- **`add_edge`**`({ workflowId, source, target, sourceHandle?, targetHandle? })` — always use separate calls
-- **`add_variable`**`({ workflowId, name, type, value })` — reference as `<variable.name>`
+- **`create_workflow`**`({ name, workspaceId? })` → create the workflow shell first
+- **`sim_build`**`({ workflowId, request })` — fastest path for most edits
+- **`sim_plan`**`({ workflowId, request })` → **`sim_edit`**`({ workflowId, plan })` — use when you need an inspectable plan
 
-### Configuration
+### Execute & Verify
 
-- **`update_subblock`**`({ workflowId, blockId, subblockId, value })` — primary block configuration tool
-- **`update_block_name`**`({ workflowId, blockId, name })`
-- **`toggle_block_enabled`**`({ workflowId, blockId, enabled })` — [safe testing patterns](references/mcp-tools-reference.md#disabling-blocks-for-safe-testing)
-- **`update_block_parent`**`({ workflowId, blockId, parentId })` — nest in loop/parallel or `null` to remove
+- **`sim_test`**`({ workflowId, request })` — preferred verification wrapper after builds
+- **`run_workflow`**`({ workflowId, workflow_input?, useDeployedState? })` — full run
+- **`run_workflow_until_block`**`({ workflowId, stopAfterBlockId, workflow_input? })` — stop after a target block
+- **`run_block`**`({ workflowId, blockId, executionId? })` — isolate a single block after at least one prior run
+- **`run_from_block`**`({ workflowId, startBlockId, executionId? })` — resume from a chosen block using cached upstream outputs
 
-### Execution & Monitoring
+### Inspect, Deploy, Debug
 
-- **`execute_workflow`**`({ workflowId, input?, triggerType? })` — `useDraftState: true` (default) = no deployment needed
-- **`get_execution_logs`**`({ workspaceId, workflowId?, level?, details?, includeTraceSpans? })`
-- **`get_execution_log_detail`**`({ logId })` — full trace with cost breakdown
-
-### Inspection & Removal
-
-- **`list_workflows`**`({ workspaceId })` · **`get_workflow`**`({ workflowId, verbose: false })` · **`get_block`**`({ workflowId, blockId })`
-- **`remove_blocks`**`({ workflowId, blockIds })` · **`remove_edge`**`({ workflowId, edgeId })` · **`remove_variable`**`({ workflowId, variableId })`
-
-### Skills & Advanced
-
-- **`list_skills`**`({ workspaceId })` · **`get_skill`**`({ workspaceId, id })` · **`create_skill`**`({ workspaceId, name, description, content })` · **`update_skill`**`(...)` · **`delete_skill`**`({ workspaceId, id })`
-- **`replace_workflow_state`**`({ workflowId, state })` · **`update_subflow`**`({ workflowId, id, type, config })`
-- **`list_custom_tools`**`({ workspaceId })` · **`get_custom_tool`**`({ toolId, workspaceId? })` · **`upsert_custom_tools`**`({ workspaceId, tools })`
-
-**⚠️ After deleting a skill:** Manually remove the skill reference from agent blocks — deletion does NOT auto-remove references. [Details](references/mcp-tools-reference.md#delete_skill)
+- **`list_workspaces`**`()`, **`list_workflows`**`({ workspaceId?, folderId? })`, **`get_workflow`**`({ workflowId })`
+- **`get_deployed_workflow_state`**`({ workflowId })` — compare draft vs deployed state
+- **`sim_deploy`**`({ workflowId, request })` · **`generate_api_key`**`({ name, workspaceId? })`
+- **`sim_debug`**`({ workflowId, error })` — use when a run fails and you need diagnosis
 
 ### Using MCP Tools Correctly
 
 - Block IDs must be unique within a workflow
-- Create blocks first (`add_blocks`), then connect (`add_edge` — one call per connection)
-- For condition/router blocks: set conditions via `update_subblock` BEFORE adding edges
+- Create or modify the draft workflow first, then test it before deploying
+- For condition/router blocks: define the condition or route set before verifying branch behavior
 - `sourceHandle` format: `"condition-{conditionId}"` or `"router-{routeId}"`
 
 ---
@@ -151,38 +136,27 @@ Create → Build → Configure → Execute → Monitor → Debug → Iterate
 
 ---
 
-## Quick Start: Start → Agent → Response
+## Quick Start: Create → Build → Test
 
 ```
 // 1. Create workflow
 create_workflow({ name: "My Workflow", workspaceId: "825eaf6a-..." })
 → { id: "wf_new" }
 
-// 2. Add blocks
-add_blocks({ workflowId: "wf_new", blocks: [
-  { id: "trigger", type: "start_trigger", name: "Start", position: { x: 100, y: 300 } },
-  { id: "agent1", type: "agent", name: "Process", position: { x: 400, y: 300 } },
-  { id: "resp", type: "response", name: "Response", position: { x: 700, y: 300 } }
-]})
+// 2. Build or modify it
+sim_build({
+  workflowId: "wf_new",
+  request: "Create a start → agent → response workflow that processes the incoming payload and returns JSON."
+})
 
-// 3. Connect blocks
-add_edge({ workflowId: "wf_new", source: "trigger", target: "agent1" })
-add_edge({ workflowId: "wf_new", source: "agent1", target: "resp" })
+// 3. Test the draft workflow
+sim_test({
+  workflowId: "wf_new",
+  request: "Run one draft test with input {\"message\":\"Test\"} and verify the response path."
+})
 
-// 4. Configure agent
-update_subblock({ ..., blockId: "agent1", subblockId: "model", value: "gpt-4o" })
-update_subblock({ ..., blockId: "agent1", subblockId: "apiKey", value: "{{OPENAI_API_KEY}}" })
-update_subblock({ ..., blockId: "agent1", subblockId: "messages", value: [
-  { "role": "system", "content": "Process the payload." },
-  { "role": "user", "content": "Process: <Start.input>" }
-]})
-
-// 5. Configure response (dataMode FIRST)
-update_subblock({ ..., blockId: "resp", subblockId: "dataMode", value: "json" })
-update_subblock({ ..., blockId: "resp", subblockId: "data", value: "<Process.content>" })
-
-// 6. Execute
-execute_workflow({ workflowId: "wf_new", input: { message: "Test" }, triggerType: "api" })
+// 4. If you need the raw run result
+run_workflow({ workflowId: "wf_new", workflow_input: { message: "Test" } })
 ```
 
 > [Conditional branching pattern](references/block-types.md#condition-branching-deep-dive) · [Debug failures](references/troubleshooting.md#debug-workflow-pattern)
@@ -191,9 +165,9 @@ execute_workflow({ workflowId: "wf_new", input: { message: "Test" }, triggerType
 
 ## Debugging
 
-1. **Inspect state:** `get_workflow({ workflowId, verbose: true })` — check blocks, edges, subBlocks
-2. **Check logs:** `get_execution_logs({ workspaceId, workflowId, details: "full", includeTraceSpans: true })`
-3. **Common issues:** missing edges, wrong sourceHandle, missing apiKey, incorrect tag syntax
+1. **Inspect draft state:** `get_workflow({ workflowId })`
+2. **Run verification:** `sim_test({ workflowId, request: "test the failing path and summarize the trace" })`
+3. **Escalate diagnosis:** `sim_debug({ workflowId, error: "<exact error text>" })`
 
 > [Full debug guide](references/troubleshooting.md) · [Error diagnosis table](references/troubleshooting.md#error-diagnosis-table)
 
@@ -206,7 +180,7 @@ execute_workflow({ workflowId: "wf_new", input: { message: "Test" }, triggerType
 | Wrong trigger type | `start_trigger` for `"api"/"manual"/"chat"/"mcp"/"a2a"`, `generic_webhook` for `"webhook"`, `schedule` for `"schedule"` |
 | Block ID in tags | Use **display name**: `<Agent 1.content>` not `<block_id.content>` |
 | Missing API key | Set both `apiKey` and `model` on agent blocks |
-| **OpenRouter + temperature** | ⚠️ **NEVER set `temperature` for OpenRouter models** (models starting with `openrouter/`) — causes `400 Bad Request`. Leave `temperature` subblock **null/empty**. OpenRouter uses model defaults. |
+| **OpenRouter + temperature** | Do **not** rely on a blanket OpenRouter rule here. Provider/model support can vary. If a run fails, follow the provider error and retry with provider defaults instead of assuming every `openrouter/*` model rejects `temperature`. |
 | Wrong condition handles | Use `"condition-{conditionId}"` NOT `"true"`/`"false"` |
 | Response returns `{}` | Set `dataMode` to `"json"` before setting `data` |
 | `inputData is not defined` | Use `<BlockName.field>` tag syntax; `params` is always `{}` |
@@ -219,11 +193,11 @@ execute_workflow({ workflowId: "wf_new", input: { message: "Test" }, triggerType
 
 **Minimum viable workflow:**
 ```
-create_workflow → add_blocks (trigger + agent + response) → add_edge × 2 → update_subblock (model, apiKey, messages, dataMode, data) → execute_workflow
+create_workflow → sim_build → sim_test → run_workflow (optional raw execution) → sim_deploy (only if external access is needed)
 ```
 
 **Tag syntax:** `<BlockName.field>` (block output) · `<variable.name>` (workflow var) · `{{ENV_VAR}}` (env)
 
-**Trigger types:** `api` | `manual` | `schedule` | `chat` | `webhook` | `mcp` | `a2a`
+**Draft-first rule:** prefer `sim_test` / `run_workflow` on draft state before deploying
 
 **Block positioning:** Trigger x=100, Processing x=400-700, Response x=900+, Branch spacing y±150

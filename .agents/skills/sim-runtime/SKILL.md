@@ -37,7 +37,7 @@ Native dev is 3-5x faster than Docker volumes on macOS (50-200ms HMR vs 200-800m
 - **Docker** and Docker Compose installed and running
 - `.env` file at `apps/sim/.env` (copy from `apps/sim/.env.example`)
 - Core env vars: `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `NEXT_PUBLIC_APP_URL`, `ENCRYPTION_KEY`, `INTERNAL_API_SECRET`
-- Optional / deployment-specific security var: `API_ENCRYPTION_KEY` (recommended by self-hosting docs and Helm guidance, but not required by the local env schema)
+- Optional / deployment-specific security var: `API_ENCRYPTION_KEY` (not required by the local env schema; if you set it, use a 64-character hex string)
 
 ## Starting the Environment
 
@@ -65,20 +65,20 @@ Expected: `localhost:5432 - accepting connections`
 ### Step 2: Run Database Migrations
 
 ```bash
-bun run db:migrate
+bun run --cwd packages/db db:migrate
 ```
 
-Run from repo root. Runs both upstream migrations (`drizzle.config.ts`) and local fork migrations (`drizzle-local.config.ts`) which include the budget tables. Requires `DATABASE_URL` in `apps/sim/.env`.
+Run from repo root. The `db:migrate` script lives in `packages/db/package.json`, not the workspace root package. It runs both upstream migrations (`drizzle.config.ts`) and local fork migrations (`drizzle-local.config.ts`). Requires `DATABASE_URL` in `apps/sim/.env`.
 
 ### Step 3: Start App + Socket Server
 
-Use async mode with detach so the process persists:
+If you want the server to survive agent shutdown, use async mode with detach:
 
 ```text
 bash(command: "bun run dev:full", mode="async", detach=true)
 ```
 
-**Important:** `detach=true` ensures the server survives agent shutdown. This runs `concurrently` with two processes labeled `[App]` and `[Realtime]`.
+**Important:** `detach=true` ensures the server survives agent shutdown. Use plain async (without detach) when you specifically need `read_bash` / `stop_bash` control during the same session.
 
 ### Step 4: Verify Services Are Ready
 
@@ -100,7 +100,7 @@ Expected: `{"status":"ok","timestamp":"..."}`
 
 > **Note:** The socket health endpoint returns three fields: `status` (`"ok"` or `"error"`), `timestamp` (ISO 8601), and `connections` (active connection count). On error it returns HTTP 503 with `{"status":"error","message":"Health check failed"}`.
 
-If curl fails, the server is still compiling. Wait 10s and retry. Monitor with `read_bash` using the shellId from the async start.
+If curl fails, the server is still compiling. Wait 10s and retry. If you started the process without detach, monitor with `read_bash`. If you started it detached, rely on health checks and the redirected log file instead.
 
 ### Step 5: Confirm All Running
 
@@ -120,19 +120,12 @@ bash .agents/skills/sim-runtime/scripts/check-health.sh
 
 ## Monitoring Logs
 
-**App + Socket logs:** Detached processes automatically redirect output to temporary log files. Use `read_bash` to get the log path:
-
-```text
-read_bash(shellId: "{shellId}", delay: 5)
-# Returns: <command detached, output redirected to /var/folders/.../copilot-detached-{shellId}-*.log>
-```
-
-Then monitor the log file:
+**App + Socket logs:** Detached processes redirect output to a temporary log file. Tail that file directly:
 ```bash
-tail -f /var/folders/.../T/copilot-detached-{shellId}-*.log
+tail -f /var/folders/.../T/copilot-detached-*.log
 ```
 
-**Best practice:** Use health checks (curl endpoints) instead of parsing logs to verify services are running.
+**Best practice:** Use health checks (curl endpoints) instead of parsing logs to verify services are running. If you need live interactive output, start the server without detach and use `read_bash` on that session instead.
 
 **Database logs:**
 
@@ -169,7 +162,7 @@ docker compose -f docker-compose.local.yml down -v
 ### Re-run Migrations
 
 ```bash
-bun run db:migrate
+bun run --cwd packages/db db:migrate
 ```
 
 ### Clear Next.js Cache

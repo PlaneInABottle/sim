@@ -21,7 +21,7 @@ Comprehensive list of block types available in Sim workflows.
 
 **Trigger modes (block UI):** `chat`, `manual`, `api` — the three modes available in the block's trigger selector.
 
-> **Execution-level trigger types:** When executing a workflow via `execute_workflow`, the `triggerType` parameter also accepts `mcp` and `a2a`. These are metadata values — the executor resolves them through the same `start_trigger` block (defaulting to `manual` resolution). The full set of valid `triggerType` values is: `api`, `manual`, `chat`, `schedule`, `webhook`, `mcp`, `a2a`.
+> **Execution-level trigger types:** When running a workflow via the current workflow run tools, the executor still distinguishes trigger metadata such as `api`, `manual`, `chat`, `schedule`, `webhook`, `mcp`, and `a2a`. Exact parameter names may vary by MCP surface, but these modes still resolve through the same trigger model.
 
 ### generic_webhook
 Receive webhooks from any external service. Exposes a unique webhook URL.
@@ -93,6 +93,11 @@ Skills are stored at the workspace level and attached to agent blocks via the `s
 
 #### Attaching Skills to Agent Blocks
 
+> **Lower-level substrate note:** The example below uses the historical/raw
+> block-mutation layer. Prefer the current workspace skill-management surface
+> when it already covers the change; use `update_subblock` only when you
+> intentionally need block-level edits.
+
 ```
 // Attach skills
 update_subblock({
@@ -107,7 +112,7 @@ update_subblock({
 update_subblock({ ..., subblockId: "skills", value: [] })
 ```
 
-Use `list_skills` to discover available skill IDs. Names must be kebab-case. Deleted skills are silently skipped at runtime.
+Use the current workspace skill-management tools to discover available skill IDs. Names must be kebab-case. Deleted skills are silently skipped at runtime.
 
 ## Logic Blocks
 
@@ -256,7 +261,7 @@ add_edge({ source: "router_1", target: "general_agent", sourceHandle: "router-ge
 
 ## Subflow Containers
 
-> **⚠️ Important:** Loop and parallel are **subflow containers**, not registered block types. They do not appear in the block registry (`blocks/registry.ts`). They are created via `add_blocks` with `type: "loop"` or `type: "parallel"` and managed via `update_subflow`. Blocks are nested inside them using `update_block_parent`.
+> **⚠️ Important:** Loop and parallel are **subflow containers**, not registered block types. They do not appear in the block registry (`blocks/registry.ts`). They are managed by the workflow editing surface, and blocks are nested inside them via parent-container wiring in that surface.
 
 ### loop (subflow)
 Iterate over collections, repeat N times, or loop until a condition is met. Created via `add_blocks` with `type: "loop"`.
@@ -265,7 +270,7 @@ Iterate over collections, repeat N times, or loop until a condition is met. Crea
 ```typescript
 {
   loopType: "for" | "forEach" | "while" | "doWhile"
-  // for:       runs N times (configure iterations via update_subflow)
+  // for:       runs N times (configure iterations through the active workflow editing surface)
   // forEach:   iterates over a collection
   // while:     runs while condition is true (checked before each iteration)
   // doWhile:   runs at least once, then checks condition

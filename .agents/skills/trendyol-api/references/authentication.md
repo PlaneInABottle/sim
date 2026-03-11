@@ -12,6 +12,6 @@ Credentials consist of an **API Key** and **API Secret**, which are combined as 
 Authorization: Basic {base64(apiKey:apiSecret)}
 ```
 
-## Required Path Parameter
+## Merchant Identifier Naming
 
-Both Q&A pages make clear that `supplierId` (seller/supplier ID) is required in the URL path for all endpoints.
+Across the official docs in this skill, the merchant identifier appears as both `supplierId` and `sellerId` depending on the endpoint. Follow the parameter name used in each endpoint's own documentation instead of assuming one name applies everywhere.

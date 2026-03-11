@@ -1,10 +1,16 @@
 # Kamatas PROD — Test Suite
 
-Test scenarios for the Kamatas PROD workflow (`98c363ef-febc-42cc-82d2-d40b501c5b56`).
+Test scenarios for the repo-local Kamatas PROD workflow snapshot
+(`98c363ef-febc-42cc-82d2-d40b501c5b56`). Re-check the current workflow before
+assuming block count, enabled state, or scenario coverage still matches.
+
+Use the current `sim_test` / `run_workflow` verification surface first. The
+block-disable notes in this file are repo-maintained low-level fallback guidance
+for older/manual isolation runs, not the default current workflow-testing path.
 
 **Workspace:** `ac7ec7a6-f09a-4035-8e96-e9e95b75221b`
-**Block Count:** 25 (all enabled)
-**Priority Scenarios:** 8 (see [Extending the Suite](#extending-the-suite) for pattern to add more)
+**Snapshot Block Count:** 25 (all enabled when this note was captured)
+**Repo-Maintained Priority Scenarios:** 8 (see [Extending the Suite](#extending-the-suite) for pattern to add more)
 
 ---
 
@@ -15,8 +21,8 @@ Test scenarios for the Kamatas PROD workflow (`98c363ef-febc-42cc-82d2-d40b501c5
 3. [Test Group 2: Budget System](#test-group-2-budget-system)
 4. [Test Group 3: Media Handoff](#test-group-3-media-handoff)
 5. [Test Group 4: Full Integration](#test-group-4-full-integration)
-6. [Block Disable Profiles](#block-disable-profiles)
-7. [Execution Order](#execution-order)
+6. [Legacy Block Disable Profiles](#legacy-block-disable-profiles)
+7. [Legacy Fallback Execution Order](#legacy-fallback-execution-order)
 8. [Extending the Suite](#extending-the-suite)
 
 ---
@@ -60,7 +66,7 @@ Key blocks referenced in test scenarios:
 
 ## Test Group 1: Condition Routing
 
-**Profile:** CONDITION_ONLY
+**Profile:** CONDITION_ONLY (legacy low-level fallback)
 **Purpose:** Verify that routeByType and isMediaMessage conditions route messages correctly.
 **Cost:** $0.00 per scenario
 
@@ -73,7 +79,7 @@ Key blocks referenced in test scenarios:
 | **Expected Routing** | routeByType → IF (text path) → budgetCheck |
 | **Expected Trace** | `["webhook", "routeByType"]` |
 | **Condition Assertions** | `routeByType.conditionResult = true`, `routeByType.selectedOption CONTAINS "if"` |
-| **Notes** | Most common message type. Incoming text triggers the IF path which leads to budgetCheck → budgetGate. With CONDITION_ONLY profile, only the routeByType condition executes (budgetCheck is a postgresql block, disabled). |
+| **Notes** | Most common message type. Incoming text triggers the IF path which leads to budgetCheck → budgetGate. With CONDITION_ONLY profile, only the routeByType condition executes (budgetCheck is a postgresql block, disabled). This expected trace is for the legacy fallback path; on the default current path the run continues into budgetCheck. |
 
 ### CR-02: Product Inquiry → Text Path
 
@@ -84,7 +90,7 @@ Key blocks referenced in test scenarios:
 | **Expected Routing** | routeByType → IF (text path) |
 | **Expected Trace** | `["webhook", "routeByType"]` |
 | **Condition Assertions** | `routeByType.conditionResult = true` |
-| **Notes** | Product search text — same routing as greeting. Content only matters at the supportAgent stage. |
+| **Notes** | Product search text — same routing as greeting. Content only matters at the supportAgent stage. This expected trace is for the legacy fallback path; on the default current path the run continues into budgetCheck. |
 
 ### CR-03: Voice Message → Media Path
 
@@ -95,7 +101,7 @@ Key blocks referenced in test scenarios:
 | **Expected Routing** | routeByType → ELSE → isMediaMessage → IF (media path) |
 | **Expected Trace** | `["webhook", "routeByType", "isMediaMessage"]` |
 | **Condition Assertions** | `routeByType.conditionResult = false`, `isMediaMessage.conditionResult = true` |
-| **Notes** | Audio attachment triggers ELSE on routeByType (not incoming text), then IF on isMediaMessage. |
+| **Notes** | Audio attachment triggers ELSE on routeByType (not incoming text), then IF on isMediaMessage. This expected trace is for the legacy fallback path; on the default current path a successful media route continues to mediaHandoff. |
 
 ### CR-04: Outgoing Message → Dropped
 
@@ -112,31 +118,36 @@ Key blocks referenced in test scenarios:
 
 ## Test Group 2: Budget System
 
-**Profile:** PATH_ISOLATION (budget path)
+**Profile:** PATH_ISOLATION (budget path, legacy low-level fallback)
 **Purpose:** Verify the budget check/gate/handoff pipeline for conversation quota enforcement.
 **Cost:** $0.00 per scenario (postgresql + condition blocks only, no AI agent)
 
 ### Setup: Budget State Configuration
 
-Budget testing requires specific database states. Use the config-production-db operational interface
-to understand the budget tables, then verify state via read-only SQL queries:
+Budget testing requires specific database states. The budget tables live in the
+app database schema, not `config_production`. Use `db-migrations` plus
+`packages/db/schema.ts` / `packages/db/local-migrations/0000_create_budget_tables.sql`
+for table provenance, then verify state via read-only SQL queries:
 
 ```sql
 -- Read-only verification query (do NOT use UPDATE for test setup)
 SELECT
+    w.workspace_id,
     w.conversation_limit,
-    COUNT(c.id) AS used,
-    w.is_enabled
+    w.is_enabled,
+    COUNT(c.id) AS used
 FROM workspace_budget w
 LEFT JOIN chatwoot_conversation_consumptions c
-    ON c.workspace_id = w.id
-    AND c.created_at >= date_trunc('month', CURRENT_TIMESTAMP)
+    ON c.workspace_id = w.workspace_id
 WHERE w.workspace_id = 'ac7ec7a6-f09a-4035-8e96-e9e95b75221b'
-GROUP BY w.conversation_limit, w.is_enabled;
+GROUP BY w.workspace_id, w.conversation_limit, w.is_enabled;
 ```
 
-> **Important:** Modify budget state via the operational API or sim-mcp subblock updates,
-> not direct SQL. Use the generic `sim-workflow-testing` protocol for workflow-state changes.
+> **Important:** This verification query intentionally does **not** filter by
+> month; the repo schema documents a flat limit with no monthly reset. If it
+> returns zero rows, the workspace is in the documented fail-open "no budget
+> row" state. Modify budget state via the operational API or the current
+> workflow/configuration management surface, not direct SQL.
 
 ### BG-01: Budget Available — Conversation Allowed
 
@@ -182,13 +193,13 @@ GROUP BY w.conversation_limit, w.is_enabled;
 
 ## Test Group 3: Media Handoff
 
-**Profile:** PATH_ISOLATION (media path)
+**Profile:** PATH_ISOLATION (media path, legacy low-level fallback)
 **Purpose:** Verify the mediaHandoff function block processes media messages correctly.
 **Cost:** $0.00–0.01 per scenario (function block only, no AI agent)
 
-### Block Disable List
+### Legacy Block Disable List (fallback only)
 
-Disable all text/budget path blocks (keep media path enabled):
+If you intentionally use legacy block-state isolation, disable all text/budget path blocks (keep media path enabled):
 
 ```python
 disable_blocks = [
@@ -238,13 +249,13 @@ keep_blocks = [
 
 ## Test Group 4: Full Integration
 
-**Profile:** FULL_INTEGRATION
+**Profile:** FULL_INTEGRATION (current end-to-end profile)
 **Purpose:** End-to-end test with real AI agent. Validates complete text pipeline.
 **Cost:** $0.01–0.05 per scenario (AI tokens consumed)
 
-### Block Disable List
+### Legacy Block Disable List (fallback only)
 
-Only disable the final send block:
+If you intentionally use the low-level fallback, only disable the final send block:
 
 ```python
 disable_blocks = [
@@ -265,13 +276,13 @@ keep_blocks = [
 | **Expected Trace** | `["webhook", "routeByType", "budgetCheck", "budgetGate", "buildCompositeKey", "fetchCustomerInformation", "storeUserMessage", "setLatestMessageId", "debounceWait", "getLatestMessageId", "checkIfTheMessageLatest", "agentLoop", "supportAgent", "agentVariable", "getLatestMessageId2", "checkIfTheMessageLatest2", "extractSearchContext", "hasIkasContext", "conversationHistory"]` |
 | **Output Assertions** | `supportAgent.output.content` is a Turkish greeting, mentions Kamatas |
 | **Status Assertions** | All blocks: `status = "success"` |
-| **Notes** | Most expensive test. Validates full end-to-end behavior. **Parallel execution:** buildCompositeKey fans out to fetchCustomerInformation and storeUserMessage in parallel — trace may show them in either order. **Conditional trace:** If fetchCustomerInformation returns ikas data, `storeIkasContext` appears between `hasIkasContext` and `conversationHistory`. |
+| **Notes** | Most expensive test. Validates full end-to-end behavior. **Parallel execution:** buildCompositeKey fans out to fetchCustomerInformation and storeUserMessage in parallel — trace may show them in either order. **Conditional trace:** If fetchCustomerInformation returns ikas data, `storeIkasContext` appears between `hasIkasContext` and `conversationHistory`. On the default current path, `sendToChatwoot` may appear after `conversationHistory`; the listed trace reflects the no-final-send variant. |
 
 ---
 
-## Block Disable Profiles
+## Legacy Block Disable Profiles
 
-Summary of which blocks to disable for each test profile, using full block IDs.
+Historical low-level fallback summary of which blocks to disable for each test profile, using full block IDs.
 
 ### Profile: CONDITION_ONLY
 
@@ -327,7 +338,7 @@ keep_blocks = [
 # Disable all other 20 blocks
 ```
 
-### Profile: FULL_INTEGRATION
+### Legacy fallback variant: FULL_INTEGRATION
 
 Disable 1 block, keep 24:
 
@@ -340,9 +351,9 @@ disable_blocks = [
 
 ---
 
-## Execution Order
+## Legacy Fallback Execution Order
 
-Recommended order for running the test suite:
+Recommended order only if you intentionally run the legacy block-isolation suite:
 
 ```
 Phase 1: CONDITION_ONLY (4 scenarios: CR-01 through CR-04)

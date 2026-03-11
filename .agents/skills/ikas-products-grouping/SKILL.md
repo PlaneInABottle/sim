@@ -150,7 +150,9 @@ Output:
 
 ## Implementation: Three Phases
 
-See `references/testing-workflow.md` for complete step-by-step guide.
+See `references/testing-workflow.md` for the JS-first validation sequence plus the
+current draft-test workflow. Any older fine-grained workflow-editing commands in
+that reference are explicitly marked historical only.
 
 ### Phase 1: Local JS Test
 
@@ -164,15 +166,17 @@ Create `test-products.js` with:
 
 ### Phase 2: Isolated Tool Test in Sim
 
-1. Create custom tool via `sim-mcp-upsert_custom_tools`
-2. Add to agent block
-3. **Disable all other blocks** except: trigger, tool, response
-4. Execute: `sim-mcp-execute_workflow(useDraftState: true)`
-5. Check logs: `sim-mcp-get_execution_logs`
+1. Attach the custom tool through the current local workflow surface described in
+   `sim-workflows`
+2. Keep the draft verification path minimal: `start_trigger` → `agent` (with the
+   new tool) → `response`
+3. Test the draft workflow with `sim_test` or `run_workflow`
+4. Use `sim_debug` only if the draft run fails
 
 ### Phase 3: Full Integration
 
-1. Re-enable all blocks
+1. Return to the normal end-to-end draft workflow without relying on legacy
+   block-toggle isolation steps
 2. Test with realistic customer conversations
 3. Check routing and prompt integration
 
@@ -219,13 +223,10 @@ In Sim Studio custom tools, use template variable syntax: `{{IKAS_CLIENT_ID}}`, 
 > Always follow your deployment's naming convention — check existing Sim Studio
 > workspace variables or `.env` files for the correct prefix.
 
-## Real-World Example: Kamatas
+## Deployment Note
 
-- **Workspace:** `ac7ec7a6-f09a-4035-8e96-e9e95b75221b`
-- **Workflow:** Kamatas PROD (`53408cc2-52fa-46e5-85d7-402d2f42f3a4`)
-- **Tool ID:** `1l6OXfiPurePIeJcLDOS4`
-- **Token Savings:** verify from your execution logs (varies by category/data shape)
-- **Performance:** ~650-850ms per category, Redis cached
+- This pattern was originally derived from a Kamatas storefront workflow, but workflow IDs, tool IDs, and environment-specific timings are intentionally omitted here because they may be stale.
+- Verify token savings and latency in your own execution logs after applying the pattern to your store.
 
 ## See Also
 

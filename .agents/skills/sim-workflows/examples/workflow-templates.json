@@ -185,7 +185,7 @@
 
   "loop_processing": {
     "name": "Loop Processing",
-    "description": "Process array items with agent in a loop",
+    "description": "Process array items with agent in a loop. Illustrative template: create the loop container, then attach child blocks through parent-container wiring in the active editing surface.",
     "blocks": [
       {
         "id": "trigger_1",
@@ -199,7 +199,7 @@
         "name": "Process Items",
         "position": { "x": 350, "y": 100 },
         "data": {
-          "type": "forEach",
+          "loopType": "forEach",
           "array": "<Start.input.items>",
           "maxIterations": 100
         }
@@ -209,10 +209,10 @@
         "type": "agent",
         "name": "Process Item",
         "position": { "x": 600, "y": 100 },
+        "parentId": "loop_1",
         "data": {
           "model": "gpt-3.5-turbo",
-          "messages": [{"role": "system", "content": "Analyze the provided item."}],
-          "parentId": "loop_1"
+          "messages": [{"role": "system", "content": "Analyze the provided item."}]
         }
       },
       {
@@ -304,7 +304,7 @@
 
   "parallel_processing": {
     "name": "Parallel Processing",
-    "description": "Execute multiple agents in parallel",
+    "description": "Execute multiple agents in parallel. Illustrative template: create the parallel container, then attach child blocks through parent-container wiring in the active editing surface.",
     "blocks": [
       {
         "id": "trigger_1",
@@ -326,10 +326,10 @@
         "type": "agent",
         "name": "Sentiment Analysis",
         "position": { "x": 600, "y": 50 },
+        "parentId": "parallel_1",
         "data": {
           "model": "gpt-3.5-turbo",
-          "messages": [{"role": "system", "content": "Analyze sentiment of the provided text."}],
-          "parentId": "parallel_1"
+          "messages": [{"role": "system", "content": "Analyze sentiment of the provided text."}]
         }
       },
       {
@@ -337,10 +337,10 @@
         "type": "agent",
         "name": "Entity Extraction",
         "position": { "x": 600, "y": 200 },
+        "parentId": "parallel_1",
         "data": {
           "model": "gpt-3.5-turbo",
-          "messages": [{"role": "system", "content": "Extract entities from the provided text."}],
-          "parentId": "parallel_1"
+          "messages": [{"role": "system", "content": "Extract entities from the provided text."}]
         }
       },
       {
@@ -348,10 +348,10 @@
         "type": "agent",
         "name": "Summarization",
         "position": { "x": 600, "y": 350 },
+        "parentId": "parallel_1",
         "data": {
           "model": "gpt-3.5-turbo",
-          "messages": [{"role": "system", "content": "Summarize the provided text."}],
-          "parentId": "parallel_1"
+          "messages": [{"role": "system", "content": "Summarize the provided text."}]
         }
       },
       {

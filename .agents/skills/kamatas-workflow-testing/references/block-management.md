@@ -1,10 +1,12 @@
 # Block Management
 
-Architecture diagram, block reference, and SQL tracking schema for the Kamatas PROD workflow.
+Architecture diagram, block reference, and SQL tracking schema for the
+repo-local Kamatas PROD workflow snapshot. Re-check the current workflow before
+assuming IDs, block count, or enabled state still match.
 
 **Workflow:** `98c363ef-febc-42cc-82d2-d40b501c5b56`
 **Workspace:** `ac7ec7a6-f09a-4035-8e96-e9e95b75221b`
-**Block Count:** 25 (all enabled)
+**Snapshot Block Count:** 25 (all enabled when this note was captured)
 
 ---
 
@@ -93,7 +95,8 @@ flowchart TD
 
 ## Block Quick Reference
 
-All 25 blocks in the live Kamatas PROD workflow. All are currently **enabled**.
+All 25 blocks captured in this repo snapshot. Re-verify current enabled state
+before using this as an operational inventory.
 
 | # | Display Name | Block ID | Type | Path |
 |---|-------------|----------|------|------|

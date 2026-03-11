@@ -4,30 +4,35 @@ Comprehensive guide for using function (code) blocks in Sim workflows.
 
 ---
 
-## Sandbox Environment
+## Runtime Environment
 
-Function blocks execute in an **isolated-vm sandbox** with limited capabilities:
+Function blocks do **not** use one runtime in every case:
 
-### Available APIs
+- **JavaScript without imports / require** runs locally in the fast local VM path
+- **JavaScript with imports / require** uses the E2B sandbox
+- **Python** uses the E2B sandbox
+
+Plan examples around that split. If code needs external imports or Python, assume an
+E2B-backed execution path instead of the local VM path.
+
+### Commonly Available APIs
 
 | API | Description | Notes |
 |-----|-------------|-------|
 | `console.log()` | Logging (captured in `stdout`) | Also `console.error()`, `console.warn()` |
-| `fetch()` | HTTP requests (sandboxed) | Async; must `await` |
+| `fetch()` | HTTP requests | Async; must `await` |
 | `Math` | Standard Math object | All methods available |
 | `Date` | Date constructor & methods | `new Date()`, `Date.now()` |
 | `JSON` | Parse and stringify | `JSON.parse()`, `JSON.stringify()` |
 | `environmentVariables` | Access env vars | `environmentVariables.MY_VAR` |
 | `setTimeout` | Delayed execution | Available but subject to timeout |
 
-### NOT Available
+### Runtime-Specific Constraints
 
-- ❌ `require()` / `import` — no Node.js module system
-- ❌ `process`, `Buffer`, `__dirname`, `__filename`
-- ❌ `fs`, `path`, `os` — no filesystem access
-- ❌ `crypto` (Node.js) — use `Math.random()` for non-crypto randomness
-- ❌ `XMLHttpRequest` — use `fetch()` instead
-- ❌ External npm packages
+- **Local JavaScript path:** keep code self-contained; if you need `import` / `require`, it will switch to E2B instead of staying local
+- **Python path:** requires E2B
+- **Filesystem / package assumptions:** treat them as runtime-dependent and verify against the current execution environment before relying on them
+- **HTTP requests:** prefer `fetch()` over older browser-only patterns such as `XMLHttpRequest`
 
 ---
 

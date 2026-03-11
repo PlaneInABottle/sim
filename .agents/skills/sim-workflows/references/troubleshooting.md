@@ -1,6 +1,8 @@
 # Troubleshooting Reference
 
-Detailed troubleshooting guide for sim-mcp workflow operations. See [SKILL.md](../SKILL.md) for quick reference.
+Detailed troubleshooting guide for workflow MCP operations. Exact tool names may
+drift; prefer the current `run_*`, `sim_test`, and `sim_debug` surface exposed by
+the app repo over older legacy names.
 
 ---
 
@@ -8,13 +10,13 @@ Detailed troubleshooting guide for sim-mcp workflow operations. See [SKILL.md](.
 
 | Issue | Cause | Solution |
 |-------|-------|----------|
-| "No start block found" | Wrong trigger type for `execute_workflow` | Use `start_trigger` with `triggerType: "api"/"manual"/"chat"/"mcp"/"a2a"`, `generic_webhook` with `triggerType: "webhook"`, `schedule` with `triggerType: "schedule"` |
+| "No start block found" | Wrong trigger type for a workflow run | Use `start_trigger` for normal API/manual/chat/MCP/A2A runs, `generic_webhook` for webhook executions, and `schedule` for scheduled execution |
 | "Block not found" | Block was deleted or ID is wrong | Call `get_workflow` to verify current block IDs |
 | "Invalid block type" | Misspelled type name | Check the Block Types Reference |
 | "Edge already exists" | Duplicate source→target connection | Check existing edges with `get_workflow` first |
 | Execution returns no output | Missing response block or broken edge chain | Verify all blocks are connected; set `dataMode` to `"json"` on response block |
 | "missing required fields: API Key" | Agent block missing API key | Set `apiKey` and `model` subBlocks — both required (validated at runtime when block executes) |
-| Subblock update has no effect | Wrong `subblockId` | SubBlock IDs must be known from SKILL.md or block-types reference (not discoverable via `get_block` on fresh blocks) |
+| Workflow edit has no effect | Draft change was applied to the wrong field or not applied through the current editing surface | Re-check the current build/edit result, then verify the expected field names in SKILL.md or block-types before re-testing |
 | Logs show no results | Wrong `workspaceId` or time range | Verify workspaceId; try without date filters first |
 | Condition never matches | Wrong sourceHandle format | Use `"condition-{conditionId}"` not `"true"` / `"false"` |
 | `inputData is not defined` | Wrong variable in function code | Use `<BlockName.field>` tag syntax for block references (`params` is always `{}` for regular function blocks) |
@@ -39,36 +41,33 @@ Detailed troubleshooting guide for sim-mcp workflow operations. See [SKILL.md](.
 
 ## Debug Workflow Pattern
 
-### Step 1: Find error logs
+### Step 1: Reproduce the failure
 
 ```
-get_execution_logs({
-  workspaceId: "ws_id",
+sim_test({
   workflowId: "wf_abc",
-  level: "error",
-  details: "full",
-  includeTraceSpans: true,
-  limit: 5
+  request: "Run the failing scenario on the draft workflow and summarize the failing path."
 })
 ```
 
-### Step 2: Examine the specific failure
+### Step 2: Inspect the specific failure
 
 ```
-get_execution_log_detail({ logId: "failed_log_id" })
-→ Look at trace spans to find which block failed and why
+sim_debug({ workflowId: "wf_abc", error: "<exact error text from the failed run>" })
+→ Use the diagnosis plus the failing path summary to identify the broken block
 ```
 
 ### Step 3: Fix the block configuration
 
 ```
-update_subblock({ workflowId: "wf_abc", blockId: "failing_block_id", subblockId: "...", value: "..." })
+Apply the fix through the current workflow-editing surface (`sim_build` or
+`sim_plan` → `sim_edit`), then confirm the draft state before re-running.
 ```
 
-### Step 4: Re-execute to verify
+### Step 4: Re-run to verify
 
 ```
-execute_workflow({ workflowId: "wf_abc", input: { ... } })
+run_workflow({ workflowId: "wf_abc", workflow_input: { ... } })
 ```
 
 ---
@@ -77,25 +76,20 @@ execute_workflow({ workflowId: "wf_abc", input: { ... } })
 
 ```
 Step 1: Execute the workflow
-execute_workflow({
+run_workflow({
   workflowId: "wf_new",
-  input: { message: "Test payload" },
-  triggerType: "api"
+  workflow_input: { message: "Test payload" }
 })
 → returns execution result
 
-Step 2: Check execution logs
-get_execution_logs({
-  workspaceId: "825eaf6a-...",
+Step 2: Ask for a verification summary
+sim_test({
   workflowId: "wf_new",
-  details: "full",
-  includeTraceSpans: true,
-  includeFinalOutput: true,
-  limit: 5
+  request: "Run the same payload on the draft workflow and summarize the block path, outputs, and any errors."
 })
-→ returns logs with per-block traces, costs, outputs
+→ returns a verification summary for the run
 
-Step 3: Get detail for a specific execution
-get_execution_log_detail({ logId: "log_id_from_step_2" })
-→ returns full trace with block-by-block execution data
+Step 3: Debug a specific failure if needed
+sim_debug({ workflowId: "wf_new", error: "<error text>" })
+→ returns root-cause analysis and likely fixes
 ```

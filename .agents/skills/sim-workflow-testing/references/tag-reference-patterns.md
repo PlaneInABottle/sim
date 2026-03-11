@@ -109,9 +109,11 @@ WHERE workspace_id = '<variable.WORKSPACE_ID>'
 
 This is safe and expected. Tags are resolved **before** query validation/execution.
 
-### ⚠️ Writing Multi-line SQL/Code via `update_subblock`
+### ⚠️ Writing Multi-line SQL/Code Through the Workflow Editor
 
-When updating a `query` or `code` subblock via `sim-mcp`, **always use real newline characters** in the tool call — never `\n` escape sequences.
+When writing a `query` or `code` field through the current workflow-editing
+surface, **always use real newline characters** in the tool call — never `\n`
+escape sequences.
 
 XML tool parameters do **not** interpret `\n` as a newline — it becomes a literal backslash-n. This causes:
 - **SQL:** CTE validator regex `/^(with)\s+/i` fails → query rejected before execution
@@ -122,7 +124,8 @@ XML tool parameters do **not** interpret `\n` as a newline — it becomes a lite
 ❌ Pass value with \n escape sequences — stored as literal backslash-n
 ```
 
-> See `sim-workflows/references/mcp-tools-reference.md → update_subblock` for full examples.
+> If you encounter older docs that frame `update_subblock` as the default editor,
+> treat that as legacy fine-grained guidance rather than the current workflow surface.
 
 ---
 
@@ -231,7 +234,7 @@ Before **committing or deploying** a workflow, verify:
 - [ ] **All nested references have guards** — Use `?.` operator for any optional/nullable field
 - [ ] **Webhook payload shapes are handled** — Use fallback chains for field alternatives
 - [ ] **Condition syntax is valid JS** — Ensure conditions are executable before tag resolution
-- [ ] **Execute with test payload first** — Run workflow before deploying; check `get_execution_log_detail` trace
+- [ ] **Execute with test payload first** — Run the draft workflow before deploying; review the verification trace / block path summary
 - [ ] **Verify trace shows expected fields** — Inspect actual block outputs before wiring downstream references
 
 ---
@@ -240,9 +243,10 @@ Before **committing or deploying** a workflow, verify:
 
 When you see: `"result.customer.id" doesn't exist on block "FormatCustomerResponse"`
 
-1. **Get the block:** `sim-mcp-get_block(workflowId, blockId)`
+1. **Inspect the draft workflow:** start with `get_workflow({ workflowId })` and
+   compare the block display names and wiring used by the failing tag
 2. **Check output schema:** What fields does the block actually declare? (for function blocks: always `{result, stdout}`)
-3. **Run a test:** `execute_workflow(workflowId, testPayload)` with `useDraftState: true`
-4. **Inspect trace:** `get_execution_log_detail(logId)` — look at trace spans for what each block actually outputs
+3. **Run a test:** `run_workflow({ workflowId, workflow_input: testPayload })` or `sim_test(...)` against the draft workflow
+4. **Inspect trace:** use the current verification/debug surface to inspect what each block actually outputs
 5. **Compare:** Does the tag reference match what the block actually produces?
 6. **Fix:** Adjust tag to match actual output; add guards for nullable fields

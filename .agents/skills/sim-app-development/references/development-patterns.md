@@ -33,6 +33,7 @@ Adapt this repo checklist from `CLAUDE.md` when adding an integration:
 - If the change is mostly canvas/workflow structure or MCP block operations, switch to `sim-workflows`.
 - If the change is mostly "start the app, run health checks, inspect logs", switch to `sim-runtime`.
 - If the change is mostly deployment target, environment, Docker Compose, Render, Helm, or npm self-hosting, switch to `sim-self-hosting`.
+- After changing app behavior that surfaces through workflows, hand off verification to `sim-workflow-testing`.
 
 ## Working Style
 

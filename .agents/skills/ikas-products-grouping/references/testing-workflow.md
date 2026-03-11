@@ -252,11 +252,15 @@ Token Savings: 67%
 
 ---
 
-## Phase 2: Isolated Tool Test in Sim Studio
+## Phase 2: Draft Tool Test in Sim Studio
 
-Create the tool and test with **minimal blocks enabled** (trigger + tool + response only).
+Prefer the current draft-test surface from `../../sim-workflows/SKILL.md`: build or
+update the workflow, then verify it with `sim_test` / `run_workflow`. The older
+fine-grained flow (`upsert_custom_tools`, block toggles, `execute_workflow`,
+`get_execution_logs`) is historical only and should not be treated as the default
+workflow surface unless you are maintaining an older session that still exposes it.
 
-### 2.1 Create Custom Tool via MCP
+### 2.1 Attach or Update the Tool via the Current Workflow Surface
 
 ```typescript
 const toolConfig = {
@@ -285,25 +289,24 @@ const toolConfig = {
   `
 };
 
-// Use sim-mcp: sim-mcp-upsert_custom_tools({ workspaceId, tools: [toolConfig] })
+// Add or update the tool using the current local workflow-editing surface.
+// Verify exact tool names against the live MCP definitions in your workspace
+// before assuming older fine-grained commands are still exposed.
 ```
 
-### 2.2 Create Test Workflow
+### 2.2 Keep the Draft Verification Path Minimal
 
-1. Create a **separate test workflow** (or disable blocks in existing one)
-2. Keep only: `start_trigger` → `agent` → `response`
-3. Agent uses the new tool
-4. Execute: `sim-mcp-execute_workflow(useDraftState: true)`
+1. Use a minimal draft path for verification: `start_trigger` → `agent` → `response`
+2. Ensure the agent uses the new tool
+3. Run a draft verification with `sim_test` or `run_workflow`
+4. If the run fails, diagnose with `sim_debug`
 
 ### 2.3 Check Results
 
 ```typescript
-// Get execution logs
-sim-mcp-get_execution_logs({ 
-  workspaceId, 
+sim_test({
   workflowId,
-  includeTraceSpans: true,
-  includeFinalOutput: true 
+  request: "Run one draft test for mainCategory='sineklikler' and summarize the tool call, output shape, and any failures."
 })
 
 // Look for:
@@ -314,27 +317,19 @@ sim-mcp-get_execution_logs({
 
 ### 2.4 Measure Token Usage
 
-From execution logs:
-```json
-{
-  "cost": 0.015,  // Cost in USD (proportional to tokens)
-  "traceSpans": [
-    {
-      "name": "agent_block",
-      "inputTokens": 450,
-      "outputTokens": 320
-    }
-  ]
-}
-```
+Record any token/cost metadata exposed by your current verification or runtime
+surface. If your workspace only returns a path summary, treat precise token
+measurement as a follow-up runtime check instead of falling back to legacy
+execution-log commands by default.
 
 ---
 
 ## Phase 3: Full Integration Test
 
-After isolated testing passes:
+After draft testing passes:
 
-1. **Enable other blocks** in production workflow
+1. Return to the normal end-to-end workflow path without relying on legacy
+   block-toggle restore steps
 2. Test realistic conversation flows
 3. Verify agent routing (when to use tool vs other blocks)
 4. Check token usage across multiple categories

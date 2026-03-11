@@ -1,6 +1,15 @@
 # MCP Tools Parameter Reference
 
-Detailed parameter tables for all 28 sim-mcp tools. See [SKILL.md](../SKILL.md) for usage patterns and examples.
+Historical appendix for the older fine-grained workflow-editing surface.
+Use [SKILL.md](../SKILL.md) for the current build/test flow, and verify exact tool
+names against the current MCP definitions before assuming every tool below is still
+exposed unchanged.
+
+> **Do not treat this file as the current parameter authority.** Commands such as
+> `update_subblock`, `toggle_block_enabled`, `execute_workflow`,
+> `get_execution_logs`, and `get_block` are retained here so older notes can be
+> interpreted, but the default live workflow surface is the current `sim_*` /
+> `run_*` flow documented in [SKILL.md](../SKILL.md).
 
 ---
 
@@ -62,7 +71,10 @@ add_blocks({
 | `blocks` | ✅ | Array of `{ type, name, position: {x,y}, data?, enabled?, id? }` |
 | `edges` | | Optional edges to create simultaneously |
 
-Blocks are created with empty subBlocks. Use `update_subblock` to configure each block after creation. SubBlock IDs are listed in the Block Types Reference — they cannot be discovered via `get_block` on a freshly created block (subBlocks appear in `get_block` only after they've been set).
+On the older fine-grained surface, blocks were often configured with
+`update_subblock` after creation. Treat that as historical guidance only; use the
+current workflow-editing surface documented in [SKILL.md](../SKILL.md) unless you
+are intentionally maintaining an older flow.
 
 ### `add_edge`
 
@@ -105,7 +117,9 @@ Reference in blocks: `<variable.apiUrl>`
 
 ### `update_subblock`
 
-Set a block's configuration field. This is the primary way to configure blocks after creation. Each block type has specific subblock IDs (see Block Types Reference).
+Set a block's configuration field. On the older fine-grained surface this was a
+common post-creation edit path, but it is no longer the default workflow-editing
+guidance in this skill.
 
 ```
 update_subblock({
@@ -175,9 +189,11 @@ toggle_block_enabled({ workflowId: "wf_abc", blockId: "block_1", enabled: false 
 toggle_block_enabled({ workflowId: "wf_abc", blockId: "block_1", enabled: true })
 ```
 
-**Use cases:** Disable email/Slack/webhook blocks during testing, A/B test branches, isolate failures. See [safe testing patterns](#disabling-blocks-for-safe-testing) for patterns.
+**Historical use cases:** Disable email/Slack/webhook blocks during testing, A/B
+test branches, isolate failures. See [safe testing patterns](#disabling-blocks-for-safe-testing)
+for older examples.
 
-#### Disabling Blocks for Safe Testing
+#### Disabling Blocks for Safe Testing (historical only)
 
 Disabled blocks preserve configuration and connections but are skipped by the executor.
 
@@ -330,7 +346,8 @@ get_workflow({ workflowId: "wf_abc", verbose: false })
 
 - `verbose: false` (default): Lightweight block metadata — use for discovering block IDs and connections
 - `verbose: true`: Full block config including subBlocks — WARNING: can be very large
-- **Prefer:** `get_workflow(verbose: false)` + `get_block(blockId)` for targeted inspection
+- **Historical note:** older flows often paired `get_workflow(verbose: false)` with
+  `get_block(blockId)` for targeted inspection
 
 ### `get_block`
 

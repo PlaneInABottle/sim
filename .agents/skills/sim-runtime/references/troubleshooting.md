@@ -164,6 +164,11 @@ These must be set in `apps/sim/.env` for local dev:
 | `NEXT_PUBLIC_APP_URL` | `http://localhost:3000` | N/A |
 | `ENCRYPTION_KEY` | 64-char hex | `openssl rand -hex 32` |
 | `INTERNAL_API_SECRET` | 64-char hex | `openssl rand -hex 32` |
+
+Optional extra security variable for API-key encryption:
+
+| Variable | Example | Generate with |
+|----------|---------|--------------|
 | `API_ENCRYPTION_KEY` | 64-char hex | `openssl rand -hex 32` |
 
 ### Generate All Secrets at Once
@@ -172,7 +177,7 @@ These must be set in `apps/sim/.env` for local dev:
 echo "BETTER_AUTH_SECRET=$(openssl rand -hex 32)"
 echo "ENCRYPTION_KEY=$(openssl rand -hex 32)"
 echo "INTERNAL_API_SECRET=$(openssl rand -hex 32)"
-echo "API_ENCRYPTION_KEY=$(openssl rand -hex 32)"
+echo "API_ENCRYPTION_KEY=$(openssl rand -hex 32)"  # optional
 ```
 
 ## Performance Issues

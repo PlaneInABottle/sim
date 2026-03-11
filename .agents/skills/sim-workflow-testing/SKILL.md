@@ -2,28 +2,34 @@
 name: sim-workflow-testing
 description: >-
   Comprehensive framework for testing Sim Studio workflows via MCP tools.
-  Use this skill for ANY workflow testing, tool testing, or execution verification task.
-  Triggers: (1) testing a workflow, (2) verifying condition/routing logic, (3) checking
-  trace spans or execution logs, (4) building/testing custom tools, (5) debugging block
-  errors or tag reference failures, (6) running test scenarios against any Chatwoot
-  webhook-driven workflow, (7) validating media handling or message routing,
-  (8) pre-deployment verification, (9) GraphQL schema validation errors in ikas blocks,
-  (10) "test", "verify", "execute workflow", "trace spans", "block toggle", "snapshot".
+  Use this as the generic default current surface for workflow verification,
+  trace review, tool testing, and execution checks when no workflow-specific
+  wrapper skill applies. Triggers: (1) testing a workflow, (2) verifying
+  condition/routing logic, (3) checking trace spans or execution logs, (4)
+  building/testing custom tools, (5) debugging block errors or tag reference
+  failures, (6) running test scenarios against any Chatwoot webhook-driven
+  workflow, (7) validating media handling or message routing, (8)
+  pre-deployment verification, (9) GraphQL schema validation errors in ikas
+  blocks, (10) "test", "verify", "execute workflow", "trace spans". Use
+  block toggle/snapshot/restore guidance only for legacy cleanup or low-level
+  fallback runs.
 ---
 
 # Sim Workflow Testing Framework
 
-Use this skill as the generic default surface for Sim workflow verification.
-It covers the repeatable workflow-testing method; company-specific suites should
-live in separate thin wrapper skills.
+Use this skill as the generic default current surface for Sim workflow
+verification. It covers the current draft-run testing method; company-specific
+suites should live in separate thin wrapper skills.
 
 ## Core Flow
 
 ```text
-SNAPSHOT → DISABLE → EXECUTE → VERIFY → RESTORE
+PREPARE → CONFIGURE → EXECUTE → VERIFY → DEBUG → RECORD
 ```
 
-Use this flow to test draft workflows safely without deploying changes.
+Use this flow first with the current `sim_test` / `run_workflow` surface. Drop
+into block-state isolation only when a workflow-specific note explicitly treats
+it as a legacy or low-level fallback.
 
 ## Test Profiles
 
@@ -34,16 +40,20 @@ Use this flow to test draft workflows safely without deploying changes.
 | **FULL_INTEGRATION** | Verify end-to-end behavior | All required blocks except destructive final sends |
 
 Keep these generic profile names intact when writing scenario docs or SQL tracking.
+`CONDITION_ONLY` and `PATH_ISOLATION` are legacy low-level fallback labels;
+`FULL_INTEGRATION` is the current end-to-end profile name, with an optional
+legacy fallback toggle variant only when a workflow-specific note says so.
 
 ## Quick Start
 
-1. Start with **CONDITION_ONLY** unless you already proved routing.
+1. Start with one crafted draft-run scenario on the current execution surface.
 2. Follow the full execution sequence in [`references/testing-protocol.md`](references/testing-protocol.md).
 3. Build payloads from [`references/payload-templates.md`](references/payload-templates.md).
 4. Validate traces and outputs with [`references/verification-rules.md`](references/verification-rules.md).
-5. Restore block state and record results before moving to the next scenario.
+5. Record results before moving to the next scenario; only use restore guidance if you intentionally used legacy block-state toggles.
 
-For a workflow-specific suite and live inventory wrapper, load
+For a workflow-specific suite and repo-local checked-in snapshot/reference
+wrapper, load
 [`../kamatas-workflow-testing/SKILL.md`](../kamatas-workflow-testing/SKILL.md) when applicable.
 
 ## Target Inventory
@@ -60,11 +70,10 @@ full index. Load only the files required for the current test run.
 
 ## Safety Rules
 
-1. Always snapshot block state before toggling anything.
-2. Always restore blocks after testing, even on failure.
-3. Use `useDraftState: true` instead of deploying for verification.
-4. Test one scenario at a time and confirm trace spans before continuing.
-5. Treat live integrations as side-effecting unless you have a proven mock path.
+1. Prefer draft-state verification (`sim_test` or the current draft run tools) before any block-state edits.
+2. If you intentionally use legacy block toggles, snapshot and restore them even on failure.
+3. Test one scenario at a time and confirm trace spans before continuing.
+4. Treat live integrations as side-effecting unless you have a proven mock path.
 
 ## Related Resources
 

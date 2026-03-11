@@ -1,11 +1,11 @@
 ---
 name: trendyol-api
-description: Reference for Trendyol Marketplace APIs — Customer Questions (Q&A) and Product Filtering (Approved Products v2). Use when the AI agent needs official request/response details, constraints, pagination, status values, or the combined product-aware Q&A flow for Trendyol seller support workflows. Based exclusively on official Trendyol developer documentation.
+description: Reference for Trendyol Marketplace APIs — Customer Questions (Q&A) and Product Filtering (Approved Products v2). Use when the AI agent needs official request/response details, constraints, pagination, status values, or a derived product-aware Q&A integration pattern for Trendyol seller support workflows. Based on official Trendyol endpoint documentation plus clearly marked derived integration guidance.
 ---
 
 # Trendyol Marketplace API
 
-Reference for Trendyol's **Customer Questions API** and **Product Filtering API** (Approved Products v2). These two APIs work together to enable rich product-aware support workflows.
+Reference for Trendyol's **Customer Questions API** and **Product Filtering API** (Approved Products v2). These APIs can be combined into product-aware support workflows using the derived pattern documented below.
 
 **Source documentation:**
 - [Müşteri Sorularını Çekme](https://developers.trendyol.com/docs/müşteri-sorularını-çekme) (Customer Questions — Fetching)
@@ -23,6 +23,8 @@ Reference for Trendyol's **Customer Questions API** and **Product Filtering API*
 | **GET** | `.../qna/sellers/{supplierId}/questions/filter` | List/filter questions with pagination |
 | **GET** | `.../qna/sellers/{supplierId}/questions/{id}` | Get single question by ID |
 | **POST** | `.../qna/sellers/{sellerId}/questions/{id}/answers` | Submit an answer to a question |
+
+> **Merchant identifier note:** The official docs use both `supplierId` and `sellerId` depending on the endpoint. Follow the parameter name shown for the specific endpoint you are calling rather than assuming one shared name everywhere.
 
 ### Product Filtering — Approved Products v2
 
@@ -51,6 +53,8 @@ Reference for Trendyol's **Customer Questions API** and **Product Filtering API*
 ---
 
 ## Integrated Workflow
+
+> **Derived pattern:** Trendyol documents these APIs separately. The combined workflow below is an integration pattern inferred from the documented endpoint fields, not a single official end-to-end Trendyol workflow page.
 
 The Customer Questions API returns a `productMainId` with each question. This same ID can be used as a query parameter in the Product Filtering API to fetch detailed product information — pricing, variants, delivery options, and attributes.
 

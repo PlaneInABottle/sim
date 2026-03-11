@@ -26,9 +26,8 @@ Favor evidence from Render CLI output, direct SSH, and production Postgres over 
 - Useful pattern: extract `service.id`, `service.name`, and region from the JSON before tailing logs or building SSH targets.
 - Use `render logs <service-id>` for service stdout/stderr when available.
 - Use `render services instances <service-id>` to enumerate live instances before attempting SSH.
-- Session-backed mapping for this deployment:
-  - `engine` = `srv-d5q0k8vgi27c73aah75g`
-  - `engine-realtime` = `srv-d5q0k8vgi27c73aah7dg`
+- Session-backed service IDs can drift. Refresh them with `render services -o json`
+  during the incident instead of assuming older IDs are still valid.
 
 ## SSH Strategy
 
@@ -42,7 +41,8 @@ Favor evidence from Render CLI output, direct SSH, and production Postgres over 
 
 ## Production Postgres
 
-- Connect with the checked-in guidance from `AGENTS.md`:
+- Connect with the checked-in guidance mirrored in the db-migrations production
+  runbook:
   - `source apps/sim/.env && psql "$PROD_DATABASE_URL"`
 - `apps/sim/.env` contains `PROD_DATABASE_URL` for the Render Postgres database in this repo.
 - Use SQL to answer operational questions when logs are incomplete.

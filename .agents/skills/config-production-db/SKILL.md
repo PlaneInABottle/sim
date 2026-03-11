@@ -13,7 +13,8 @@ Use this skill to answer **what exists today** in the `config_production` schema
 
 When asked about the DB or workflow setup:
 1. Read **references/current-state.md** for the authoritative snapshot.
-2. Read **references/sql-readme.md** for executed migrations and auth model.
+2. Read **references/sql-readme.md** only for historical rollout notes and auth
+   context; the named SQL files are not stored in this repo.
 3. Answer using current state only (no roadmap or deferred work).
 
 ## Core Facts (Current)
@@ -37,4 +38,4 @@ When asked about the DB or workflow setup:
 ## References
 
 - **references/current-state.md** — full schema + runtime flow (authoritative)
-- **references/sql-readme.md** — executed migrations + auth model summary
+- **references/sql-readme.md** — historical rollout notes + auth model summary

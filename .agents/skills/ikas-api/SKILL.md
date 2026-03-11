@@ -1,6 +1,6 @@
 ---
 name: ikas-api
-description: Complete guide for working with the ikas e-commerce Admin API (GraphQL). Use when the AI agent needs to (1) query or manage products, orders, customers, categories, or inventory on an ikas store, (2) authenticate via OAuth2 client_credentials, (3) write GraphQL queries/mutations for ikas, (4) handle ikas-specific patterns like pagination, filtering, date timestamps, phone lookups, or webhook configuration. Covers all Admin API endpoints, type definitions, and proven production patterns.
+description: Reference guide for working with the ikas e-commerce Admin API (GraphQL). Use when the AI agent needs to (1) query or manage products, orders, customers, categories, or inventory on an ikas store, (2) authenticate via OAuth2 client_credentials, (3) write GraphQL queries/mutations for ikas, (4) handle ikas-specific patterns like pagination, filtering, date timestamps, phone lookups, or webhook configuration. Covers the ikas Admin API areas documented in this skill's references, with field/type notes and implementation patterns validated locally.
 ---
 
 # ikas Admin API

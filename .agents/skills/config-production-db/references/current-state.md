@@ -145,16 +145,19 @@ Sample data exists for **Kamatas**:
 
 ## SQL Migration History
 
-The following migrations were applied directly to the production database.
-The SQL migration files are currently **not committed** to this repository.
-For current-state answers, treat the schema documented in this file as the source of truth.
+This section preserves rollout-note filenames that were associated with the
+production setup. Those SQL files are **not committed** to this repository, so
+this is provenance only, not an executable repo-local runbook.
 
-1. `00_preflight_checks.sql` — Safety checks before schema creation
-2. `01_create_schema.sql` — Schema and extension setup
-3. `02_create_tables.sql` — Core tables (`companies`, `platform_configs`, `agent_prompts`)
-4. `04_add_webhook_token.sql` — Webhook token column and read-only role setup
-5. `05_seed_kamatas.sql` — Kamatas seed data
-6. `06_security_and_integrity_fixes_v2.sql` — Constraint and integrity hardening
+For current-state answers, treat the schema documented in this file as the
+authoritative local artifact.
+
+1. `00_preflight_checks.sql` — Reported preflight checks before schema creation
+2. `01_create_schema.sql` — Reported schema and extension setup
+3. `02_create_tables.sql` — Reported creation of `companies`, `platform_configs`, `agent_prompts`
+4. `04_add_webhook_token.sql` — Reported webhook token column and read-only role setup
+5. `05_seed_kamatas.sql` — Reported Kamatas seed step
+6. `06_security_and_integrity_fixes_v2.sql` — Reported constraint and integrity hardening
 
 ---
 

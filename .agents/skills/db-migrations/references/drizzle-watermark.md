@@ -205,9 +205,10 @@ VALUES (
 
 To avoid watermark issues in the future:
 
-1. **Local migrations use a separate tracking table** — the
-   `drizzle-local.config.ts` config writes to a different Drizzle migrations
-   table, isolating local migration timestamps from upstream ones.
+1. **Do not assume local migrations are isolated by tracking table** — the
+   checked-in `drizzle-local.config.ts` changes the output directory, but it
+   does not declare a different Drizzle migrations table. Verify the target
+   database before relying on table-level isolation.
 
 2. **On rebase:** Always accept upstream's `_journal.json` entirely (theirs).
    Never merge or interleave local entries into the upstream journal.
