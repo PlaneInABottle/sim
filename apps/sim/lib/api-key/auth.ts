@@ -96,7 +96,8 @@ export async function encryptApiKeyForStorage(apiKey: string): Promise<string> {
     const { encrypted } = await encryptApiKey(apiKey)
     return encrypted
   } catch (error) {
-    logger.error('API key encryption error:', { error })
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logger.error('API key encryption error:', { error: errorMessage })
     throw new Error('Failed to encrypt API key')
   }
 }
@@ -122,7 +123,8 @@ export async function createApiKey(useStorage = true): Promise<{
 
     return { key: plainKey }
   } catch (error) {
-    logger.error('API key creation error:', { error })
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logger.error('API key creation error:', { error: errorMessage })
     throw new Error('Failed to create API key')
   }
 }

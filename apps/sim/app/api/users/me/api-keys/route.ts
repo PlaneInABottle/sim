@@ -131,7 +131,8 @@ export async function POST(request: NextRequest) {
       },
     })
   } catch (error) {
-    logger.error('Failed to create API key', { error })
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    logger.error('Failed to create API key', { error: errorMessage })
     return NextResponse.json({ error: 'Failed to create API key' }, { status: 500 })
   }
 }

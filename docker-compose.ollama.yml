@@ -13,11 +13,15 @@ services:
         limits:
           memory: 8G
     environment:
+      - NODE_ENV=development
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
       - BETTER_AUTH_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-sim_auth_secret_$(openssl rand -hex 16)}
-      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-$(openssl rand -hex 32)}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:-your_encryption_key_here}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-your_internal_api_secret_here}
+      - API_ENCRYPTION_KEY=${API_ENCRYPTION_KEY:-your_api_encryption_key_here}
+      - SOCKET_SERVER_URL=${SOCKET_SERVER_URL:-http://localhost:3002}
       - COPILOT_API_KEY=${COPILOT_API_KEY}
       - SIM_AGENT_API_URL=${SIM_AGENT_API_URL}
       - OLLAMA_URL=http://ollama:11434
@@ -30,8 +34,8 @@ services:
       realtime:
         condition: service_healthy
     healthcheck:
-      test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3000']
-      interval: 90s
+      test: ['CMD', 'curl', '-f', 'http://127.0.0.1:3000']
+      interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
@@ -43,10 +47,12 @@ services:
       context: .
       dockerfile: docker/realtime.Dockerfile
     environment:
+      - NODE_ENV=development
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
       - NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
       - BETTER_AUTH_URL=${BETTER_AUTH_URL:-http://localhost:3000}
-      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-sim_auth_secret_$(openssl rand -hex 16)}
+      - BETTER_AUTH_SECRET=${BETTER_AUTH_SECRET:-your_auth_secret_here}
+      - INTERNAL_API_SECRET=${INTERNAL_API_SECRET:-your_internal_api_secret_here}
     depends_on:
       db:
         condition: service_healthy
@@ -59,7 +65,7 @@ services:
           memory: 1G
     healthcheck:
       test: ['CMD', 'wget', '--spider', '--quiet', 'http://127.0.0.1:3002/health']
-      interval: 90s
+      interval: 30s
       timeout: 5s
       retries: 3
       start_period: 10s
@@ -71,6 +77,7 @@ services:
       dockerfile: docker/db.Dockerfile
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@db:5432/${POSTGRES_DB:-simstudio}
+    working_dir: /app/packages/db
     depends_on:
       db:
         condition: service_healthy
@@ -80,9 +87,9 @@ services:
   # PostgreSQL Database with Vector Extension
   db:
     image: pgvector/pgvector:pg17
-    restart: always
+    restart: unless-stopped
     ports:
-      - '${POSTGRES_PORT:-5432}:5432'
+      - '127.0.0.1:${POSTGRES_PORT:-5432}:5432'
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
       - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}

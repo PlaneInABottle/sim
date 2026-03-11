@@ -84,16 +84,14 @@ export async function getApiKeyWithBYOK(
 
   const byokProviderId = isGeminiModel ? 'google' : (provider as BYOKProviderId)
 
-  if (
-    isHosted &&
-    workspaceId &&
-    (isOpenAIModel || isClaudeModel || isGeminiModel || isMistralModel)
-  ) {
+  // Check BYOK keys for supported providers (works for both hosted and self-hosted)
+  if (workspaceId && (isOpenAIModel || isClaudeModel || isGeminiModel || isMistralModel)) {
     const hostedModels = getHostedModels()
     const isModelHosted = hostedModels.some((m) => m.toLowerCase() === model.toLowerCase())
 
     logger.debug('BYOK check', { provider, model, workspaceId, isHosted, isModelHosted })
 
+    // Try BYOK for hosted models or Mistral models
     if (isModelHosted || isMistralModel) {
       const byokResult = await getBYOKKey(workspaceId, byokProviderId)
       if (byokResult) {
@@ -102,7 +100,8 @@ export async function getApiKeyWithBYOK(
       }
       logger.debug('No BYOK key found, falling back', { provider, model, workspaceId })
 
-      if (isModelHosted) {
+      // Only try rotating server keys on hosted platform
+      if (isHosted && isModelHosted) {
         try {
           const serverKey = getRotatingApiKey(isGeminiModel ? 'gemini' : provider)
           return { apiKey: serverKey, isBYOK: false }

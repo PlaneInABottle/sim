@@ -137,6 +137,64 @@ function handleSecurityFiltering(request: NextRequest): NextResponse | null {
   return null
 }
 
+const UTM_KEYS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content'] as const
+const UTM_COOKIE_NAME = 'sim_utm'
+const UTM_COOKIE_MAX_AGE = 3600
+
+/**
+ * Sets a `sim_utm` cookie when UTM params are present on auth pages.
+ * Captures UTM values, the HTTP Referer, landing page, and a timestamp.
+ */
+function setUtmCookie(request: NextRequest, response: NextResponse): void {
+  const { searchParams, pathname } = request.nextUrl
+  const hasUtm = UTM_KEYS.some((key) => searchParams.get(key))
+  if (!hasUtm) return
+
+  const utmData: Record<string, string> = {}
+  for (const key of UTM_KEYS) {
+    const value = searchParams.get(key)
+    if (value) utmData[key] = value
+  }
+  utmData.referrer_url = request.headers.get('referer') || ''
+  utmData.landing_page = pathname
+  utmData.created_at = Date.now().toString()
+
+  response.cookies.set(UTM_COOKIE_NAME, JSON.stringify(utmData), {
+    path: '/',
+    maxAge: UTM_COOKIE_MAX_AGE,
+    sameSite: 'lax',
+    httpOnly: false, // Client-side hook needs to detect cookie presence
+  })
+}
+
+/**
+ * Blocks public marketing routes for self-hosted deployments
+ */
+function handlePublicRouteBlocking(request: NextRequest): NextResponse | null {
+  if (isHosted) {
+    return null // Only block on self-hosted
+  }
+
+  const url = request.nextUrl
+  const blockedRoutes = [
+    '/careers',
+    '/studio',
+    '/changelog',
+    '/templates',
+    '/terms',
+    '/privacy',
+    '/signup',
+  ]
+
+  for (const route of blockedRoutes) {
+    if (url.pathname === route || url.pathname.startsWith(`${route}/`)) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
+  }
+
+  return null
+}
+
 export async function proxy(request: NextRequest) {
   const url = request.nextUrl
 
@@ -146,22 +204,23 @@ export async function proxy(request: NextRequest) {
   const redirect = handleRootPathRedirects(request, hasActiveSession)
   if (redirect) return redirect
 
+  const publicRouteBlock = handlePublicRouteBlocking(request)
+  if (publicRouteBlock) return publicRouteBlock
+
   if (url.pathname === '/login' || url.pathname === '/signup') {
     if (hasActiveSession) {
-      return NextResponse.redirect(new URL('/workspace', request.url))
+      const redirect = NextResponse.redirect(new URL('/workspace', request.url))
+      setUtmCookie(request, redirect)
+      return redirect
     }
     const response = NextResponse.next()
     response.headers.set('Content-Security-Policy', generateRuntimeCSP())
+    setUtmCookie(request, response)
     return response
   }
 
   // Chat pages are publicly accessible embeds — CSP is set in next.config.ts headers
   if (url.pathname.startsWith('/chat/')) {
-    return NextResponse.next()
-  }
-
-  // Allow public access to template pages for SEO
-  if (url.pathname.startsWith('/templates')) {
     return NextResponse.next()
   }
 
@@ -199,8 +258,6 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     '/', // Root path for self-hosted redirect logic
-    '/terms', // Whitelabel terms redirect
-    '/privacy', // Whitelabel privacy redirect
     '/w', // Legacy /w redirect
     '/w/:path*', // Legacy /w/* redirects
     '/workspace/:path*', // New workspace routes

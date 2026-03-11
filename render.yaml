@@ -1,0 +1,118 @@
+# Render.com Deployment Blueprint
+# https://render.com/docs/blueprint-spec
+
+services:
+  # Main Engine Application
+  - type: web
+    name: engine
+    region: frankfurt
+    runtime: docker
+    dockerfilePath: ./docker/app.Dockerfile
+    dockerContext: .
+    plan: standard
+    autoDeployTrigger: 'off'
+    dockerCommand: bun apps/sim/server.js
+    healthCheckPath: /api/health
+    # NOTE: Render executes preDeployCommand without a shell; builtins like `cd` can break unless wrapped correctly.
+    # Also, `bun --cwd <dir> run <script>` prints help and exits 0 on Bun 1.3.x.
+    # Use the supported form: `bun run --cwd <dir> <script>`.
+    preDeployCommand: bun run --cwd /app/packages/db db:migrate
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NEXT_TELEMETRY_DISABLED
+        value: "1"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: engine-db
+          property: connectionString
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED
+        value: "true"
+      - key: NEXT_PUBLIC_BRAND_NAME
+        value: "Kozmopath"
+      - key: DISABLE_REGISTRATION
+        value: "true"
+      - key: BETTER_AUTH_SECRET
+        generateValue: true
+      - key: ENCRYPTION_KEY
+        sync: false
+      - key: INTERNAL_API_SECRET
+        generateValue: true
+      - key: API_ENCRYPTION_KEY
+        sync: false
+      - key: COPILOT_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        value: "126798227694-9ugmdpnra8h5g1pmh121pcn32e8klsu8.apps.googleusercontent.com"
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: SOCKET_SERVER_URL
+        sync: false
+      - key: NEXT_PUBLIC_SOCKET_URL
+        sync: false
+      # Optional: Redis for distributed locking, rate limiting, and caching
+      # Uncomment to enable multi-replica support
+      # - key: REDIS_URL
+      #   fromService:
+      #     type: redis
+      #     name: engine-redis
+      #     property: connectionString
+
+  # Realtime Socket Server
+  - type: web
+    name: engine-realtime
+    region: frankfurt
+    runtime: docker
+    dockerfilePath: ./docker/realtime.Dockerfile
+    dockerContext: .
+    plan: starter
+    autoDeployTrigger: 'off'
+    # CMD is defined in Dockerfile: bun /app/apps/sim/socket/dist/index.js
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: engine-db
+          property: connectionString
+      - key: NEXT_PUBLIC_APP_URL
+        sync: false
+      - key: NEXT_PUBLIC_CREDENTIAL_SETS_ENABLED
+        value: "true"
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        fromService:
+          type: web
+          name: engine
+          envVarKey: BETTER_AUTH_SECRET
+      - key: INTERNAL_API_SECRET
+        fromService:
+          type: web
+          name: engine
+          envVarKey: INTERNAL_API_SECRET
+      # Optional: Redis for cross-pod Socket.IO broadcasting
+      # Uncomment to enable multi-replica support
+      # - key: REDIS_URL
+      #   fromService:
+      #     type: redis
+      #     name: engine-redis
+      #     property: connectionString
+
+databases:
+  - name: engine-db
+    region: frankfurt
+    plan: basic-256mb
+    postgresMajorVersion: '17'
+
+# Optional: Uncomment to add Redis for multi-replica deployments
+# Redis enables: cross-pod Socket.IO broadcasting, distributed locking,
+# rate limiting storage, and MCP caching
+#
+# redis:
+#   - name: engine-redis
+#     region: frankfurt
+#     plan: starter  # Or free for testing
