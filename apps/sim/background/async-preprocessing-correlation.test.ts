@@ -15,6 +15,8 @@ const {
   mockLoadDeployedWorkflowState,
   mockGetScheduleTimeValues,
   mockGetSubBlockValue,
+  mockWasExecutionFinalizedByCore,
+  loggingSessionInstances,
 } = vi.hoisted(() => ({
   mockPreprocessExecution: vi.fn(),
   mockTask: vi.fn((config) => config),
@@ -30,6 +32,8 @@ const {
   mockLoadDeployedWorkflowState: vi.fn(),
   mockGetScheduleTimeValues: vi.fn(),
   mockGetSubBlockValue: vi.fn(),
+  mockWasExecutionFinalizedByCore: vi.fn().mockReturnValue(false),
+  loggingSessionInstances: [] as any[],
 }))
 
 vi.mock('@trigger.dev/sdk', () => ({ task: mockTask }))
@@ -61,8 +65,11 @@ vi.mock('@/lib/logs/execution/logging-session', () => ({
       safeCompleteWithError: vi.fn().mockResolvedValue(undefined),
       markAsFailed: vi.fn().mockResolvedValue(undefined),
       waitForPostExecution: vi.fn().mockResolvedValue(undefined),
+      onBlockStart: vi.fn().mockResolvedValue(undefined),
+      onBlockComplete: vi.fn().mockResolvedValue(undefined),
     }
     mockLoggingSession(instance)
+    loggingSessionInstances.push(instance)
     return instance
   }),
 }))
@@ -83,7 +90,7 @@ vi.mock('@/lib/logs/execution/trace-spans/trace-spans', () => ({
 
 vi.mock('@/lib/workflows/executor/execution-core', () => ({
   executeWorkflowCore: mockExecuteWorkflowCore,
-  wasExecutionFinalizedByCore: vi.fn().mockReturnValue(false),
+  wasExecutionFinalizedByCore: mockWasExecutionFinalizedByCore,
 }))
 
 vi.mock('@/lib/workflows/executor/human-in-the-loop-manager', () => ({
@@ -127,6 +134,7 @@ import { executeWorkflowJob } from './workflow-execution'
 describe('async preprocessing correlation threading', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    loggingSessionInstances.length = 0
     mockDbSelect.mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
@@ -292,5 +300,51 @@ describe('async preprocessing correlation threading', () => {
         },
       })
     )
+  })
+
+  it('background execution path awaits block lifecycle persistence before completion', async () => {
+    mockPreprocessExecution.mockResolvedValueOnce({
+      success: true,
+      actorUserId: 'user-1',
+      workflowRecord: { workflowId: 'workflow-1', userId: 'owner-1', workspaceId: 'workspace-1' },
+    })
+
+    const callOrder: string[] = []
+
+    mockExecuteWorkflowCore.mockImplementationOnce(async ({ loggingSession }: any) => {
+      callOrder.push('execute:start')
+      await loggingSession.onBlockStart(
+        'block-1',
+        'Webhook',
+        'generic_webhook',
+        '2025-01-01T00:00:00.000Z'
+      )
+      callOrder.push('execute:after-start')
+      await loggingSession.onBlockComplete('block-1', 'Webhook', 'generic_webhook', {
+        endedAt: '2025-01-01T00:00:01.000Z',
+        output: { ok: true },
+      })
+      callOrder.push('execute:after-complete')
+
+      return {
+        success: true,
+        status: 'completed',
+        output: { ok: true },
+        metadata: { duration: 1 },
+      }
+    })
+
+    await executeWorkflowJob({
+      workflowId: 'workflow-1',
+      userId: 'user-1',
+      triggerType: 'api',
+      executionId: 'execution-2',
+      requestId: 'request-2',
+    })
+
+    const session = loggingSessionInstances[0]
+    expect(session.onBlockStart).toHaveBeenCalledTimes(1)
+    expect(session.onBlockComplete).toHaveBeenCalledTimes(1)
+    expect(callOrder).toEqual(['execute:start', 'execute:after-start', 'execute:after-complete'])
   })
 })

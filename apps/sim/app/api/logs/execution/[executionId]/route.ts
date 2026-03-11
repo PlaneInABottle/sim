@@ -11,6 +11,7 @@ import { and, eq, inArray } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
 import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 
 const logger = createLogger('LogsByExecutionIdAPI')
@@ -41,6 +42,8 @@ export async function GET(
         workflowId: workflowExecutionLogs.workflowId,
         executionId: workflowExecutionLogs.executionId,
         stateSnapshotId: workflowExecutionLogs.stateSnapshotId,
+        status: workflowExecutionLogs.status,
+        level: workflowExecutionLogs.level,
         trigger: workflowExecutionLogs.trigger,
         startedAt: workflowExecutionLogs.startedAt,
         endedAt: workflowExecutionLogs.endedAt,
@@ -148,6 +151,14 @@ export async function GET(
       return acc
     }, {})
 
+    const diagnostics = buildExecutionDiagnostics({
+      status: workflowLog.status,
+      level: workflowLog.level,
+      startedAt: workflowLog.startedAt.toISOString(),
+      endedAt: workflowLog.endedAt?.toISOString(),
+      executionData,
+    })
+
     const response = {
       executionId,
       workflowId: workflowLog.workflowId,
@@ -160,6 +171,7 @@ export async function GET(
         totalDurationMs: workflowLog.totalDurationMs,
         cost: workflowLog.cost || null,
       },
+      diagnostics,
     }
 
     return NextResponse.json(response)

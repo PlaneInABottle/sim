@@ -183,6 +183,43 @@ describe('ExecutionLogger', () => {
       expect(completedData.hasTraceSpans).toBe(false)
       expect(completedData.traceSpanCount).toBe(0)
     })
+
+    test('preserves progress markers and finalization summaries when execution completes', () => {
+      const loggerInstance = new ExecutionLogger() as any
+
+      const completedData = loggerInstance.buildCompletedExecutionData({
+        existingExecutionData: {
+          lastStartedBlock: {
+            blockId: 'block-start',
+            blockName: 'Start',
+            blockType: 'agent',
+            startedAt: '2025-01-01T00:00:00.000Z',
+          },
+          lastCompletedBlock: {
+            blockId: 'block-end',
+            blockName: 'Finish',
+            blockType: 'api',
+            endedAt: '2025-01-01T00:00:05.000Z',
+            success: true,
+          },
+        },
+        traceSpans: [],
+        finalOutput: { ok: true },
+        finalizationPath: 'completed',
+        completionFailure: 'fallback failure',
+        executionCost: {
+          tokens: { input: 0, output: 0, total: 0 },
+          models: {},
+        },
+      })
+
+      expect(completedData.lastStartedBlock?.blockId).toBe('block-start')
+      expect(completedData.lastCompletedBlock?.blockId).toBe('block-end')
+      expect(completedData.finalizationPath).toBe('completed')
+      expect(completedData.completionFailure).toBe('fallback failure')
+      expect(completedData.hasTraceSpans).toBe(false)
+      expect(completedData.traceSpanCount).toBe(0)
+    })
   })
 
   describe('file extraction', () => {
