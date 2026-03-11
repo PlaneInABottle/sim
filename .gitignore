@@ -35,6 +35,7 @@ dump.rdb
 
 # env files
 .env
+.env.render
 *.env
 .env.local
 .env.development
@@ -52,6 +53,7 @@ next-env.d.ts
 # .cursorrules
 
 # docs
+/docs/
 /apps/docs/.source
 /apps/docs/.contentlayer
 /apps/docs/.content-collections
