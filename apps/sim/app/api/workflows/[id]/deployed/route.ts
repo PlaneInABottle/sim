@@ -3,7 +3,7 @@ import type { NextRequest, NextResponse } from 'next/server'
 import { verifyInternalToken } from '@/lib/auth/internal'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { loadDeployedWorkflowState } from '@/lib/workflows/persistence/utils'
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('WorkflowDeployedStateAPI')
@@ -31,9 +31,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     if (!isInternalCall) {
-      const { error } = await validateWorkflowPermissions(id, requestId, 'read')
-      if (error) {
-        const response = createErrorResponse(error.message, error.status)
+      const validation = await validateWorkflowAccess(request, id, {
+        requireDeployment: false,
+        action: 'read',
+        allowInternalSecret: false,
+      })
+      if (validation.error) {
+        const response = createErrorResponse(validation.error.message, validation.error.status)
         return addNoCacheHeaders(response)
       }
     }

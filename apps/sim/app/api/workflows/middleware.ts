@@ -17,12 +17,24 @@ export interface ValidationResult {
   auth?: AuthResult
 }
 
+export interface WorkflowAccessOptions {
+  requireDeployment?: boolean
+  action?: 'read' | 'write' | 'admin'
+  allowInternalSecret?: boolean
+}
+
 export async function validateWorkflowAccess(
   request: NextRequest,
   workflowId: string,
-  requireDeployment = true
+  options: boolean | WorkflowAccessOptions = true
 ): Promise<ValidationResult> {
   try {
+    const normalizedOptions: WorkflowAccessOptions =
+      typeof options === 'boolean' ? { requireDeployment: options } : options
+    const requireDeployment = normalizedOptions.requireDeployment ?? true
+    const action = normalizedOptions.action ?? 'read'
+    const allowInternalSecret = normalizedOptions.allowInternalSecret ?? requireDeployment
+
     const workflow = await getWorkflowById(workflowId)
     if (!workflow) {
       return {
@@ -57,7 +69,7 @@ export async function validateWorkflowAccess(
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
         userId: auth.userId,
-        action: 'read',
+        action,
       })
       if (!authorization.allowed) {
         return {
@@ -82,7 +94,7 @@ export async function validateWorkflowAccess(
       }
 
       const internalSecret = request.headers.get('X-Internal-Secret')
-      if (env.INTERNAL_API_SECRET && internalSecret === env.INTERNAL_API_SECRET) {
+      if (allowInternalSecret && env.INTERNAL_API_SECRET && internalSecret === env.INTERNAL_API_SECRET) {
         return { workflow }
       }
 
