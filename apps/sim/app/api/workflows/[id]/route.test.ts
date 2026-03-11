@@ -24,6 +24,7 @@ const mockAuthorizeWorkflowByWorkspacePermission = vi.fn()
 const mockArchiveWorkflow = vi.fn()
 const mockDbUpdate = vi.fn()
 const mockDbSelect = vi.fn()
+const mockValidateWorkflowAccess = vi.fn()
 
 /**
  * Helper to set mock auth state consistently across getSession and hybrid auth.
@@ -32,9 +33,16 @@ function mockGetSession(session: { user: { id: string } } | null) {
   if (session) {
     mockCheckHybridAuth.mockResolvedValue({ success: true, userId: session.user.id })
     mockCheckSessionOrInternalAuth.mockResolvedValue({ success: true, userId: session.user.id })
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'workflow-123', workspaceId: 'workspace-456' },
+      auth: { success: true, userId: session.user.id, authType: 'session' },
+    })
   } else {
     mockCheckHybridAuth.mockResolvedValue({ success: false })
     mockCheckSessionOrInternalAuth.mockResolvedValue({ success: false })
+    mockValidateWorkflowAccess.mockResolvedValue({
+      error: { message: 'Unauthorized', status: 401 },
+    })
   }
 }
 
@@ -61,6 +69,10 @@ vi.mock('@/lib/audit/log', () => auditMock)
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   loadWorkflowFromNormalizedTables: (workflowId: string) =>
     mockLoadWorkflowFromNormalizedTables(workflowId),
+}))
+
+vi.mock('@/app/api/workflows/middleware', () => ({
+  validateWorkflowAccess: (...args: unknown[]) => mockValidateWorkflowAccess(...args),
 }))
 
 vi.mock('@/lib/workflows/utils', () => ({
@@ -361,6 +373,43 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       expect(data.success).toBe(true)
+    })
+
+    it('should allow API-key-backed deletion when workflow access is validated', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'other-user',
+        name: 'Test Workflow',
+        workspaceId: 'workspace-456',
+      }
+
+      mockValidateWorkflowAccess.mockResolvedValue({
+        workflow: mockWorkflow,
+        auth: { success: true, userId: 'api-user-1', authType: 'api_key' },
+      })
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'admin',
+      })
+      mockDbSelect.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockResolvedValue([{ id: 'workflow-123' }, { id: 'workflow-456' }]),
+        }),
+      })
+      setupGlobalFetchMock({ ok: true })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        method: 'DELETE',
+        headers: { 'x-api-key': 'test-key' },
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await DELETE(req, { params })
+
+      expect(response.status).toBe(200)
     })
 
     it('should prevent deletion of the last workflow in workspace', async () => {

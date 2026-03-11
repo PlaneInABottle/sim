@@ -5,11 +5,12 @@ import { and, eq, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
-import { AuthType, checkHybridAuth, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { archiveWorkflow } from '@/lib/workflows/lifecycle'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { authorizeWorkflowByWorkspacePermission, getWorkflowById } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 
 const logger = createLogger('WorkflowByIdAPI')
 
@@ -152,13 +153,28 @@ export async function DELETE(
   const { id: workflowId } = await params
 
   try {
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
-    if (!auth.success || !auth.userId) {
+    const validation = await validateWorkflowAccess(request, workflowId, {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    if (validation.error) {
       logger.warn(`[${requestId}] Unauthorized deletion attempt for workflow ${workflowId}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { error: validation.error.message },
+        { status: validation.error.status }
+      )
     }
 
-    const userId = auth.userId
+    const auth = validation.auth
+    const userId = auth?.userId
+
+    if (!userId) {
+      logger.warn(`[${requestId}] Missing user identity for workflow deletion ${workflowId}`)
+      return NextResponse.json(
+        { error: 'Workflow deletion requires a user-backed session or API key identity' },
+        { status: 400 }
+      )
+    }
 
     const authorization = await authorizeWorkflowByWorkspacePermission({
       workflowId,
