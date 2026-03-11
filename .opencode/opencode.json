@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "sim-mcp": {
+      "type": "local",
+      "command": [
+        "node",
+        "{env:SIM_MCP_LOCATION}",
+        "--server"
+      ],
+      "environment": {
+        "SIM_API_BASE_URL": "{env:SIM_API_BASE_URL_REMOTE}",
+        "SIM_API_KEY": "{env:SIM_API_KEY_REMOTE}"
+      }
+    }
+  }
+}

@@ -1,7 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { deleteSkill, listSkills, upsertSkills } from '@/lib/workflows/skills/operations'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const workspaceId = searchParams.get('workspaceId')
 
   try {
-    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized skills access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
 
   try {
-    const authResult = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+    const authResult = await checkHybridAuth(req, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized skills update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -126,7 +126,7 @@ export async function DELETE(request: NextRequest) {
   const workspaceId = searchParams.get('workspaceId')
 
   try {
-    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized skill deletion attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
