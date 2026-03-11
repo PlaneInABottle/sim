@@ -19,13 +19,17 @@ import type {
 } from '@/lib/logs/types'
 import type { SerializableExecutionState } from '@/executor/execution/types'
 
+type TriggerData = Record<string, unknown> & {
+  correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
+}
+
 const logger = createLogger('LoggingSession')
 
 export interface SessionStartParams {
   userId?: string
   workspaceId: string
   variables?: Record<string, string>
-  triggerData?: Record<string, unknown>
+  triggerData?: TriggerData
   skipLogCreation?: boolean // For resume executions - reuse existing log entry
   deploymentVersionId?: string // ID of the deployment version used (null for manual/editor executions)
 }
@@ -87,6 +91,7 @@ export class LoggingSession {
   private trigger?: ExecutionTrigger
   private environment?: ExecutionEnvironment
   private workflowState?: WorkflowState
+  private correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
   private isResume = false
   private completed = false
   /** Synchronous flag to prevent concurrent completion attempts (race condition guard) */
@@ -216,6 +221,7 @@ export class LoggingSession {
 
     try {
       this.trigger = createTriggerObject(this.triggerType, triggerData)
+      this.correlation = triggerData?.correlation
       this.environment = createEnvironmentObject(
         this.workflowId,
         this.executionId,
@@ -633,6 +639,7 @@ export class LoggingSession {
       try {
         const { userId, workspaceId, variables, triggerData, deploymentVersionId } = params
         this.trigger = createTriggerObject(this.triggerType, triggerData)
+        this.correlation = triggerData?.correlation
         this.environment = createEnvironmentObject(
           this.workflowId,
           this.executionId,

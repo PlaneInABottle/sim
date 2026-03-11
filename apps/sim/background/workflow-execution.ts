@@ -1,6 +1,7 @@
 import { createLogger } from '@sim/logger'
 import { task } from '@trigger.dev/sdk'
 import { v4 as uuidv4 } from 'uuid'
+import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import { createTimeoutAbortController, getTimeoutErrorMessage } from '@/lib/core/execution-limits'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
@@ -17,12 +18,29 @@ import type { CoreTriggerType } from '@/stores/logs/filters/types'
 
 const logger = createLogger('TriggerWorkflowExecution')
 
+export function buildWorkflowCorrelation(
+  payload: WorkflowExecutionPayload
+): AsyncExecutionCorrelation {
+  const executionId = payload.executionId || uuidv4()
+  const requestId = payload.requestId || payload.correlation?.requestId || executionId.slice(0, 8)
+
+  return {
+    executionId,
+    requestId,
+    source: 'workflow',
+    workflowId: payload.workflowId,
+    triggerType: payload.triggerType || payload.correlation?.triggerType || 'api',
+  }
+}
+
 export type WorkflowExecutionPayload = {
   workflowId: string
   userId: string
   input?: any
   triggerType?: CoreTriggerType
   executionId?: string
+  requestId?: string
+  correlation?: AsyncExecutionCorrelation
   metadata?: Record<string, any>
   callChain?: string[]
 }
@@ -34,8 +52,9 @@ export type WorkflowExecutionPayload = {
  */
 export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
   const workflowId = payload.workflowId
-  const executionId = payload.executionId || uuidv4()
-  const requestId = executionId.slice(0, 8)
+  const correlation = buildWorkflowCorrelation(payload)
+  const executionId = correlation.executionId
+  const requestId = correlation.requestId
 
   logger.info(`[${requestId}] Starting workflow execution job: ${workflowId}`, {
     userId: payload.userId,
@@ -43,7 +62,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
     executionId,
   })
 
-  const triggerType = payload.triggerType || 'api'
+  const triggerType = (correlation.triggerType || 'api') as CoreTriggerType
   const loggingSession = new LoggingSession(workflowId, executionId, triggerType, requestId)
 
   try {
@@ -56,6 +75,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       checkRateLimit: true,
       checkDeployment: true,
       loggingSession: loggingSession,
+      triggerData: { correlation },
     })
 
     if (!preprocessResult.success) {
@@ -79,6 +99,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       userId: actorUserId,
       workspaceId,
       variables: {},
+      triggerData: { correlation },
     })
 
     const workflow = preprocessResult.workflowRecord!
@@ -96,6 +117,7 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
       startTime: new Date().toISOString(),
       isClientSession: false,
       callChain: payload.callChain,
+      correlation,
     }
 
     const snapshot = new ExecutionSnapshot(

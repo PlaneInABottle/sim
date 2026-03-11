@@ -101,6 +101,7 @@ const {
   processWebhookMock,
   executeMock,
   getWorkspaceBilledAccountUserIdMock,
+  queueWebhookExecutionMock,
 } = vi.hoisted(() => ({
   generateRequestHashMock: vi.fn().mockResolvedValue('test-hash-123'),
   validateSlackSignatureMock: vi.fn().mockResolvedValue(true),
@@ -125,6 +126,10 @@ const {
     .mockImplementation(async (workspaceId: string | null | undefined) =>
       workspaceId ? 'test-user-id' : null
     ),
+  queueWebhookExecutionMock: vi.fn().mockImplementation(async () => {
+    const { NextResponse } = await import('next/server')
+    return NextResponse.json({ message: 'Webhook processed' })
+  }),
 }))
 
 vi.mock('@trigger.dev/sdk', () => ({
@@ -359,12 +364,7 @@ vi.mock('@/lib/webhooks/processor', () => ({
   }),
   shouldSkipWebhookEvent: vi.fn().mockReturnValue(false),
   handlePreDeploymentVerification: vi.fn().mockReturnValue(null),
-  queueWebhookExecution: vi.fn().mockImplementation(async () => {
-    // Call processWebhookMock so tests can verify it was called
-    processWebhookMock()
-    const { NextResponse } = await import('next/server')
-    return NextResponse.json({ message: 'Webhook processed' })
-  }),
+  queueWebhookExecution: queueWebhookExecutionMock,
 }))
 
 vi.mock('drizzle-orm/postgres-js', () => ({
@@ -419,7 +419,7 @@ describe('Webhook Trigger API Route', () => {
 
     const params = Promise.resolve({ path: 'non-existent-path' })
 
-    const response = await POST(req, { params })
+    const response = await POST(req as any, { params })
 
     expect(response.status).toBe(404)
 
@@ -494,6 +494,32 @@ describe('Webhook Trigger API Route', () => {
   })
 
   describe('Generic Webhook Authentication', () => {
+    it('passes correlation-bearing request context into webhook queueing', async () => {
+      testData.webhooks.push({
+        id: 'generic-webhook-id',
+        provider: 'generic',
+        path: 'test-path',
+        isActive: true,
+        providerConfig: { requireAuth: false },
+        workflowId: 'test-workflow-id',
+      })
+
+      const req = createMockRequest('POST', { event: 'test', id: 'test-123' })
+      const params = Promise.resolve({ path: 'test-path' })
+
+      const response = await POST(req as any, { params })
+
+      expect(response.status).toBe(200)
+      expect(queueWebhookExecutionMock).toHaveBeenCalledOnce()
+      const call = queueWebhookExecutionMock.mock.calls[0]
+      expect(call[0]).toEqual(expect.objectContaining({ id: 'generic-webhook-id' }))
+      expect(call[1]).toEqual(expect.objectContaining({ id: 'test-workflow-id' }))
+      expect(call[2]).toEqual(expect.objectContaining({ event: 'test', id: 'test-123' }))
+      expect(call[4]).toEqual(
+        expect.objectContaining({ requestId: 'mock-request-id', path: 'test-path' })
+      )
+    })
+
     it('should process generic webhook without authentication', async () => {
       testData.webhooks.push({
         id: 'generic-webhook-id',
@@ -514,7 +540,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'test', id: 'test-123' })
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(200)
 
@@ -544,7 +570,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'bearer.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(200)
     })
@@ -575,7 +601,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'custom.header.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(200)
     })
@@ -610,7 +636,7 @@ describe('Webhook Trigger API Route', () => {
         const req = createMockRequest('POST', { event: 'case.test' }, headers)
         const params = Promise.resolve({ path: 'test-path' })
 
-        const response = await POST(req, { params })
+        const response = await POST(req as any, { params })
 
         expect(response.status).toBe(200)
       }
@@ -645,7 +671,7 @@ describe('Webhook Trigger API Route', () => {
         const req = createMockRequest('POST', { event: 'custom.case.test' }, headers)
         const params = Promise.resolve({ path: 'test-path' })
 
-        const response = await POST(req, { params })
+        const response = await POST(req as any, { params })
 
         expect(response.status).toBe(200)
       }
@@ -668,7 +694,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'wrong.token.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain('Unauthorized - Invalid authentication token')
@@ -696,7 +722,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'wrong.custom.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain('Unauthorized - Invalid authentication token')
@@ -716,7 +742,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'no.auth.test' })
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain('Unauthorized - Invalid authentication token')
@@ -744,7 +770,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'exclusivity.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain('Unauthorized - Invalid authentication token')
@@ -772,7 +798,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'wrong.header.name.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain('Unauthorized - Invalid authentication token')
@@ -797,7 +823,7 @@ describe('Webhook Trigger API Route', () => {
       const req = createMockRequest('POST', { event: 'no.token.config.test' }, headers)
       const params = Promise.resolve({ path: 'test-path' })
 
-      const response = await POST(req, { params })
+      const response = await POST(req as any, { params })
 
       expect(response.status).toBe(401)
       expect(await response.text()).toContain(

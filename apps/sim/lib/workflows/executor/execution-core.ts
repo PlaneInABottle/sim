@@ -304,6 +304,7 @@ export async function executeWorkflowCore(
       userId,
       workspaceId: providedWorkspaceId,
       variables,
+      triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,
       skipLogCreation,
       deploymentVersionId,
     })
