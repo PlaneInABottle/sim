@@ -403,7 +403,11 @@ export const Code = memo(function Code({
 
   useEffect(() => {
     if (isAiStreaming) return
-    const valueString = value?.toString() ?? ''
+    const valueString = value == null
+      ? ''
+      : typeof value === 'object'
+        ? JSON.stringify(value, null, 2)
+        : String(value)
     if (valueString !== code) {
       setCode(valueString)
     }

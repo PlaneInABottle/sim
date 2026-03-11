@@ -471,6 +471,9 @@ export function useWorkflowExecution() {
               const promise = (async () => {
                 if (!streamingExecution.stream) return
                 const reader = streamingExecution.stream.getReader()
+                // Create decoder outside loop to maintain internal buffer state for
+                // multi-byte UTF-8 characters that may be split across chunks
+                const decoder = new TextDecoder()
                 const blockId = (streamingExecution.execution as any)?.blockId
 
                 if (blockId && !streamedChunks.has(blockId)) {
@@ -486,7 +489,9 @@ export function useWorkflowExecution() {
                       }
                       break
                     }
-                    const chunk = new TextDecoder().decode(value)
+                    // Use stream: true to properly handle multi-byte UTF-8 characters
+                    // that may be split across chunk boundaries (e.g., Turkish "Ö", emoji)
+                    const chunk = decoder.decode(value, { stream: true })
                     if (blockId) {
                       streamedChunks.get(blockId)!.push(chunk)
                     }

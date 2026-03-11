@@ -290,7 +290,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized update attempt for workflow ${workflowId}`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

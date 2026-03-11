@@ -276,7 +276,12 @@ export function ConditionInput({
     // Use preview value when in preview mode, otherwise use store value
     const effectiveValue = isPreview ? previewValue : storeValue
     // Convert effectiveValue to string if it's not null
-    const effectiveValueStr = effectiveValue !== null ? effectiveValue?.toString() : null
+    const effectiveValueStr =
+      effectiveValue !== null
+        ? typeof effectiveValue === 'string'
+          ? effectiveValue
+          : JSON.stringify(effectiveValue)
+        : null
 
     // Set that we're syncing from store to prevent loops
     isSyncingFromStoreRef.current = true

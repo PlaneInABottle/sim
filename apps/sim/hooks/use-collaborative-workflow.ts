@@ -10,6 +10,7 @@ import { useUndoRedo } from '@/hooks/use-undo-redo'
 import {
   BLOCK_OPERATIONS,
   BLOCKS_OPERATIONS,
+  EDGE_OPERATIONS,
   EDGES_OPERATIONS,
   OPERATION_TARGETS,
   SUBBLOCK_OPERATIONS,
@@ -24,7 +25,7 @@ import { useCodeUndoRedoStore, useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowDiffStore } from '@/stores/workflow-diff/store'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
-import { filterNewEdges, filterValidEdges, mergeSubblockState } from '@/stores/workflows/utils'
+import { filterNewEdges, filterValidEdges, mergeSubblockState, prepareBlockState } from '@/stores/workflows/utils'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { BlockState, Loop, Parallel, Position } from '@/stores/workflows/workflow/types'
 import { findAllDescendantNodes, isBlockProtected } from '@/stores/workflows/workflow/utils'
@@ -191,6 +192,36 @@ export function useCollaborativeWorkflow() {
                 .getState()
                 .setBlockCanonicalMode(payload.id, payload.canonicalId, payload.canonicalMode)
               break
+            case BLOCK_OPERATIONS.TOGGLE_ENABLED: {
+              const block = useWorkflowStore.getState().blocks[payload.id]
+              if (block) {
+                useWorkflowStore.getState().setBlockEnabled(payload.id, !block.enabled)
+              }
+              break
+            }
+            case BLOCK_OPERATIONS.UPDATE_POSITION: {
+              if (payload.id && payload.position) {
+                useWorkflowStore
+                  .getState()
+                  .batchUpdatePositions([{ id: payload.id, position: payload.position }])
+              }
+              break
+            }
+            case BLOCK_OPERATIONS.UPDATE_PARENT: {
+              const block = useWorkflowStore.getState().blocks[payload.id]
+              if (block) {
+                useWorkflowStore.getState().batchUpdateBlocksWithParent([
+                  { id: payload.id, position: block.position, parentId: payload.parentId },
+                ])
+              }
+              break
+            }
+            case BLOCK_OPERATIONS.TOGGLE_HANDLES: {
+              if (payload.id && payload.horizontalHandles !== undefined) {
+                useWorkflowStore.getState().setBlockHandles(payload.id, payload.horizontalHandles)
+              }
+              break
+            }
           }
         } else if (target === OPERATION_TARGETS.BLOCKS) {
           switch (operation) {
@@ -237,6 +268,66 @@ export function useCollaborativeWorkflow() {
                 if (newEdges.length > 0) {
                   useWorkflowStore.getState().batchAddEdges(newEdges, { skipValidation: true })
                 }
+              }
+              break
+            }
+          }
+        } else if (target === OPERATION_TARGETS.EDGE) {
+          switch (operation) {
+            case EDGE_OPERATIONS.ADD: {
+              const { id, source, target: edgeTarget, sourceHandle, targetHandle } = payload
+              if (id && source && edgeTarget) {
+                logger.info('Received add-edge from remote user', {
+                  userId,
+                  edgeId: id,
+                  source,
+                  target: edgeTarget,
+                })
+                const blocks = useWorkflowStore.getState().blocks
+                const currentEdges = useWorkflowStore.getState().edges
+                const newEdge: Edge = {
+                  id,
+                  source,
+                  target: edgeTarget,
+                  sourceHandle: sourceHandle || undefined,
+                  targetHandle: targetHandle || undefined,
+                  type: 'default',
+                  data: {},
+                }
+                const validEdges = filterValidEdges([newEdge], blocks)
+                const filteredNewEdges = filterNewEdges(validEdges, currentEdges)
+                if (filteredNewEdges.length > 0) {
+                  useWorkflowStore.getState().batchAddEdges(filteredNewEdges, { skipValidation: true })
+                }
+                logger.info('Successfully applied add-edge from remote user')
+              }
+              break
+            }
+            case EDGE_OPERATIONS.REMOVE: {
+              if (payload.id) {
+                logger.info('Received remove-edge from remote user', {
+                  userId,
+                  edgeId: payload.id,
+                })
+                useWorkflowStore.getState().batchRemoveEdges([payload.id])
+
+                const updatedBlocks = useWorkflowStore.getState().blocks
+                const updatedEdges = useWorkflowStore.getState().edges
+                const graph = {
+                  blocksById: updatedBlocks,
+                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                }
+
+                const undoRedoStore = useUndoRedoStore.getState()
+                const stackKeys = Object.keys(undoRedoStore.stacks)
+                stackKeys.forEach((key) => {
+                  const [wfId, uId] = key.split(':')
+                  if (wfId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(wfId, uId, graph)
+                  }
+                })
+
+                logger.info('Successfully applied remove-edge from remote user')
               }
               break
             }
@@ -347,6 +438,26 @@ export function useCollaborativeWorkflow() {
               }
               break
           }
+        } else if (target === OPERATION_TARGETS.SUBBLOCK) {
+          switch (operation) {
+            case SUBBLOCK_OPERATIONS.UPDATE: {
+              const { blockId, subblockId, value } = payload
+              if (blockId && subblockId !== undefined) {
+                logger.info('Received subblock update from remote user', {
+                  userId,
+                  blockId,
+                  subblockId,
+                })
+                useSubBlockStore.getState().setValue(blockId, subblockId, value)
+                const blockType = useWorkflowStore.getState().blocks?.[blockId]?.type
+                if (activeWorkflowId && blockType === 'function' && subblockId === 'code') {
+                  useCodeUndoRedoStore.getState().clear(activeWorkflowId, blockId, subblockId)
+                }
+                logger.info('Successfully applied subblock update from remote user')
+              }
+              break
+            }
+          }
         }
 
         if (target === OPERATION_TARGETS.BLOCKS) {
@@ -360,9 +471,31 @@ export function useCollaborativeWorkflow() {
               })
 
               if (blocks && blocks.length > 0) {
+                // Defensive hydration: if blocks arrive with empty subBlocks
+                // (e.g., enrichment was bypassed), hydrate from registry client-side
+                const hydratedBlocks = blocks.map((block: Record<string, unknown>) => {
+                  const subBlocks = block.subBlocks as Record<string, unknown> | undefined
+                  if (!subBlocks || Object.keys(subBlocks).length === 0) {
+                    const prepared = prepareBlockState({
+                      id: block.id as string,
+                      type: block.type as string,
+                      name: block.name as string,
+                      position: block.position as { x: number; y: number },
+                      data: block.data as Record<string, unknown>,
+                      triggerMode: block.triggerMode as boolean,
+                    })
+                    return {
+                      ...block,
+                      subBlocks: prepared.subBlocks,
+                      outputs: prepared.outputs,
+                    }
+                  }
+                  return block
+                })
+
                 useWorkflowStore
                   .getState()
-                  .batchAddBlocks(blocks, edges || [], addedSubBlockValues || {})
+                  .batchAddBlocks(hydratedBlocks, edges || [], addedSubBlockValues || {})
               }
 
               logger.info('Successfully applied batch-add-blocks from remote user')

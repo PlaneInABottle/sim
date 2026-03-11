@@ -434,6 +434,26 @@ describe('Function Execute API Route', () => {
 
       expect(response.status).toBe(200)
     })
+
+    it.concurrent(
+      'should execute function-style custom tool code when execute() is defined',
+      async () => {
+        const req = createMockRequest('POST', {
+          code: 'async function execute(params) { return params.location + " ok" }',
+          params: {
+            location: 'San Francisco',
+          },
+          isCustomTool: true,
+        })
+
+        const response = await POST(req)
+        const data = await response.json()
+
+        expect(response.status).toBe(200)
+        expect(data.success).toBe(true)
+        expect(data.output.result).toBe('San Francisco ok')
+      }
+    )
   })
 
   describe('Security and Edge Cases', () => {

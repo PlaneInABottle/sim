@@ -196,14 +196,22 @@ export function useSubBlockInput(options: UseSubBlockInputOptions): UseSubBlockI
     return storeValue
   }, [isStreaming, localContent, isPreview, previewValue, propValue, storeValue])
 
-  const valueString = useMemo(() => value?.toString?.() ?? '', [value])
+  const valueString = useMemo(() => {
+    if (value == null) return ''
+    if (typeof value === 'object') return JSON.stringify(value, null, 2)
+    return String(value)
+  }, [value])
 
   const baseValue = isPreview ? previewValue : propValue !== undefined ? propValue : storeValue
 
   // Sync local content with base value when not streaming
   useEffect(() => {
     if (!isStreaming) {
-      const baseValueString = baseValue?.toString?.() ?? ''
+      const baseValueString = baseValue == null
+        ? ''
+        : typeof baseValue === 'object'
+          ? JSON.stringify(baseValue, null, 2)
+          : String(baseValue)
       if (baseValueString !== localContent) {
         setLocalContent(baseValueString)
       }

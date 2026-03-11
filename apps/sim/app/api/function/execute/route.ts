@@ -837,7 +837,9 @@ export async function POST(req: NextRequest) {
     if (isCustomTool) {
       const paramKeys = Object.keys(executionParams)
       const paramDestructuring = paramKeys.map((key) => `const ${key} = params.${key};`).join('\n')
-      codeToExecute = `${paramDestructuring}\n${resolvedCode}`
+      const executeFallback =
+        '\n\nif (typeof execute === "function") {\n  return await execute(params, { envVars: environmentVariables });\n}'
+      codeToExecute = `${paramDestructuring}\n${resolvedCode}${executeFallback}`
       prependedLineCount = paramKeys.length
     }
 

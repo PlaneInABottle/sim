@@ -267,7 +267,11 @@ export const ComboBox = memo(function ComboBox({
    * - For everything else, display the raw value
    */
   const displayValue = useMemo(() => {
-    const raw = value?.toString() ?? ''
+    const raw = value == null
+      ? ''
+      : typeof value === 'object'
+        ? JSON.stringify(value, null, 2)
+        : String(value)
     if (!raw) return ''
 
     const match = evaluatedOptions.find((option) =>

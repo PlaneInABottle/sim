@@ -42,6 +42,8 @@ const WRITE_OPERATIONS: string[] = [
   // Batch edge operations
   EDGES_OPERATIONS.BATCH_ADD_EDGES,
   EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+  // Subblock operations
+  SUBBLOCK_OPERATIONS.UPDATE,
   // Subflow operations
   SUBFLOW_OPERATIONS.UPDATE,
   // Subblock operations

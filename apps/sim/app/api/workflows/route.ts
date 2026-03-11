@@ -5,7 +5,7 @@ import { and, asc, eq, inArray, isNull, min, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { listWorkflows, type WorkflowScope } from '@/lib/workflows/utils'
@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
   const scope = (url.searchParams.get('scope') ?? 'active') as WorkflowScope
 
   try {
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!auth.success || !auth.userId) {
       logger.warn(`[${requestId}] Unauthorized workflow access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -108,14 +108,14 @@ export async function GET(request: NextRequest) {
   } catch (error: any) {
     const elapsed = Date.now() - startTime
     logger.error(`[${requestId}] Workflow fetch error after ${elapsed}ms`, error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
 // POST /api/workflows - Create a new workflow
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
-  const auth = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+  const auth = await checkHybridAuth(req, { requireWorkflowId: false })
   if (!auth.success || !auth.userId) {
     logger.warn(`[${requestId}] Unauthorized workflow creation attempt`)
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from 'http'
 import { env } from '@/lib/core/config/env'
 import { safeCompare } from '@/lib/core/security/encryption'
+import { BLOCKS_OPERATIONS, OPERATION_TARGETS } from '@/socket/constants'
+import { enrichBatchAddBlocksPayload } from '@/socket/database/operations'
 import type { IRoomManager } from '@/socket/rooms'
 
 interface Logger {
@@ -132,6 +134,42 @@ export function createHttpHandler(roomManager: IRoomManager, logger: Logger) {
       } catch (error) {
         logger.error('Error handling workflow revert notification:', error)
         sendError(res, 'Failed to process revert notification')
+      }
+      return
+    }
+
+    // Handle workflow operation broadcast notifications from the REST API
+    if (req.method === 'POST' && req.url === '/api/workflow-operation') {
+      try {
+        const body = await readRequestBody(req)
+        const { workflowId, operation, target, payload, operationId, timestamp } = JSON.parse(body)
+
+        // Enrich BATCH_ADD_BLOCKS payloads with registry defaults before broadcasting
+        const enrichedPayload =
+          target === OPERATION_TARGETS.BLOCKS && operation === BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS
+            ? enrichBatchAddBlocksPayload(payload)
+            : payload
+
+        const broadcastPayload = {
+          operation,
+          target,
+          payload: enrichedPayload,
+          timestamp,
+          senderId: 'rest-api',
+          userId: 'rest-api',
+          metadata: {
+            workflowId,
+            operationId: operationId || crypto.randomUUID(),
+            source: 'rest-api',
+          },
+        }
+
+        roomManager.emitToWorkflow(workflowId, 'workflow-operation', broadcastPayload)
+        await roomManager.updateRoomLastModified(workflowId)
+        sendSuccess(res)
+      } catch (error) {
+        logger.error('Error handling workflow operation broadcast:', error)
+        sendError(res, 'Failed to process operation broadcast')
       }
       return
     }

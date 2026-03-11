@@ -254,7 +254,7 @@ export function McpDynamicArgs({
             config={config}
             placeholder={config.placeholder}
             password={isPassword}
-            value={value?.toString() || ''}
+            value={value == null ? '' : typeof value === 'object' ? JSON.stringify(value, null, 2) : String(value)}
             onChange={(newValue) => {
               let processedValue: any = newValue
               const hasTag = newValue.includes('<') || newValue.includes('>')

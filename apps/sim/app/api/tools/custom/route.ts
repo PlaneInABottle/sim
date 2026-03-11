@@ -4,8 +4,9 @@ import { createLogger } from '@sim/logger'
 import { and, desc, eq, isNull, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
-import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
+import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { TOOL_NAME_PATTERN } from '@/lib/mcp/workflow-tool-schema'
 import { upsertCustomTools } from '@/lib/workflows/custom-tools/operations'
 import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
@@ -20,7 +21,13 @@ const CustomToolSchema = z.object({
       schema: z.object({
         type: z.literal('function'),
         function: z.object({
-          name: z.string().min(1, 'Function name is required'),
+          name: z
+            .string()
+            .min(1, 'Function name is required')
+            .regex(
+              TOOL_NAME_PATTERN,
+              'Function name must contain only lowercase letters, numbers, underscores, or hyphens (1-64 chars)'
+            ),
           description: z.string().optional(),
           parameters: z.object({
             type: z.string(),
@@ -43,8 +50,8 @@ export async function GET(request: NextRequest) {
   const workflowId = searchParams.get('workflowId')
 
   try {
-    // Use session/internal auth to support session and internal JWT (no API key access)
-    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    // Use hybrid auth to support API keys, session, and internal JWT for MCP server compatibility
+    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized custom tools access attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -117,13 +124,14 @@ export async function GET(request: NextRequest) {
   }
 }
 
-// POST - Create or update custom tools
+// POST handles both create (no id) and update (with id in body)
+// Validation is applied to both paths equally
 export async function POST(req: NextRequest) {
   const requestId = generateRequestId()
 
   try {
-    // Use session/internal auth (no API key access)
-    const authResult = await checkSessionOrInternalAuth(req, { requireWorkflowId: false })
+    // Use hybrid auth to support API keys, session, and internal JWT for MCP server compatibility
+    const authResult = await checkHybridAuth(req, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized custom tools update attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -199,8 +207,8 @@ export async function DELETE(request: NextRequest) {
   }
 
   try {
-    // Use session/internal auth (no API key access)
-    const authResult = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
+    // Use hybrid auth to support API keys, session, and internal JWT for MCP server compatibility
+    const authResult = await checkHybridAuth(request, { requireWorkflowId: false })
     if (!authResult.success || !authResult.userId) {
       logger.warn(`[${requestId}] Unauthorized custom tool deletion attempt`)
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

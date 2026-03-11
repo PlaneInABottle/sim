@@ -40,6 +40,7 @@ import {
   useDeleteCustomTool,
   useUpdateCustomTool,
 } from '@/hooks/queries/custom-tools'
+import { isValidToolName, sanitizeToolName } from '@/lib/mcp/workflow-tool-schema'
 
 const logger = createLogger('CustomToolModal')
 
@@ -439,6 +440,18 @@ try {
       const schema = JSON.parse(jsonSchema)
       const name = schema.function.name
       const description = schema.function.description || ''
+
+      // Validate function name format before saving
+      // Validation error is shown inline (schemaError) with suggestion for user correction
+      // This preserves context better than a toast would
+      if (!isValidToolName(name)) {
+        const suggested = sanitizeToolName(name)
+        setSchemaError(
+          `Function name "${name}" is invalid. Names must contain only lowercase letters, numbers, underscores, or hyphens (1-64 chars). Try: "${suggested}"`
+        )
+        setActiveSection('schema')
+        return
+      }
 
       let toolIdToUpdate: string | undefined = toolId
       if (isEditing && !toolIdToUpdate && initialValues?.schema) {
