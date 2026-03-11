@@ -79,6 +79,41 @@ vi.mock('@/blocks/registry', () => ({
     outputs: {},
   })),
   getAllBlocks: vi.fn(() => ({})),
+  getAllBlockTypes: vi.fn(() => [
+    'action',
+    'agent',
+    'api',
+    'function',
+    'condition',
+    'router',
+    'slack',
+    'gmail',
+    'google_sheets',
+    'webhook',
+    'api_trigger',
+    'schedule',
+    'starter',
+    'response',
+  ]),
+  isValidBlockType: vi.fn((type: string) => {
+    const validTypes = [
+      'action',
+      'agent',
+      'api',
+      'function',
+      'condition',
+      'router',
+      'slack',
+      'gmail',
+      'google_sheets',
+      'webhook',
+      'api_trigger',
+      'schedule',
+      'starter',
+      'response',
+    ]
+    return validTypes.includes(type) || validTypes.includes(type.replace(/-/g, '_'))
+  }),
 }))
 
 vi.mock('@trigger.dev/sdk', () => ({

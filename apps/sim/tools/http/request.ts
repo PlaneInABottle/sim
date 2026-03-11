@@ -1,7 +1,25 @@
 import type { RequestParams, RequestResponse } from '@/tools/http/types'
 import { getDefaultHeaders, processUrl } from '@/tools/http/utils'
 import { transformTable } from '@/tools/shared/table'
-import type { ToolConfig } from '@/tools/types'
+import type { TableRow, ToolConfig } from '@/tools/types'
+
+/**
+ * Parse table data that may be stringified JSON or already an array
+ * Handles the case where UI stores table data as stringified JSON
+ */
+function parseTableData(data: TableRow[] | string | null | undefined): TableRow[] | null {
+  if (!data) return null
+  if (Array.isArray(data)) return data
+  if (typeof data === 'string') {
+    try {
+      const parsed = JSON.parse(data)
+      return Array.isArray(parsed) ? parsed : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
 
 export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
   id: 'http_request',
@@ -88,8 +106,10 @@ export const requestTool: ToolConfig<RequestParams, RequestResponse> = {
     },
 
     headers: (params: RequestParams) => {
-      const headers = transformTable(params.headers || null)
-      const processedUrl = processUrl(params.url, params.pathParams, params.params)
+      const parsedHeaders = parseTableData(params.headers)
+      const headers = transformTable(parsedHeaders)
+      const parsedParams = parseTableData(params.params)
+      const processedUrl = processUrl(params.url, params.pathParams, parsedParams)
       const allHeaders = getDefaultHeaders(headers, processedUrl)
 
       // Set appropriate Content-Type only if not already specified by user

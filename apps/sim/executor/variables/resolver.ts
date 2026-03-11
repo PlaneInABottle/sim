@@ -48,31 +48,34 @@ export class VariableResolver {
     const resolved: Record<string, any> = {}
 
     const isConditionBlock = block?.metadata?.id === BlockType.CONDITION
-    if (isConditionBlock && typeof params.conditions === 'string') {
-      try {
-        const parsed = JSON.parse(params.conditions)
-        if (Array.isArray(parsed)) {
-          resolved.conditions = parsed.map((cond: any) => ({
-            ...cond,
-            value:
-              typeof cond.value === 'string'
-                ? this.resolveTemplateWithoutConditionFormatting(ctx, currentNodeId, cond.value)
-                : cond.value,
-          }))
-        } else {
-          resolved.conditions = this.resolveValue(
-            ctx,
-            currentNodeId,
-            params.conditions,
-            undefined,
-            block
-          )
+    if (isConditionBlock && params.conditions !== undefined) {
+      let conditionsArray: any[] | null = null
+
+      if (Array.isArray(params.conditions)) {
+        conditionsArray = params.conditions
+      } else if (typeof params.conditions === 'string') {
+        try {
+          const parsed = JSON.parse(params.conditions)
+          if (Array.isArray(parsed)) {
+            conditionsArray = parsed
+          }
+        } catch (parseError) {
+          logger.warn('Failed to parse conditions JSON, falling back to normal resolution', {
+            error: parseError,
+            conditions: params.conditions,
+          })
         }
-      } catch (parseError) {
-        logger.warn('Failed to parse conditions JSON, falling back to normal resolution', {
-          error: parseError,
-          conditions: params.conditions,
-        })
+      }
+
+      if (conditionsArray) {
+        resolved.conditions = conditionsArray.map((cond: any) => ({
+          ...cond,
+          value:
+            typeof cond.value === 'string'
+              ? this.resolveTemplateWithoutConditionFormatting(ctx, currentNodeId, cond.value)
+              : cond.value,
+        }))
+      } else {
         resolved.conditions = this.resolveValue(
           ctx,
           currentNodeId,

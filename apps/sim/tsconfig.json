@@ -17,8 +17,11 @@
       "@/tools/*": ["./tools/*"],
       "@/serializer": ["./serializer"],
       "@/serializer/*": ["./serializer/*"],
+      "@/socket": ["./socket"],
+      "@/socket/*": ["./socket/*"],
       "@sim/db": ["../../packages/db"],
       "@sim/db/*": ["../../packages/db/*"],
+      "@sim/logger": ["../../packages/logger"],
       "@/executor": ["./executor"],
       "@/executor/*": ["./executor/*"]
     }

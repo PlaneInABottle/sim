@@ -1462,4 +1462,175 @@ describe('Provider/Model Blacklist', () => {
       expect(getProviderFromModel('CLAUDE-SONNET-4-5')).toBe('anthropic')
     })
   })
+
+  describe('UTF-8 multi-byte character handling in streams', () => {
+    it.concurrent('should handle Turkish characters split across chunks', () => {
+      const encoder = new TextEncoder()
+      const decoder = new TextDecoder()
+
+      const fullText = 'Öteki'
+      const bytes = encoder.encode(fullText)
+
+      // "Ö" is UTF-8: 2 bytes (0xC3 0x96)
+      // Split after first byte of "Ö" (0xC3)
+      const chunk1 = bytes.slice(0, 1)
+      const chunk2 = bytes.slice(1)
+
+      // Decode with stream: true to handle incomplete UTF-8 sequences
+      const result1 = decoder.decode(chunk1, { stream: true })
+      const result2 = decoder.decode(chunk2, { stream: false })
+      const result = result1 + result2
+
+      expect(result).toBe(fullText)
+      expect(result).not.toContain('\uFFFD') // No replacement characters
+    })
+
+    it.concurrent('should handle emoji split across chunks', () => {
+      const encoder = new TextEncoder()
+      const decoder = new TextDecoder()
+
+      const fullText = 'Hello 🚀 World'
+      const bytes = encoder.encode(fullText)
+
+      // "🚀" is UTF-8: 4 bytes (F0 9F 9A 80)
+      // Find the emoji position - "Hello " is 6 bytes
+      const emojiStart = 6
+
+      // Split the emoji at different byte boundaries
+      // Chunk 1: "Hello " + first byte of emoji (F0)
+      const chunk1 = bytes.slice(0, emojiStart + 1)
+      // Chunk 2: remaining 3 bytes of emoji (9F 9A 80)
+      const chunk2 = bytes.slice(emojiStart + 1, emojiStart + 4)
+      // Chunk 3: " World"
+      const chunk3 = bytes.slice(emojiStart + 4)
+
+      const result1 = decoder.decode(chunk1, { stream: true })
+      const result2 = decoder.decode(chunk2, { stream: true })
+      const result3 = decoder.decode(chunk3, { stream: false })
+      const result = result1 + result2 + result3
+
+      expect(result).toBe(fullText)
+      expect(result).toContain('🚀')
+      expect(result).not.toContain('\uFFFD') // No replacement characters
+    })
+
+    it.concurrent('should handle emoji split at each byte boundary', () => {
+      const encoder = new TextEncoder()
+      const decoder = new TextDecoder()
+
+      const fullText = 'Hello 🚀 World'
+      const bytes = encoder.encode(fullText)
+
+      // "🚀" is UTF-8: 4 bytes (F0 9F 9A 80) starting at position 6
+      const emojiStart = 6
+
+      // Split into individual bytes for the emoji portion
+      const chunk1 = bytes.slice(0, emojiStart + 1) // "Hello " + F0
+      const chunk2 = bytes.slice(emojiStart + 1, emojiStart + 2) // 9F
+      const chunk3 = bytes.slice(emojiStart + 2, emojiStart + 3) // 9A
+      const chunk4 = bytes.slice(emojiStart + 3, emojiStart + 4) // 80
+      const chunk5 = bytes.slice(emojiStart + 4) // " World"
+
+      const result1 = decoder.decode(chunk1, { stream: true })
+      const result2 = decoder.decode(chunk2, { stream: true })
+      const result3 = decoder.decode(chunk3, { stream: true })
+      const result4 = decoder.decode(chunk4, { stream: true })
+      const result5 = decoder.decode(chunk5, { stream: false })
+      const result = result1 + result2 + result3 + result4 + result5
+
+      expect(result).toBe(fullText)
+      expect(result).toContain('🚀')
+      expect(result).not.toContain('\uFFFD') // No replacement characters
+    })
+
+    it.concurrent('should handle mixed multi-byte characters split across chunks', () => {
+      const encoder = new TextEncoder()
+      const decoder = new TextDecoder()
+
+      // Turkish "ü" (C3 BC - 2 bytes), CJK "中" (E4 B8 AD - 3 bytes), Emoji "🎯" (F0 9F 8E AF - 4 bytes)
+      const fullText = 'Hello ü 中 🎯 World'
+      const bytes = encoder.encode(fullText)
+
+      // Calculate byte positions:
+      // "Hello " = 6 bytes (positions 0-5)
+      // "ü" = 2 bytes (positions 6-7)
+      // " " = 1 byte (position 8)
+      // "中" = 3 bytes (positions 9-11)
+      // " " = 1 byte (position 12)
+      // "🎯" = 4 bytes (positions 13-16)
+      // " World" = 6 bytes (positions 17-22)
+
+      // Split each multi-byte character at different boundaries
+      const chunk1 = bytes.slice(0, 7) // "Hello " + first byte of "ü"
+      const chunk2 = bytes.slice(7, 10) // second byte of "ü" + " " + first byte of "中"
+      const chunk3 = bytes.slice(10, 14) // remaining bytes of "中" + " " + first byte of "🎯"
+      const chunk4 = bytes.slice(14, 17) // remaining bytes of "🎯"
+      const chunk5 = bytes.slice(17) // " World"
+
+      const result1 = decoder.decode(chunk1, { stream: true })
+      const result2 = decoder.decode(chunk2, { stream: true })
+      const result3 = decoder.decode(chunk3, { stream: true })
+      const result4 = decoder.decode(chunk4, { stream: true })
+      const result5 = decoder.decode(chunk5, { stream: false })
+      const result = result1 + result2 + result3 + result4 + result5
+
+      expect(result).toBe(fullText)
+      expect(result).toContain('ü')
+      expect(result).toContain('中')
+      expect(result).toContain('🎯')
+      expect(result).not.toContain('\uFFFD') // No replacement characters
+    })
+
+    it.concurrent('should handle Turkish text with multiple special characters', () => {
+      const encoder = new TextEncoder()
+      const decoder = new TextDecoder()
+
+      // Turkish text with various special characters
+      const fullText = 'Türkçe öğrenmek güzel şey'
+      const bytes = encoder.encode(fullText)
+
+      // Split into multiple chunks at arbitrary positions
+      const chunkSize = 3
+      const chunks: Uint8Array[] = []
+      for (let i = 0; i < bytes.length; i += chunkSize) {
+        chunks.push(bytes.slice(i, Math.min(i + chunkSize, bytes.length)))
+      }
+
+      let result = ''
+      for (let i = 0; i < chunks.length; i++) {
+        const isLast = i === chunks.length - 1
+        result += decoder.decode(chunks[i], { stream: !isLast })
+      }
+
+      expect(result).toBe(fullText)
+      expect(result).toContain('ü')
+      expect(result).toContain('ç')
+      expect(result).toContain('ö')
+      expect(result).toContain('ğ')
+      expect(result).toContain('ş')
+      expect(result).not.toContain('\uFFFD') // No replacement characters
+    })
+
+    it.concurrent('should demonstrate incorrect decoding without stream option', () => {
+      const encoder = new TextEncoder()
+
+      const fullText = 'Öteki'
+      const bytes = encoder.encode(fullText)
+
+      // Split after first byte of "Ö" (0xC3)
+      const chunk1 = bytes.slice(0, 1)
+      const chunk2 = bytes.slice(1)
+
+      // Decode WITHOUT stream option - creates new decoder for each chunk
+      const decoder1 = new TextDecoder()
+      const decoder2 = new TextDecoder()
+      const result1 = decoder1.decode(chunk1) // No stream: true
+      const result2 = decoder2.decode(chunk2)
+      const incorrectResult = result1 + result2
+
+      // This should produce replacement characters because the UTF-8 sequence is broken
+      expect(incorrectResult).not.toBe(fullText)
+      expect(incorrectResult).toContain('\uFFFD') // Contains replacement character
+    })
+  })
 })

@@ -131,6 +131,21 @@ export function sanitizeToolName(name: string): string {
 }
 
 /**
+ * Valid tool name pattern: lowercase alphanumeric, underscores, and hyphens only, 1-64 chars.
+ * Matches OpenAI/OpenRouter function name convention (snake_case/kebab-case, lowercase recommended).
+ * This is the single source of truth — imported by both frontend and backend validators.
+ */
+export const TOOL_NAME_PATTERN = /^[a-z0-9_-]{1,64}$/
+
+/**
+ * Check whether a tool/function name is valid for use with LLM providers.
+ * Must be 1-64 characters, lowercase alphanumeric with underscores and hyphens only.
+ */
+export function isValidToolName(name: string): boolean {
+  return TOOL_NAME_PATTERN.test(name)
+}
+
+/**
  * Generate MCP tool input schema from InputFormatField array.
  * This converts the workflow's input format definition to JSON Schema format
  * that MCP clients can use to understand tool parameters.

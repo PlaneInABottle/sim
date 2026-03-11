@@ -263,6 +263,7 @@
       "name": "@sim/db",
       "version": "0.1.0",
       "dependencies": {
+        "drizzle-kit": "^0.31.8",
         "drizzle-orm": "^0.44.5",
         "postgres": "^3.4.5",
         "uuid": "^11.1.0",

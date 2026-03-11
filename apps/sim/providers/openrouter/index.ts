@@ -7,6 +7,7 @@ import { getProviderDefaultModel, getProviderModels } from '@/providers/models'
 import {
   checkForForcedToolUsage,
   createReadableStreamFromOpenAIStream,
+  getOpenRouterModelCapabilities,
   supportsNativeStructuredOutputs,
 } from '@/providers/openrouter/utils'
 import type {
@@ -31,7 +32,7 @@ const logger = createLogger('OpenRouterProvider')
 
 /**
  * Applies structured output configuration to a payload based on model capabilities.
- * Uses json_schema with require_parameters for supported models, falls back to json_object with prompt instructions.
+ * Uses json_schema for supported models, falls back to json_object with prompt instructions.
  */
 async function applyResponseFormat(
   targetPayload: any,
@@ -51,7 +52,6 @@ async function applyResponseFormat(
         strict: responseFormat.strict !== false,
       },
     }
-    targetPayload.provider = { ...targetPayload.provider, require_parameters: true }
     return messages
   }
 
@@ -142,14 +142,43 @@ export const openRouterProvider: ProviderConfig = {
     const providerStartTime = Date.now()
     const providerStartTimeISO = new Date(providerStartTime).toISOString()
 
+    // Track whether we applied response_format in the first request (optimization)
+    let responseFormatAppliedInFirstRequest = false
+
     try {
-      if (request.responseFormat && !hasActiveTools) {
-        payload.messages = await applyResponseFormat(
-          payload,
-          payload.messages,
-          request.responseFormat,
-          requestedModel
-        )
+      if (request.responseFormat) {
+        // Check if model supports combining tools + structured outputs
+        let canCombine = false
+        if (hasActiveTools) {
+          try {
+            const capabilities = await getOpenRouterModelCapabilities(requestedModel)
+            canCombine = !!(capabilities?.supportsTools && capabilities?.supportsStructuredOutputs)
+            if (canCombine) {
+              logger.info(
+                'Model supports combining tools + structured outputs; applying response_format in first request',
+                { model: requestedModel }
+              )
+            }
+          } catch (error) {
+            logger.warn('Failed to check model capabilities; falling back to two-request pattern', {
+              model: requestedModel,
+              error: error instanceof Error ? error.message : String(error),
+            })
+          }
+        }
+
+        // Apply response_format to first request if:
+        // 1. No active tools, OR
+        // 2. Model supports combining tools + structured outputs
+        if (!hasActiveTools || canCombine) {
+          payload.messages = await applyResponseFormat(
+            payload,
+            payload.messages,
+            request.responseFormat,
+            requestedModel
+          )
+          responseFormatAppliedInFirstRequest = canCombine && hasActiveTools
+        }
       }
 
       if (request.stream && (!tools || tools.length === 0 || !hasActiveTools)) {
@@ -202,6 +231,7 @@ export const openRouterProvider: ProviderConfig = {
               model: requestedModel,
               tokens: { input: 0, output: 0, total: 0 },
               toolCalls: undefined,
+              toolResults: undefined,
               providerTiming: {
                 startTime: providerStartTimeISO,
                 endTime: new Date().toISOString(),
@@ -441,6 +471,42 @@ export const openRouterProvider: ProviderConfig = {
       }
 
       if (request.stream) {
+        // OPTIMIZATION: Skip second request in streaming if:
+        // response_format was already applied in the first request (model supports combining)
+        // and is therefore included in all subsequent requests including tool result requests
+        const needsSecondRequest = !responseFormatAppliedInFirstRequest
+
+        if (!needsSecondRequest) {
+          logger.info(
+            'Skipping second request in streaming: response_format was applied in first request and included in all subsequent requests (optimization)',
+            { model: requestedModel }
+          )
+
+          // Return the first response as a non-streaming result (already has proper format)
+          // Note: We can't stream the first response since it's already consumed
+          const providerEndTime = Date.now()
+          const providerEndTimeISO = new Date(providerEndTime).toISOString()
+          const totalDuration = providerEndTime - providerStartTime
+
+          return {
+            content,
+            model: requestedModel,
+            tokens,
+            toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+            toolResults: toolResults.length > 0 ? toolResults : undefined,
+            timing: {
+              startTime: providerStartTimeISO,
+              endTime: providerEndTimeISO,
+              duration: totalDuration,
+              modelTime: modelTime,
+              toolsTime: toolsTime,
+              firstResponseTime: firstResponseTime,
+              iterations: iterationCount + 1,
+              timeSegments: timeSegments,
+            },
+          }
+        }
+
         const accumulatedCost = calculateCost(requestedModel, tokens.input, tokens.output)
 
         const streamingParams: ChatCompletionCreateParamsStreaming & { provider?: any } = {
@@ -500,6 +566,7 @@ export const openRouterProvider: ProviderConfig = {
                       count: toolCalls.length,
                     }
                   : undefined,
+              toolResults: toolResults.length > 0 ? toolResults : undefined,
               providerTiming: {
                 startTime: providerStartTimeISO,
                 endTime: new Date().toISOString(),
@@ -528,49 +595,79 @@ export const openRouterProvider: ProviderConfig = {
         return streamingResult as StreamingExecution
       }
 
+      // If responseFormat is set and tools were configured, perform a final structured output call.
+      // This handles both cases: when tools were used (toolCalls.length > 0) and when the model
+      // decided not to use any tools (Option A: structured output fallback for no-tool-call scenario).
+      //
+      // OPTIMIZATION: Skip second request if response_format was already applied in the first request
+      // (model supports combining) and is therefore included in all subsequent requests including
+      // tool result requests via payload spreading.
       if (request.responseFormat && hasActiveTools) {
-        const finalPayload: any = {
-          model: payload.model,
-          messages: [...currentMessages],
-        }
-        if (payload.temperature !== undefined) {
-          finalPayload.temperature = payload.temperature
-        }
-        if (payload.max_tokens !== undefined) {
-          finalPayload.max_tokens = payload.max_tokens
-        }
+        const noToolCallsUsed = toolCalls.length === 0
 
-        finalPayload.messages = await applyResponseFormat(
-          finalPayload,
-          finalPayload.messages,
-          request.responseFormat,
-          requestedModel
-        )
+        // Determine if we need a second request
+        // Skip if response_format was already in all requests (including tool result requests)
+        const needsSecondRequest = !responseFormatAppliedInFirstRequest
 
-        const finalStartTime = Date.now()
-        const finalResponse = await client.chat.completions.create(
-          finalPayload,
-          request.abortSignal ? { signal: request.abortSignal } : undefined
-        )
-        const finalEndTime = Date.now()
-        const finalDuration = finalEndTime - finalStartTime
+        if (!needsSecondRequest) {
+          logger.info(
+            'Skipping second request: response_format was applied in first request and included in all subsequent requests (optimization)',
+            { model: requestedModel }
+          )
+        } else {
+          if (noToolCallsUsed) {
+            logger.info(
+              'Tools configured but model returned no tool calls; applying responseFormat for structured output'
+            )
+          } else {
+            logger.info('Tools were used; making second request to format tool results', {
+              model: requestedModel,
+              toolCallCount: toolCalls.length,
+            })
+          }
 
-        timeSegments.push({
-          type: 'model',
-          name: 'Final structured response',
-          startTime: finalStartTime,
-          endTime: finalEndTime,
-          duration: finalDuration,
-        })
-        modelTime += finalDuration
+          const finalPayload: any = {
+            model: payload.model,
+            messages: [...currentMessages],
+          }
+          if (payload.temperature !== undefined) {
+            finalPayload.temperature = payload.temperature
+          }
+          if (payload.max_tokens !== undefined) {
+            finalPayload.max_tokens = payload.max_tokens
+          }
 
-        if (finalResponse.choices[0]?.message?.content) {
-          content = finalResponse.choices[0].message.content
-        }
-        if (finalResponse.usage) {
-          tokens.input += finalResponse.usage.prompt_tokens || 0
-          tokens.output += finalResponse.usage.completion_tokens || 0
-          tokens.total += finalResponse.usage.total_tokens || 0
+          finalPayload.messages = await applyResponseFormat(
+            finalPayload,
+            finalPayload.messages,
+            request.responseFormat,
+            requestedModel
+          )
+
+          const finalStartTime = Date.now()
+          const finalResponse = await client.chat.completions.create(finalPayload)
+          const finalEndTime = Date.now()
+          const finalDuration = finalEndTime - finalStartTime
+
+          timeSegments.push({
+            type: 'model',
+            name: noToolCallsUsed
+              ? 'Structured output (no tool calls)'
+              : 'Final structured response',
+            startTime: finalStartTime,
+            endTime: finalEndTime,
+            duration: finalDuration,
+          })
+          modelTime += finalDuration
+
+          if (finalResponse.choices[0]?.message?.content) {
+            content = finalResponse.choices[0].message.content
+          }
+          if (finalResponse.usage) {
+            tokens.input += finalResponse.usage.prompt_tokens || 0
+            tokens.output += finalResponse.usage.completion_tokens || 0
+            tokens.total += finalResponse.usage.total_tokens || 0
+          }
         }
       }
 

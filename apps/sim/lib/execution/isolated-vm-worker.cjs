@@ -195,6 +195,18 @@ async function executeCode(request) {
     })
     await jail.set('__fetchRef', fetchCallback)
 
+    // Host-side sleep reference: returns a Promise that resolves after `ms` ms.
+    // Mirrors the fetchCallback pattern — called from isolate via
+    // __sleepRef.apply(undefined, [ms], { result: { promise: true } })
+    const MAX_SLEEP_MS = 30_000
+    const sleepRef = new ivm.Reference((ms) => {
+      return new Promise((resolve) => {
+        const clampedMs = Math.min(Math.max(0, Number(ms) || 0), MAX_SLEEP_MS)
+        setTimeout(() => resolve(), clampedMs)
+      })
+    })
+    await jail.set('__sleepRef', sleepRef)
+
     const bootstrap = `
       // Set up console object
       const console = {
@@ -249,6 +261,33 @@ async function executeCode(request) {
           blob: async () => { throw new Error('blob() not supported in sandbox'); },
           arrayBuffer: async () => { throw new Error('arrayBuffer() not supported in sandbox'); },
         };
+      }
+
+      // Promise-based sleep: await sleep(1000)
+      async function sleep(ms) {
+        return __sleepRef.apply(undefined, [ms], { result: { promise: true } });
+      }
+
+      // setTimeout / clearTimeout
+      const __timers = new Map();
+      let __nextTimerId = 1;
+
+      function setTimeout(fn, ms) {
+        const id = __nextTimerId++;
+        const args = [];
+        for (let i = 2; i < arguments.length; i++) args.push(arguments[i]);
+        __timers.set(id, true);
+        sleep(ms).then(function() {
+          if (__timers.has(id)) {
+            __timers.delete(id);
+            if (typeof fn === 'function') fn.apply(undefined, args);
+          }
+        });
+        return id;
+      }
+
+      function clearTimeout(id) {
+        __timers.delete(id);
       }
 
       // Prevent access to dangerous globals with stronger protection
