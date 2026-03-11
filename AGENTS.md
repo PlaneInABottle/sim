@@ -37,54 +37,6 @@ apps/sim/           # Main Next.js application
 
 ---
 
-## Deployment Context
-
-> ⚠️ **Read this before making any architectural or billing-related decisions.**
-
-This Sim Studio instance is **self-hosted, single-user**. The only user is the owner/operator.
-
-| Fact | Detail |
-|------|--------|
-| **Hosting** | Render (Frankfurt region) |
-| **Users** | 1 — the operator. No external end-users log into Sim |
-| **Billing** | None. No Stripe, no subscriptions, no per-seat charges |
-| **Workspaces** | 3 workspaces: `Ege's Workspace`, `Kamatas Workspace`, `Dynamic Config` |
-| **Clients** | Each workspace corresponds to one Chatwoot account (one business client) |
-| **Role** | Sim is used as an **AI workflow backend** — Chatwoot sends webhooks, Sim processes them |
-| **Prod DB** | `$PROD_DATABASE_URL` in `apps/sim/.env` — Render PostgreSQL (Frankfurt) |
-
-### Connecting to the Production Database
-
-```bash
-# Using the env var (recommended)
-source apps/sim/.env && psql "$PROD_DATABASE_URL"
-
-# Direct psql
-psql "postgresql://sim_production_user:<password>@dpg-d5e0i83uibrs7397tp30-a.frankfurt-postgres.render.com/sim_production"
-```
-
-**Common production DB tasks:**
-```sql
--- Check migration state
-SELECT COUNT(*) FROM drizzle.__drizzle_migrations;
-SELECT id, created_at FROM drizzle.__drizzle_migrations ORDER BY id DESC LIMIT 5;
-
--- Verify table existence (post-migration check)
-SELECT to_regclass('public.credential_member'), to_regclass('public.workspace_budget');
-```
-
-> ⚠️ **Rebase remediation:** Drizzle uses `MAX(created_at)` as a watermark — entries with `folderMillis` ≤ that value are skipped. After a rebase, stale local migration rows have out-of-sequence timestamps and must all be deleted. Delete every row whose `created_at` exceeds the last legitimate upstream entry. If a deploy fails with `CREATE TRIGGER ... already exists`, drop the conflicting triggers before redeploying.
-
-### What this means for agents
-
-- **`getWorkspaceBilledAccountUserId`** and the billing/usage machinery in `processor.ts`, `preprocessing.ts`, etc. are **upstream open-source code**. Do not design new features around them as if we have multi-tenant billing.
-- **`account` table** is Better Auth's OAuth login table (the operator's own login) — unrelated to client/tenant concepts.
-- **Workspace = client**: when differentiating between Chatwoot clients, use `workspace_id`. There is no "tenant" layer above workspaces.
-- **No Admin UI** for billing, limits, or subscription management is needed or wanted.
-- When adding rate-limiting or budget features, scope them to `workspace_id` (not `user_id`, not a "tenant" table).
-
----
-
 ## Tech Stack
 
 | Category | Technologies |
@@ -468,15 +420,12 @@ tree (for example `./dist/skills`) instead of placing it under `.agents/skills/`
 | Tier | Skill | Use When |
 |------|-------|----------|
 | 🔥 Required | `sim-workflow-testing` | **ANY** workflow testing, debugging, trace inspection, or execution verification |
-| ✅ Recommended | `kamatas-workflow-testing` | Kamatas-specific workflow inventory, IDs, and maintained scenario suite layered on the generic testing framework |
 | 🔥 Required | `sim-workflows` | Building/modifying workflows via MCP (blocks, edges, variables) |
 | 🔥 Required | `ikas-api` | Querying ikas e-commerce data (products, orders, customers via GraphQL) |
 | ✅ Recommended | `db-migrations` | Dual-config Drizzle migration architecture, rebases, watermark debugging, production remediation |
 | ✅ Recommended | `ecommerce-agent-template` | Creating WhatsApp/chat support agents for ikas companies (product browsing, order lookup, handoff) |
 | ✅ Recommended | `ikas-products-grouping` | Product discovery tools with category grouping, color/dimension parsing for ikas stores |
-| ✅ Recommended | `config-production-db` | Config_production database schema, tenant auth, runtime query flow |
 | ✅ Recommended | `sim-app-development` | Repo-local app development touchpoints and integration checklist outside workflow-only or deployment work |
-| ✅ Recommended | `sim-debugging` | Production debugging workflow for Render-hosted incidents, SSH/log access issues, and production Postgres execution/queue investigation |
 | ✅ Recommended | `sim-runtime` | Starting/monitoring the Sim Studio dev environment |
 | ✅ Recommended | `sim-self-hosting` | Self-hosting and deployment guidance for npm, Docker Compose, Render, Helm, and environment setup |
 | ✅ Recommended | `trendyol-api` | Trendyol marketplace Q&A and approved-products API reference |
