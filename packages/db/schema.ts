@@ -2639,6 +2639,43 @@ export const jwks = pgTable('jwks', {
   createdAt: timestamp('created_at').notNull(),
 })
 
+// [budget-system] Per-workspace flat AI conversation limit (no monthly reset).
+// Allows disabling budget enforcement per workspace (is_enabled = false for testing/emergencies).
+// No budget row = fail-open (all traffic allowed). See docs/conversation-budget-system.md.
+export const workspaceBudget = pgTable('workspace_budget', {
+  id: text('id').primaryKey(),
+  workspaceId: text('workspace_id')
+    .notNull()
+    .unique()
+    .references(() => workspace.id, { onDelete: 'cascade' }),
+  conversationLimit: integer('conversation_limit').notNull().default(100),
+  isEnabled: boolean('is_enabled').notNull().default(true),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+  updatedAt: timestamp('updated_at').notNull().defaultNow(),
+})
+
+// [budget-system] One row per 24h conversation session consumed. No UNIQUE constraint by design — same conversation can be charged again after 24h. See docs/conversation-budget-system.md.
+export const chatwootConversationConsumptions = pgTable(
+  'chatwoot_conversation_consumptions',
+  {
+    id: text('id').primaryKey(),
+    workspaceId: text('workspace_id')
+      .notNull()
+      .references(() => workspace.id, { onDelete: 'cascade' }),
+    chatwootConversationId: bigint('chatwoot_conversation_id', { mode: 'number' }).notNull(),
+    workflowExecutionId: text('workflow_execution_id'),
+    consumedAt: timestamp('consumed_at').notNull().defaultNow(),
+  },
+  (table) => ({
+    workspaceIdx: index('chatwoot_conv_consumptions_workspace_idx').on(table.workspaceId),
+    recentIdx: index('chatwoot_conv_consumptions_recent_idx').on(
+      table.workspaceId,
+      table.chatwootConversationId,
+      table.consumedAt
+    ),
+  })
+)
+
 export const mothershipInboxAllowedSender = pgTable(
   'mothership_inbox_allowed_sender',
   {

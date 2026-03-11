@@ -1,0 +1,13 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1771931359973,
+      "tag": "0000_create_budget_tables",
+      "breakpoints": true
+    }
+  ]
+}
