@@ -16,7 +16,10 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   try {
     const { id } = await params
 
-    const validation = await validateWorkflowAccess(request, id, false)
+    const validation = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'read',
+    })
     if (validation.error) {
       logger.warn(`[${requestId}] Workflow access validation failed: ${validation.error.message}`)
       return createErrorResponse(validation.error.message, validation.error.status)
