@@ -61,7 +61,7 @@ export async function POST(
     }
 
     return NextResponse.json({
-      success: cancellation.durablyRecorded || locallyAborted,
+      success: cancellation.durablyRecorded,
       executionId,
       redisAvailable: cancellation.reason !== 'redis_unavailable',
       durablyRecorded: cancellation.durablyRecorded,
