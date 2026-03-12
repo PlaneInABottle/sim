@@ -406,4 +406,42 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       })
     )
   })
+
+  it('does not replace a successful outcome when cancellation cleanup fails', async () => {
+    executorExecuteMock.mockResolvedValue({
+      success: true,
+      status: 'completed',
+      output: { done: true },
+      logs: [],
+      metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+    })
+
+    clearExecutionCancellationMock.mockRejectedValue(new Error('cleanup failed'))
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: createSnapshot() as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).resolves.toMatchObject({ status: 'completed', success: true })
+
+    expect(safeCompleteWithErrorMock).not.toHaveBeenCalled()
+  })
+
+  it('does not replace the original error when cancellation cleanup fails', async () => {
+    const error = new Error('engine failed')
+    executorExecuteMock.mockRejectedValue(error)
+    clearExecutionCancellationMock.mockRejectedValue(new Error('cleanup failed'))
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: createSnapshot() as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe(error)
+
+    expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
+  })
 })

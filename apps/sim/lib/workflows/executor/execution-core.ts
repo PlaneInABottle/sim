@@ -137,6 +137,17 @@ function rememberFinalizedExecutionId(executionId: string): void {
   finalizedExecutionIds.set(executionId, now + FINALIZED_EXECUTION_ID_TTL_MS)
 }
 
+async function clearExecutionCancellationSafely(
+  executionId: string,
+  requestId: string
+): Promise<void> {
+  try {
+    await clearExecutionCancellation(executionId)
+  } catch (error) {
+    logger.error(`[${requestId}] Failed to clear execution cancellation`, { error, executionId })
+  }
+}
+
 function markExecutionFinalizedByCore(error: unknown, executionId: string): void {
   rememberFinalizedExecutionId(executionId)
 
@@ -162,9 +173,10 @@ async function finalizeExecutionOutcome(params: {
   result: ExecutionResult
   loggingSession: LoggingSession
   executionId: string
+  requestId: string
   workflowInput: unknown
 }): Promise<void> {
-  const { result, loggingSession, executionId, workflowInput } = params
+  const { result, loggingSession, executionId, requestId, workflowInput } = params
   const { traceSpans, totalDuration } = buildTraceSpans(result)
   const endedAt = new Date().toISOString()
 
@@ -197,7 +209,7 @@ async function finalizeExecutionOutcome(params: {
       executionState: result.executionState,
     })
   } finally {
-    await clearExecutionCancellation(executionId)
+    await clearExecutionCancellationSafely(executionId, requestId)
   }
 }
 
@@ -229,7 +241,7 @@ async function finalizeExecutionError(params: {
     })
     return false
   } finally {
-    await clearExecutionCancellation(executionId)
+    await clearExecutionCancellationSafely(executionId, requestId)
   }
 }
 
@@ -486,6 +498,7 @@ export async function executeWorkflowCore(
       result,
       loggingSession,
       executionId,
+      requestId,
       workflowInput: processedInput,
     })
 
