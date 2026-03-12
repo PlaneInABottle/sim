@@ -1,8 +1,10 @@
 import { loggerMock } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockGetRedisClient = vi.fn()
-const mockRedisSet = vi.fn()
+const { mockGetRedisClient, mockRedisSet } = vi.hoisted(() => ({
+  mockGetRedisClient: vi.fn(),
+  mockRedisSet: vi.fn(),
+}))
 
 vi.mock('@sim/logger', () => loggerMock)
 
