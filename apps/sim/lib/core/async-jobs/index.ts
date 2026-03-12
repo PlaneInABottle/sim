@@ -6,8 +6,11 @@ export {
   resetJobQueueCache,
   shouldExecuteInline,
 } from './config'
+export { resolveAsyncJobCorrelation } from './correlation'
 export type {
   AsyncBackendType,
+  AsyncJobCorrelationEvidence,
+  AsyncJobCorrelationTarget,
   EnqueueOptions,
   Job,
   JobMetadata,

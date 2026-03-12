@@ -4,63 +4,126 @@ import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
-import { getJobQueue, JOB_STATUS } from '@/lib/core/async-jobs'
-import type { AsyncExecutionCorrelation, Job } from '@/lib/core/async-jobs/types'
+import { getJobQueue, JOB_STATUS, resolveAsyncJobCorrelation } from '@/lib/core/async-jobs'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
 import { createErrorResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('TaskStatusAPI')
 
-function getCorrelationEvidence(job: Job): {
-  available: boolean
-  executionId?: string
-  source: 'metadata.correlation' | 'metadata' | 'output' | 'none'
-  fields: string[]
-} {
-  const metadata = job.metadata ?? {}
-  const output = job.output && typeof job.output === 'object' ? job.output : undefined
-  const typedCorrelation = metadata.correlation as AsyncExecutionCorrelation | undefined
+const PAUSED_STATUS = 'paused'
+const ACTIVE_TASK_STATUSES = new Set(['queued', 'processing'])
+const TERMINAL_EXECUTION_STATUSES = new Set(['completed', 'failed', 'cancelled'])
+const ERROR_TASK_STATUSES = new Set(['failed', 'cancelled'])
 
-  if (typedCorrelation?.executionId) {
-    return {
-      available: true,
-      executionId: typedCorrelation.executionId,
-      source: 'metadata.correlation',
-      fields: ['metadata.correlation.executionId'],
-    }
+function getExecutionResponseStatus(diagnostics: { status: string; finalizationPath?: string }) {
+  if (diagnostics.finalizationPath === PAUSED_STATUS || diagnostics.status === PAUSED_STATUS) {
+    return PAUSED_STATUS
   }
 
-  const metadataExecutionId =
-    typeof metadata.executionId === 'string' && metadata.executionId.length > 0
-      ? metadata.executionId
-      : undefined
-  if (metadataExecutionId) {
-    return {
-      available: true,
-      executionId: metadataExecutionId,
-      source: 'metadata',
-      fields: ['metadata.executionId'],
-    }
+  return diagnostics.status
+}
+
+function normalizeTaskStatus(mappedStatus: string, executionStatus?: string): string {
+  if (executionStatus === PAUSED_STATUS) {
+    return PAUSED_STATUS
   }
 
-  const outputExecutionId =
-    output && 'executionId' in output && typeof output.executionId === 'string'
-      ? output.executionId
-      : undefined
-  if (outputExecutionId) {
-    return {
-      available: true,
-      executionId: outputExecutionId,
-      source: 'output',
-      fields: ['output.executionId'],
-    }
+  if (!executionStatus || !TERMINAL_EXECUTION_STATUSES.has(executionStatus)) {
+    return mappedStatus
   }
 
+  return mappedStatus === executionStatus ? mappedStatus : executionStatus
+}
+
+function buildJobMetadata(job: {
+  createdAt: Date
+  startedAt?: Date
+  attempts: number
+  maxAttempts: number
+  metadata?: Record<string, unknown>
+}) {
   return {
-    available: false,
-    source: 'none',
-    fields: [],
+    createdAt: job.createdAt,
+    startedAt: job.startedAt,
+    attempts: job.attempts,
+    maxAttempts: job.maxAttempts,
+    ...(job.metadata?.staleCleanup ? { staleCleanup: job.metadata.staleCleanup } : {}),
+  }
+}
+
+function getCompletedOutput(args: {
+  jobOutput?: unknown
+  executionFinalOutput?: unknown
+  preferExecutionOutput?: boolean
+}) {
+  const { jobOutput, executionFinalOutput, preferExecutionOutput } = args
+
+  if (preferExecutionOutput && executionFinalOutput !== undefined) {
+    return executionFinalOutput
+  }
+
+  return jobOutput
+}
+
+function applyTerminalStateToResponse(args: {
+  response: Record<string, unknown>
+  status: string
+  job: {
+    output?: unknown
+    error?: string
+  }
+  startedAt?: Date
+  completedAt?: Date
+  diagnostics?: {
+    errorMessage?: string
+    staleCleanup?: unknown
+    finalOutput?: unknown
+  }
+}) {
+  const { response, status, job, startedAt, completedAt, diagnostics } = args
+  const metadata = response.metadata as Record<string, unknown>
+
+  if (TERMINAL_EXECUTION_STATUSES.has(status)) {
+    response.estimatedDuration = undefined
+    metadata.completedAt = completedAt
+
+    if (startedAt && completedAt) {
+      metadata.duration = completedAt.getTime() - startedAt.getTime()
+    } else {
+      metadata.duration = undefined
+    }
+  }
+
+  if (status === JOB_STATUS.COMPLETED) {
+    response.output = getCompletedOutput({
+      jobOutput: job.output,
+      executionFinalOutput: diagnostics?.finalOutput,
+      preferExecutionOutput: diagnostics?.finalOutput !== undefined,
+    })
+    response.error = undefined
+    return
+  }
+
+  response.output = undefined
+
+  if (ERROR_TASK_STATUSES.has(status)) {
+    response.error = diagnostics?.errorMessage ?? job.error
+    return
+  }
+
+  response.error = undefined
+}
+
+function stripNonApplicableResponseFields(response: Record<string, unknown>, status: string) {
+  if (!ACTIVE_TASK_STATUSES.has(status)) {
+    response.estimatedDuration = undefined
+  }
+
+  if (status === PAUSED_STATUS) {
+    const metadata = response.metadata as Record<string, unknown>
+    metadata.completedAt = undefined
+    metadata.duration = undefined
   }
 }
 
@@ -114,40 +177,27 @@ export async function GET(
     }
 
     const mappedStatus = job.status === JOB_STATUS.PENDING ? 'queued' : job.status
-    const correlation = getCorrelationEvidence(job)
+    const correlation = resolveAsyncJobCorrelation(job)
 
-    const response: any = {
+    const response: Record<string, unknown> = {
       success: true,
       taskId,
       status: mappedStatus,
-      metadata: {
-        createdAt: job.createdAt,
-        startedAt: job.startedAt,
-        attempts: job.attempts,
-        maxAttempts: job.maxAttempts,
-      },
+      metadata: buildJobMetadata(job),
       correlation,
-    }
-
-    if (job.status === JOB_STATUS.COMPLETED) {
-      response.output = job.output
-      response.metadata.completedAt = job.completedAt
-      if (job.startedAt && job.completedAt) {
-        response.metadata.duration = job.completedAt.getTime() - job.startedAt.getTime()
-      }
-    }
-
-    if (job.status === JOB_STATUS.FAILED) {
-      response.error = job.error
-      response.metadata.completedAt = job.completedAt
-      if (job.startedAt && job.completedAt) {
-        response.metadata.duration = job.completedAt.getTime() - job.startedAt.getTime()
-      }
     }
 
     if (job.status === JOB_STATUS.PROCESSING || job.status === JOB_STATUS.PENDING) {
       response.estimatedDuration = 300000
     }
+
+    applyTerminalStateToResponse({
+      response,
+      status: mappedStatus,
+      job,
+      startedAt: job.startedAt,
+      completedAt: job.completedAt,
+    })
 
     if (correlation.available && correlation.executionId) {
       const [executionLog] = await db
@@ -171,22 +221,62 @@ export async function GET(
           endedAt: executionLog.endedAt?.toISOString(),
           executionData: executionLog.executionData as Record<string, unknown>,
         })
+        const executionResponseStatus = getExecutionResponseStatus({
+          status: diagnostics.status,
+          finalizationPath: diagnostics.finalizationPath,
+        })
 
         response.executionDiagnostics = {
           executionId: executionLog.executionId,
-          status: diagnostics.status,
+          status: executionResponseStatus,
+          rawStatus: diagnostics.status,
           ...(diagnostics.finalizationPath
             ? { finalizationPath: diagnostics.finalizationPath }
+            : {}),
+          ...(diagnostics.staleCleanup ? { staleCleanup: diagnostics.staleCleanup } : {}),
+          ...(diagnostics.errorMessage ? { errorMessage: diagnostics.errorMessage } : {}),
+          ...(diagnostics.completionFailure
+            ? { completionFailure: diagnostics.completionFailure }
             : {}),
           lastStartedBlock: diagnostics.lastStartedBlock,
           lastCompletedBlock: diagnostics.lastCompletedBlock,
           hasTraceSpans: diagnostics.hasTraceSpans,
           traceSpanCount: diagnostics.traceSpanCount,
         }
+        const finalStatus = normalizeTaskStatus(mappedStatus, executionResponseStatus)
+        response.status = finalStatus
+        applyTerminalStateToResponse({
+          response,
+          status: finalStatus,
+          job,
+          startedAt: executionLog.startedAt,
+          completedAt: executionLog.endedAt ?? undefined,
+          diagnostics: {
+            errorMessage: diagnostics.errorMessage,
+            staleCleanup: diagnostics.staleCleanup,
+            finalOutput: (executionLog.executionData as Record<string, unknown> | null | undefined)
+              ?.finalOutput,
+          },
+        })
+        stripNonApplicableResponseFields(response, finalStatus)
       }
     }
 
-    return NextResponse.json(response)
+    const finalStatus = response.status as string
+
+    stripNonApplicableResponseFields(response, finalStatus)
+
+    const responseWithoutEstimatedDuration = !ACTIVE_TASK_STATUSES.has(finalStatus)
+      ? (({ estimatedDuration, ...rest }: typeof response) => rest)(response)
+      : response
+
+    const finalResponse = ERROR_TASK_STATUSES.has(finalStatus)
+      ? (({ output, ...rest }: typeof responseWithoutEstimatedDuration) => rest)(
+          responseWithoutEstimatedDuration
+        )
+      : responseWithoutEstimatedDuration
+
+    return NextResponse.json(finalResponse)
   } catch (error: any) {
     logger.error(`[${requestId}] Error fetching task status:`, error)
 

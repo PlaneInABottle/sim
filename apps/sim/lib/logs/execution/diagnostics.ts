@@ -12,6 +12,28 @@ type ExecutionData = {
   traceSpanCount?: number
   completionFailure?: string
   finalizationPath?: unknown
+  staleCleanup?: unknown
+}
+
+function toCompactStaleCleanup(value: unknown) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return undefined
+  }
+
+  const record = value as Record<string, unknown>
+  const staleCleanup = {
+    ...(typeof record.bucket === 'string' ? { bucket: record.bucket } : {}),
+    ...(typeof record.cleanedAt === 'string' ? { cleanedAt: record.cleanedAt } : {}),
+    ...(typeof record.staleThresholdMinutes === 'number'
+      ? { staleThresholdMinutes: record.staleThresholdMinutes }
+      : {}),
+    ...(typeof record.staleDurationMinutes === 'number'
+      ? { staleDurationMinutes: record.staleDurationMinutes }
+      : {}),
+    ...(typeof record.message === 'string' ? { message: record.message } : {}),
+  }
+
+  return Object.keys(staleCleanup).length > 0 ? staleCleanup : undefined
 }
 
 function countTraceSpans(traceSpans: unknown[] | undefined): number {
@@ -59,6 +81,7 @@ export function buildExecutionDiagnostics(params: {
   const finalizationPath = isExecutionFinalizationPath(executionData.finalizationPath)
     ? executionData.finalizationPath
     : undefined
+  const staleCleanup = toCompactStaleCleanup(executionData.staleCleanup)
 
   return {
     status: params.status,
@@ -71,6 +94,7 @@ export function buildExecutionDiagnostics(params: {
     traceSpanCount,
     hasExecutionState: executionData.executionState !== undefined,
     ...(finalizationPath ? { finalizationPath } : {}),
+    ...(staleCleanup ? { staleCleanup } : {}),
     ...(completionFailure ? { completionFailure } : {}),
     ...(errorMessage ? { errorMessage } : {}),
   }

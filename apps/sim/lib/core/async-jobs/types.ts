@@ -59,6 +59,19 @@ export interface JobMetadata {
   [key: string]: unknown
 }
 
+export type AsyncJobCorrelationEvidence = {
+  available: boolean
+  executionId?: string
+  source: 'metadata.correlation' | 'metadata' | 'payload' | 'output' | 'none'
+  fields: string[]
+}
+
+export type AsyncJobCorrelationTarget = {
+  metadata?: unknown
+  payload?: unknown
+  output?: unknown
+}
+
 export interface EnqueueOptions {
   maxAttempts?: number
   metadata?: JobMetadata
