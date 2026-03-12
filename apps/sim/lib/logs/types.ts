@@ -64,8 +64,15 @@ export interface ExecutionTrigger {
   timestamp: string
 }
 
+/** Raw persisted execution truth from workflow_execution_logs.status. */
+export type RawExecutionStatus = 'running' | 'pending' | 'completed' | 'failed' | 'cancelled'
+
+/** Normalized execution status exposed on read surfaces. */
+export type NormalizedExecutionStatus = RawExecutionStatus | 'paused'
+
 export interface ExecutionStatus {
-  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  /** Normalized read-surface truth for API consumers. */
+  status: NormalizedExecutionStatus
   startedAt: string
   endedAt?: string
   durationMs?: number
@@ -92,6 +99,7 @@ export interface ExecutionLastStartedBlock {
   blockName: string
   blockType: string
   startedAt: string
+  executionOrder?: number
 }
 
 export interface ExecutionLastCompletedBlock {
@@ -100,6 +108,7 @@ export interface ExecutionLastCompletedBlock {
   blockType: string
   endedAt: string
   success: boolean
+  executionOrder?: number
 }
 
 export interface WorkflowExecutionSnapshot {
@@ -421,6 +430,6 @@ export interface ExecutionLoggerService {
     completionFailure?: string
     isResume?: boolean
     level?: 'info' | 'error'
-    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+    status?: RawExecutionStatus
   }): Promise<WorkflowExecutionLog>
 }

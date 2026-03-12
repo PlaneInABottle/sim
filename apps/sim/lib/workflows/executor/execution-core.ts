@@ -427,6 +427,7 @@ export async function executeWorkflowCore(
         output: NormalizedBlockOutput
         executionTime: number
         startedAt: string
+        executionOrder?: number
         endedAt: string
       },
       iterationContext?: IterationContext,
@@ -455,7 +456,6 @@ export async function executeWorkflowCore(
         logger.warn(`[${requestId}] Block completion persistence failed`, {
           executionId,
           blockId,
-          blockType,
           error,
         })
       }
@@ -470,7 +470,10 @@ export async function executeWorkflowCore(
       childWorkflowContext?: ChildWorkflowContext
     ) => {
       try {
-        await loggingSession.onBlockStart(blockId, blockName, blockType, new Date().toISOString())
+        await loggingSession.onBlockStart(blockId, blockName, blockType, {
+          startedAt: new Date().toISOString(),
+          executionOrder,
+        })
         if (onBlockStart) {
           void onBlockStart(
             blockId,
@@ -492,7 +495,6 @@ export async function executeWorkflowCore(
         logger.warn(`[${requestId}] Block start persistence failed`, {
           executionId,
           blockId,
-          blockType,
           error,
         })
       }

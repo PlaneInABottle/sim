@@ -113,7 +113,7 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     safeCompleteWithPause: safeCompleteWithPauseMock,
     hasCompleted: hasCompletedMock,
     onBlockStart: onBlockStartPersistenceMock,
-    onBlockComplete: vi.fn(),
+    onBlockComplete: vi.fn().mockResolvedValue(undefined),
     setPostExecutionPromise: vi.fn(),
     waitForPostExecution: vi.fn().mockResolvedValue(undefined),
   }
@@ -216,7 +216,10 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       'block-1',
       'Fetch',
       'api',
-      expect.any(String)
+      expect.objectContaining({
+        startedAt: expect.any(String),
+        executionOrder: 1,
+      })
     )
   })
 
@@ -291,6 +294,43 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       'clearCancellation',
       'updateRunCounts',
     ])
+  })
+
+  it('forwards completion executionOrder through logging session persistence path', async () => {
+    executorExecuteMock.mockResolvedValue({
+      success: true,
+      status: 'completed',
+      output: { done: true },
+      logs: [],
+      metadata: { duration: 123, startTime: 'start', endTime: 'end' },
+    })
+
+    const onBlockCompletePersistenceMock = vi.mocked(loggingSession.onBlockComplete)
+
+    await executeWorkflowCore({
+      snapshot: createSnapshot() as any,
+      callbacks: {},
+      loggingSession: loggingSession as any,
+    })
+
+    const contextExtensions = executorConstructorMock.mock.calls[0]?.[0]?.contextExtensions
+    await contextExtensions.onBlockComplete('block-2', 'Transform', 'function', {
+      output: { ok: true },
+      executionTime: 10,
+      startedAt: '2025-01-01T00:00:00.000Z',
+      endedAt: '2025-01-01T00:00:01.000Z',
+      executionOrder: 7,
+    })
+
+    expect(onBlockCompletePersistenceMock).toHaveBeenCalledWith(
+      'block-2',
+      'Transform',
+      'function',
+      expect.objectContaining({
+        executionOrder: 7,
+        endedAt: '2025-01-01T00:00:01.000Z',
+      })
+    )
   })
 
   it('awaits wrapped lifecycle persistence before terminal finalization returns', async () => {

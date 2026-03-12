@@ -299,7 +299,10 @@ describe('LoggingSession completion retries', () => {
   it('persists last started block independently from cost accumulation', async () => {
     const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
 
-    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+    await session.onBlockStart('block-1', 'Fetch', 'api', {
+      startedAt: '2025-01-01T00:00:00.000Z',
+      executionOrder: 1,
+    })
 
     expect(dbMocks.select).not.toHaveBeenCalled()
     expect(dbMocks.execute).toHaveBeenCalledTimes(1)
@@ -308,22 +311,13 @@ describe('LoggingSession completion retries', () => {
   it('enforces started marker monotonicity in the database write path', async () => {
     const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
 
-    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+    await session.onBlockStart('block-1', 'Fetch', 'api', {
+      startedAt: '2025-01-01T00:00:00.000Z',
+      executionOrder: 1,
+    })
 
     expect(dbMocks.sql).toHaveBeenCalled()
     expect(dbMocks.execute).toHaveBeenCalledTimes(1)
-  })
-
-  it('allows same-millisecond started markers to replace the prior marker', async () => {
-    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
-
-    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
-
-    const queryCall = dbMocks.sql.mock.calls.at(-1)
-    expect(queryCall).toBeDefined()
-
-    const [query] = queryCall!
-    expect(Array.from(query).join(' ')).toContain('<=')
   })
 
   it('persists last completed block for zero-cost outputs', async () => {
@@ -331,26 +325,12 @@ describe('LoggingSession completion retries', () => {
 
     await session.onBlockComplete('block-2', 'Transform', 'function', {
       endedAt: '2025-01-01T00:00:01.000Z',
+      executionOrder: 2,
       output: { value: true },
     })
 
     expect(dbMocks.select).not.toHaveBeenCalled()
     expect(dbMocks.execute).toHaveBeenCalledTimes(1)
-  })
-
-  it('allows same-millisecond completed markers to replace the prior marker', async () => {
-    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
-
-    await session.onBlockComplete('block-2', 'Transform', 'function', {
-      endedAt: '2025-01-01T00:00:01.000Z',
-      output: { value: true },
-    })
-
-    const queryCall = dbMocks.sql.mock.calls.at(-1)
-    expect(queryCall).toBeDefined()
-
-    const [query] = queryCall!
-    expect(Array.from(query).join(' ')).toContain('<=')
   })
 
   it('drains pending lifecycle writes before terminal completion', async () => {
@@ -363,7 +343,10 @@ describe('LoggingSession completion retries', () => {
     session.persistLastStartedBlock = vi.fn(() => persistPromise)
     session.complete = vi.fn().mockResolvedValue(undefined)
 
-    const startPromise = session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+    const startPromise = session.onBlockStart('block-1', 'Fetch', 'api', {
+      startedAt: '2025-01-01T00:00:00.000Z',
+      executionOrder: 1,
+    })
     const completionPromise = session.safeComplete({ finalOutput: { ok: true } })
 
     await Promise.resolve()
@@ -458,5 +441,50 @@ describe('LoggingSession completion retries', () => {
     expect(session.completeExecutionWithFinalization).toHaveBeenCalledTimes(1)
     expect(session.completed).toBe(true)
     expect(session.completing).toBe(true)
+  })
+
+  it('includes executionOrder in same-timestamp started marker persistence queries', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', {
+      startedAt: '2025-01-01T00:00:00.000Z',
+      executionOrder: 2,
+    })
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const serializedStatement = JSON.stringify(statement)
+
+    expect(serializedStatement).toContain('2025-01-01T00:00:00.000Z')
+    expect(statement.values[0]).toContain('"executionOrder":2')
+    expect(serializedStatement).toContain('lastStartedBlock')
+    expect(tieBreakerClause.values).toContain(2)
+    expect(tieBreakerClause.values).toContain('2025-01-01T00:00:00.000Z')
+    expect(tieBreakerClause.strings.join(' ')).toContain("'executionOrder'")
+    expect(tieBreakerClause.strings.join(' ')).toContain(') = ')
+    expect(tieBreakerClause.strings.join(' ')).toContain('))::int < ')
+  })
+
+  it('includes executionOrder in same-timestamp completed marker persistence queries', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      executionOrder: 3,
+      output: { value: true },
+    })
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const serializedStatement = JSON.stringify(statement)
+
+    expect(serializedStatement).toContain('2025-01-01T00:00:01.000Z')
+    expect(statement.values[0]).toContain('"executionOrder":3')
+    expect(serializedStatement).toContain('lastCompletedBlock')
+    expect(tieBreakerClause.values).toContain(3)
+    expect(tieBreakerClause.values).toContain('2025-01-01T00:00:01.000Z')
+    expect(tieBreakerClause.strings.join(' ')).toContain("'executionOrder'")
+    expect(tieBreakerClause.strings.join(' ')).toContain(') = ')
+    expect(tieBreakerClause.strings.join(' ')).toContain('))::int < ')
   })
 })

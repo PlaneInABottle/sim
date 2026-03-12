@@ -25,46 +25,6 @@ import type { SerializableExecutionState } from '@/executor/execution/types'
 type TriggerData = Record<string, unknown> & {
   correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
 }
-
-function buildStartedMarkerPersistenceQuery(params: {
-  executionId: string
-  marker: ExecutionLastStartedBlock
-}) {
-  const markerJson = JSON.stringify(params.marker)
-
-  return sql`UPDATE workflow_execution_logs
-    SET execution_data = jsonb_set(
-      COALESCE(execution_data, '{}'::jsonb),
-      '{lastStartedBlock}',
-      ${markerJson}::jsonb,
-      true
-    )
-    WHERE execution_id = ${params.executionId}
-      AND COALESCE(
-        jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastStartedBlock', 'startedAt'),
-        ''
-      ) <= ${params.marker.startedAt}`
-}
-
-function buildCompletedMarkerPersistenceQuery(params: {
-  executionId: string
-  marker: ExecutionLastCompletedBlock
-}) {
-  const markerJson = JSON.stringify(params.marker)
-
-  return sql`UPDATE workflow_execution_logs
-    SET execution_data = jsonb_set(
-      COALESCE(execution_data, '{}'::jsonb),
-      '{lastCompletedBlock}',
-      ${markerJson}::jsonb,
-      true
-    )
-    WHERE execution_id = ${params.executionId}
-      AND COALESCE(
-        jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastCompletedBlock', 'endedAt'),
-        ''
-      ) <= ${params.marker.endedAt}`
-}
 const logger = createLogger('LoggingSession')
 
 type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused'
@@ -111,6 +71,11 @@ export interface SessionPausedParams {
   workflowInput?: any
 }
 
+interface BlockStartPersistencePayload {
+  startedAt: string
+  executionOrder?: number
+}
+
 interface AccumulatedCost {
   total: number
   input: number
@@ -125,6 +90,93 @@ interface AccumulatedCost {
       tokens: { input: number; output: number; total: number }
     }
   >
+}
+
+function buildStartedMarkerPersistenceQuery(params: {
+  executionId: string
+  marker: ExecutionLastStartedBlock
+}) {
+  const markerJson = JSON.stringify(params.marker)
+
+  return sql`UPDATE workflow_execution_logs
+    SET execution_data = jsonb_set(
+      COALESCE(execution_data, '{}'::jsonb),
+      '{lastStartedBlock}',
+      ${markerJson}::jsonb,
+      true
+    )
+    WHERE execution_id = ${params.executionId}
+      AND ${buildMarkerTieBreakerWhereClause({
+        timestampPath: 'startedAt',
+        markerTimestamp: params.marker.startedAt,
+        markerExecutionOrder: params.marker.executionOrder,
+        markerType: 'lastStartedBlock',
+      })}`
+}
+
+function buildCompletedMarkerPersistenceQuery(params: {
+  executionId: string
+  marker: ExecutionLastCompletedBlock
+}) {
+  const markerJson = JSON.stringify(params.marker)
+
+  return sql`UPDATE workflow_execution_logs
+    SET execution_data = jsonb_set(
+      COALESCE(execution_data, '{}'::jsonb),
+      '{lastCompletedBlock}',
+      ${markerJson}::jsonb,
+      true
+    )
+    WHERE execution_id = ${params.executionId}
+      AND ${buildMarkerTieBreakerWhereClause({
+        timestampPath: 'endedAt',
+        markerTimestamp: params.marker.endedAt,
+        markerExecutionOrder: params.marker.executionOrder,
+        markerType: 'lastCompletedBlock',
+      })}`
+}
+
+function buildMarkerTieBreakerWhereClause(params: {
+  timestampPath: 'startedAt' | 'endedAt'
+  markerTimestamp: string
+  markerExecutionOrder?: number
+  markerType: 'lastStartedBlock' | 'lastCompletedBlock'
+}) {
+  const markerExecutionOrder = params.markerExecutionOrder ?? null
+
+  return sql`
+    (
+      COALESCE(
+        jsonb_extract_path_text(
+          COALESCE(execution_data, '{}'::jsonb),
+          ${params.markerType},
+          ${params.timestampPath}
+        ),
+        ''
+      ) < ${params.markerTimestamp}
+      OR (
+        COALESCE(
+          jsonb_extract_path_text(
+            COALESCE(execution_data, '{}'::jsonb),
+            ${params.markerType},
+            ${params.timestampPath}
+          ),
+          ''
+        ) = ${params.markerTimestamp}
+        AND ${markerExecutionOrder} IS NOT NULL
+        AND jsonb_extract_path_text(
+          COALESCE(execution_data, '{}'::jsonb),
+          ${params.markerType},
+          'executionOrder'
+        ) IS NOT NULL
+        AND (jsonb_extract_path_text(
+          COALESCE(execution_data, '{}'::jsonb),
+          ${params.markerType},
+          'executionOrder'
+        ))::int < ${markerExecutionOrder}
+      )
+    )
+  `
 }
 
 export class LoggingSession {
@@ -171,14 +223,18 @@ export class LoggingSession {
     blockId: string,
     blockName: string,
     blockType: string,
-    startedAt: string
+    payload: string | BlockStartPersistencePayload
   ): Promise<void> {
+    const normalizedPayload =
+      typeof payload === 'string' ? { startedAt: payload, executionOrder: undefined } : payload
+
     await this.trackProgressWrite(
       this.persistLastStartedBlock({
         blockId,
         blockName,
         blockType,
-        startedAt,
+        startedAt: normalizedPayload.startedAt,
+        executionOrder: normalizedPayload.executionOrder,
       })
     )
   }
@@ -290,6 +346,7 @@ export class LoggingSession {
         blockType,
         endedAt: output?.endedAt || new Date().toISOString(),
         success: !output?.output?.error,
+        executionOrder: output?.executionOrder,
       })
     )
 
