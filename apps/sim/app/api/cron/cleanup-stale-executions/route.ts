@@ -1,7 +1,7 @@
 import { asyncJobs, db } from '@sim/db'
 import { pausedExecutions, resumeQueue, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lt, or } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
 import type { AsyncJobCorrelationEvidence } from '@/lib/core/async-jobs'
@@ -288,71 +288,55 @@ function buildAsyncJobCleanupMessage(bucket: AsyncJobCleanupBucket): string {
   }
 }
 
-function buildAsyncJobErrorSql(message: string) {
-  return sql`CASE
-    WHEN error IS NULL OR error = ''
-      THEN ${message}::text
-    ELSE error
-  END`
+function buildAsyncJobError(existingError: string | null, message: string) {
+  return hasNonEmptyString(existingError) ? existingError : message
 }
 
-function buildExecutionCleanupDataSql(args: {
+function buildExecutionCleanupData(args: {
+  executionData: unknown
   bucket: ExecutionCleanupBucket
   message: string
   cleanedAt: Date
   staleDurationMinutes: number
   normalizedStatus: 'completed' | 'cancelled' | 'failed'
 }) {
-  const { bucket, message, cleanedAt, staleDurationMinutes, normalizedStatus } = args
+  const { executionData, bucket, message, cleanedAt, staleDurationMinutes, normalizedStatus } = args
+  const nextExecutionData = { ...toJsonRecord(executionData) }
 
-  const baseExecutionData =
-    normalizedStatus === 'failed'
-      ? sql`CASE
-          WHEN COALESCE(execution_data, '{}'::jsonb) ? 'error'
-            THEN COALESCE(execution_data, '{}'::jsonb)
-          ELSE jsonb_set(
-            COALESCE(execution_data, '{}'::jsonb),
-            ARRAY['error'],
-            to_jsonb(${message}::text),
-            true
-          )
-        END`
-      : sql`COALESCE(execution_data, '{}'::jsonb)`
+  if (normalizedStatus === 'failed' && !hasNonEmptyString(nextExecutionData.error)) {
+    nextExecutionData.error = message
+  }
 
-  return sql`jsonb_set(
-    ${baseExecutionData},
-    ARRAY['staleCleanup'],
-    jsonb_build_object(
-      'bucket', ${bucket}::text,
-      'cleanedAt', ${cleanedAt.toISOString()}::text,
-      'staleThresholdMinutes', ${STALE_THRESHOLD_MINUTES},
-      'staleDurationMinutes', ${staleDurationMinutes},
-      'message', ${message}::text
-    ),
-    true
-  )`
+  nextExecutionData.staleCleanup = {
+    bucket,
+    cleanedAt: cleanedAt.toISOString(),
+    staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
+    staleDurationMinutes,
+    message,
+  }
+
+  return nextExecutionData
 }
 
-function buildAsyncJobMetadataSql(args: {
+function buildAsyncJobMetadata(args: {
+  metadata: unknown
   bucket: AsyncJobCleanupBucket
   cleanedAt: Date
   correlation: AsyncJobCorrelationEvidence
 }) {
-  const { bucket, cleanedAt, correlation } = args
+  const { metadata, bucket, cleanedAt, correlation } = args
+  const nextMetadata = { ...toJsonRecord(metadata) }
 
-  return sql`jsonb_set(
-    COALESCE(metadata, '{}'::jsonb),
-    ARRAY['staleCleanup'],
-    jsonb_build_object(
-      'bucket', ${bucket}::text,
-      'cleanedAt', ${cleanedAt.toISOString()}::text,
-      'staleThresholdMinutes', ${STALE_THRESHOLD_MINUTES},
-      'correlationSource', ${correlation.source}::text,
-      'correlationFields', to_jsonb(${correlation.fields}),
-      'executionId', ${correlation.executionId ?? null}::text
-    ),
-    true
-  )`
+  nextMetadata.staleCleanup = {
+    bucket,
+    cleanedAt: cleanedAt.toISOString(),
+    staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
+    correlationSource: correlation.source,
+    correlationFields: correlation.fields,
+    executionId: correlation.executionId ?? null,
+  }
+
+  return nextMetadata
 }
 
 function buildExecutionCleanupWhere(args: { execution: StaleExecutionRow; staleThreshold: Date }) {
@@ -639,7 +623,8 @@ export async function GET(request: NextRequest) {
             status: normalizedStatus,
             endedAt: observedEndTime,
             totalDurationMs: normalizedTotalDurationMs,
-            executionData: buildExecutionCleanupDataSql({
+            executionData: buildExecutionCleanupData({
+              executionData: execution.executionData,
               bucket,
               message: cleanupMessage,
               cleanedAt: now,
@@ -726,11 +711,13 @@ export async function GET(request: NextRequest) {
       .where(
         and(
           inArray(asyncJobs.status, [JOB_STATUS.PROCESSING, JOB_STATUS.PENDING]),
-          sql`(
-            (${asyncJobs.status} = ${JOB_STATUS.PROCESSING} AND ${asyncJobs.startedAt} < ${staleThreshold})
-            OR
-            (${asyncJobs.status} = ${JOB_STATUS.PENDING} AND ${asyncJobs.createdAt} < ${staleThreshold})
-          )`
+          or(
+            and(
+              eq(asyncJobs.status, JOB_STATUS.PROCESSING),
+              lt(asyncJobs.startedAt, staleThreshold)
+            ),
+            and(eq(asyncJobs.status, JOB_STATUS.PENDING), lt(asyncJobs.createdAt, staleThreshold))
+          )
         )
       )
 
@@ -837,8 +824,9 @@ export async function GET(request: NextRequest) {
             status: JOB_STATUS.FAILED,
             completedAt: now,
             updatedAt: now,
-            error: buildAsyncJobErrorSql(cleanupMessage),
-            metadata: buildAsyncJobMetadataSql({
+            error: buildAsyncJobError(typedJob.error, cleanupMessage),
+            metadata: buildAsyncJobMetadata({
+              metadata: typedJob.metadata,
               bucket,
               cleanedAt: now,
               correlation,

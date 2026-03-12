@@ -77,6 +77,7 @@ vi.mock('drizzle-orm', () => ({
   inArray: vi.fn((field: unknown, values: unknown[]) => ({ type: 'inArray', field, values })),
   isNull: vi.fn((field: unknown) => ({ type: 'isNull', field })),
   lt: vi.fn((field: unknown, value: unknown) => ({ type: 'lt', field, value })),
+  or: vi.fn((...conditions: unknown[]) => ({ type: 'or', conditions })),
   sql: vi.fn((strings: unknown, ...values: unknown[]) => ({ type: 'sql', strings, values })),
 }))
 
@@ -303,7 +304,18 @@ describe('cleanup stale executions cron route', () => {
         totalDurationMs: NOW.getTime() - STALE_STARTED_AT.getTime(),
       })
     )
-    expect(getExecutionUpdates()[0].executionData).toEqual(expect.objectContaining({ type: 'sql' }))
+    expect(getExecutionUpdates()[0].executionData).toEqual(
+      expect.objectContaining({
+        error: 'Execution terminated: abandoned running execution after 20 minutes',
+        staleCleanup: {
+          bucket: 'abandoned-running-execution',
+          cleanedAt: NOW.toISOString(),
+          staleThresholdMinutes: 15,
+          staleDurationMinutes: 20,
+          message: 'Execution terminated: abandoned running execution after 20 minutes',
+        },
+      })
+    )
     expect(getExecutionWhereClauses()).toHaveLength(1)
     expect(getExecutionWhereClauses()[0].where).toEqual(
       expect.objectContaining({
@@ -465,15 +477,18 @@ describe('cleanup stale executions cron route', () => {
     )
     expect(getExecutionUpdates()[0].executionData).toEqual(
       expect.objectContaining({
-        type: 'sql',
-        values: expect.not.arrayContaining([
-          expect.objectContaining({
-            type: 'sql',
-            strings: expect.arrayContaining([expect.stringContaining("? 'error'")]),
-          }),
-        ]),
+        finalizationPath: 'completed',
+        finalOutput: {},
+        staleCleanup: {
+          bucket: 'partially-finalized-execution',
+          cleanedAt: NOW.toISOString(),
+          staleThresholdMinutes: 15,
+          staleDurationMinutes: 20,
+          message: 'Execution classified as partially-finalized-execution',
+        },
       })
     )
+    expect(getExecutionUpdates()[0].executionData).not.toHaveProperty('error')
   })
 
   it('normalizes partially finalized executions to cancelled from finalization path', async () => {
@@ -503,15 +518,18 @@ describe('cleanup stale executions cron route', () => {
     )
     expect(getExecutionUpdates()[0].executionData).toEqual(
       expect.objectContaining({
-        type: 'sql',
-        values: expect.not.arrayContaining([
-          expect.objectContaining({
-            type: 'sql',
-            strings: expect.arrayContaining([expect.stringContaining("? 'error'")]),
-          }),
-        ]),
+        finalizationPath: 'cancelled',
+        finalOutput: { cancelled: true },
+        staleCleanup: {
+          bucket: 'partially-finalized-execution',
+          cleanedAt: NOW.toISOString(),
+          staleThresholdMinutes: 15,
+          staleDurationMinutes: 20,
+          message: 'Execution classified as partially-finalized-execution',
+        },
       })
     )
+    expect(getExecutionUpdates()[0].executionData).not.toHaveProperty('error')
   })
 
   it('falls back to failed for unclassifiable partially finalized executions', async () => {
@@ -619,8 +637,17 @@ describe('cleanup stale executions cron route', () => {
         status: 'failed',
         completedAt: NOW,
         updatedAt: NOW,
-        metadata: expect.objectContaining({ type: 'sql' }),
-        error: expect.objectContaining({ type: 'sql' }),
+        metadata: {
+          staleCleanup: {
+            bucket: 'orphaned-processing-job',
+            cleanedAt: NOW.toISOString(),
+            staleThresholdMinutes: 15,
+            correlationSource: 'payload',
+            correlationFields: ['payload.executionId'],
+            executionId: 'execution-1',
+          },
+        },
+        error: 'Job terminated: stale processing job had no correlated live execution evidence',
       })
     )
     expect(getAsyncJobWhereClauses()).toHaveLength(1)
