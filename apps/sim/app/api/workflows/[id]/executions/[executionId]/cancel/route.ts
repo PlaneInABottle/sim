@@ -35,20 +35,23 @@ export async function POST(
 
     logger.info('Cancel execution requested', { workflowId, executionId, userId: auth.userId })
 
-    const marked = await markExecutionCancelled(executionId)
+    const cancellation = await markExecutionCancelled(executionId)
 
-    if (marked) {
+    if (cancellation.durablyRecorded) {
       logger.info('Execution marked as cancelled in Redis', { executionId })
     } else {
-      logger.info('Redis not available, cancellation will rely on connection close', {
+      logger.warn('Execution cancellation was not durably recorded', {
         executionId,
+        reason: cancellation.reason,
       })
     }
 
     return NextResponse.json({
-      success: true,
+      success: cancellation.durablyRecorded,
       executionId,
-      redisAvailable: marked,
+      redisAvailable: cancellation.durablyRecorded,
+      durablyRecorded: cancellation.durablyRecorded,
+      reason: cancellation.reason,
     })
   } catch (error: any) {
     logger.error('Failed to cancel execution', { workflowId, executionId, error: error.message })
