@@ -785,4 +785,49 @@ describe('GET /api/jobs/[jobId]', () => {
       })
     )
   })
+
+  it('aligns paused execution diagnostics when stale cleanup persisted raw completed', async () => {
+    mocks.getJob.mockResolvedValue({
+      id: 'job-1',
+      status: 'completed',
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      startedAt: new Date('2025-01-01T00:00:01.000Z'),
+      completedAt: new Date('2025-01-01T00:00:02.000Z'),
+      attempts: 1,
+      maxAttempts: 3,
+      output: { ok: true, source: 'queue-stale' },
+      metadata: { workflowId: 'wf-1', correlation: { executionId: 'ex-paused-cleaned' } },
+    })
+    mocks.selectLimit.mockResolvedValue([
+      {
+        executionId: 'ex-paused-cleaned',
+        status: 'completed',
+        level: 'info',
+        startedAt: new Date('2025-01-01T00:00:03.000Z'),
+        endedAt: new Date('2025-01-01T00:00:05.000Z'),
+        executionData: {
+          finalizationPath: 'paused',
+          finalOutput: { paused: true },
+          hasTraceSpans: false,
+          traceSpanCount: 0,
+        },
+      },
+    ])
+
+    const response = await GET(new NextRequest('http://localhost/api/jobs/job-1'), {
+      params: Promise.resolve({ jobId: 'job-1' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('paused')
+    expect(body.executionDiagnostics).toEqual(
+      expect.objectContaining({
+        executionId: 'ex-paused-cleaned',
+        status: 'paused',
+        rawStatus: 'completed',
+        finalizationPath: 'paused',
+      })
+    )
+  })
 })

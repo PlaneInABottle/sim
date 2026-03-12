@@ -12,17 +12,10 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
-import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import type { RawExecutionStatus, TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 
 const logger = createLogger('LogsByExecutionIdAPI')
-
-function getExecutionResponseStatus(diagnostics: { status: string; finalizationPath?: string }) {
-  if (diagnostics.finalizationPath === 'paused' || diagnostics.status === 'paused') {
-    return 'paused'
-  }
-
-  return diagnostics.status
-}
 
 export async function GET(
   request: NextRequest,
@@ -166,8 +159,8 @@ export async function GET(
       endedAt: workflowLog.endedAt?.toISOString(),
       executionData,
     })
-    const responseStatus = getExecutionResponseStatus({
-      status: diagnostics.status,
+    const executionStatusContract = getExecutionStatusContract({
+      rawStatus: diagnostics.status as RawExecutionStatus,
       finalizationPath: diagnostics.finalizationPath,
     })
 
@@ -185,8 +178,7 @@ export async function GET(
       },
       diagnostics: {
         ...diagnostics,
-        status: responseStatus,
-        ...(responseStatus !== diagnostics.status ? { rawStatus: diagnostics.status } : {}),
+        ...executionStatusContract,
       },
     }
 

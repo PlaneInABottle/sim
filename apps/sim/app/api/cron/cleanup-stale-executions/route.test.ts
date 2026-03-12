@@ -584,6 +584,32 @@ describe('cleanup stale executions cron route', () => {
     )
   })
 
+  it('classifies stale-cleaned paused rows as paused parent truth without changing persisted write mapping', async () => {
+    queueUpdateResults([{ id: 'job-1' }])
+    queueSelectResults(
+      [],
+      [createAsyncJob({ metadata: { correlation: { executionId: 'execution-1' } } })],
+      [
+        createExecution({
+          executionId: 'execution-1',
+          status: 'completed',
+          endedAt: new Date('2026-03-11T23:55:00.000Z'),
+          executionData: { finalizationPath: 'paused', finalOutput: { paused: true } },
+        }),
+      ],
+      [createPausedExecution({ status: 'paused', resumedCount: 0, totalPauseCount: 1 })],
+      []
+    )
+
+    const response = await GET(createMockRequest())
+    const data = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(data.asyncJobs.buckets['paused-handoff-processing-job']).toBe(1)
+    expect(data.asyncJobs.buckets['orphaned-processing-job']).toBe(0)
+    expect(getAsyncJobUpdates()).toHaveLength(1)
+  })
+
   it('derives partial-finalization duration from observed endedAt', async () => {
     queueUpdateResults([{ id: 'log-1' }])
     queueSelectResults(

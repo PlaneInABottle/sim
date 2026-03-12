@@ -13,6 +13,8 @@ import {
 } from '@/lib/core/async-jobs'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
 import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import type { RawExecutionStatus } from '@/lib/logs/types'
 
 const logger = createLogger('CleanupStaleExecutions')
 
@@ -234,17 +236,6 @@ function buildExecutionCleanupMessage(
   return `Execution classified as ${bucket}`
 }
 
-function hasPausedPartialFinalizationEvidence(execution: StaleExecutionRow): boolean {
-  const diagnostics = buildExecutionDiagnostics({
-    status: 'running',
-    startedAt: execution.startedAt.toISOString(),
-    endedAt: execution.endedAt?.toISOString(),
-    executionData: toJsonRecord(execution.executionData),
-  })
-
-  return diagnostics.finalizationPath === 'paused'
-}
-
 function normalizePartialFinalizationStatus(
   execution: StaleExecutionRow
 ): 'completed' | 'cancelled' | 'failed' {
@@ -431,17 +422,23 @@ function hasPausedParentTruth(args: {
     return false
   }
 
-  if (execution.status === 'paused') {
-    return true
-  }
-
-  if (!pausedExecution || !hasPartialFinalizationEvidence(execution)) {
+  if (!pausedExecution) {
     return false
   }
 
+  const diagnostics = buildExecutionDiagnostics({
+    status: execution.status,
+    startedAt: execution.startedAt.toISOString(),
+    endedAt: execution.endedAt?.toISOString(),
+    executionData: toJsonRecord(execution.executionData),
+  })
+  const executionStatusContract = getExecutionStatusContract({
+    rawStatus: execution.status as RawExecutionStatus,
+    finalizationPath: diagnostics.finalizationPath,
+  })
+
   return (
-    hasPausedPartialFinalizationEvidence(execution) &&
-    hasPausedAwaitingResumeEvidence(pausedExecution)
+    executionStatusContract.status === 'paused' && hasPausedAwaitingResumeEvidence(pausedExecution)
   )
 }
 

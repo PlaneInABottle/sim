@@ -7,6 +7,8 @@ import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { getJobQueue, JOB_STATUS, resolveAsyncJobCorrelation } from '@/lib/core/async-jobs'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import type { RawExecutionStatus } from '@/lib/logs/types'
 import { createErrorResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('TaskStatusAPI')
@@ -15,14 +17,6 @@ const PAUSED_STATUS = 'paused'
 const ACTIVE_TASK_STATUSES = new Set(['queued', 'processing'])
 const TERMINAL_EXECUTION_STATUSES = new Set(['completed', 'failed', 'cancelled'])
 const ERROR_TASK_STATUSES = new Set(['failed', 'cancelled'])
-
-function getExecutionResponseStatus(diagnostics: { status: string; finalizationPath?: string }) {
-  if (diagnostics.finalizationPath === PAUSED_STATUS || diagnostics.status === PAUSED_STATUS) {
-    return PAUSED_STATUS
-  }
-
-  return diagnostics.status
-}
 
 function normalizeTaskStatus(mappedStatus: string, executionStatus?: string): string {
   if (executionStatus === PAUSED_STATUS) {
@@ -221,15 +215,14 @@ export async function GET(
           endedAt: executionLog.endedAt?.toISOString(),
           executionData: executionLog.executionData as Record<string, unknown>,
         })
-        const executionResponseStatus = getExecutionResponseStatus({
-          status: diagnostics.status,
+        const executionStatusContract = getExecutionStatusContract({
+          rawStatus: diagnostics.status as RawExecutionStatus,
           finalizationPath: diagnostics.finalizationPath,
         })
 
         response.executionDiagnostics = {
           executionId: executionLog.executionId,
-          status: executionResponseStatus,
-          rawStatus: diagnostics.status,
+          ...executionStatusContract,
           ...(diagnostics.finalizationPath
             ? { finalizationPath: diagnostics.finalizationPath }
             : {}),
@@ -243,7 +236,7 @@ export async function GET(
           hasTraceSpans: diagnostics.hasTraceSpans,
           traceSpanCount: diagnostics.traceSpanCount,
         }
-        const finalStatus = normalizeTaskStatus(mappedStatus, executionResponseStatus)
+        const finalStatus = normalizeTaskStatus(mappedStatus, executionStatusContract.status)
         response.status = finalStatus
         applyTerminalStateToResponse({
           response,

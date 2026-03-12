@@ -11,6 +11,8 @@ import { and, eq } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import { isExecutionFinalizationPath, type RawExecutionStatus } from '@/lib/logs/types'
 
 const logger = createLogger('LogDetailsByIdAPI')
 
@@ -149,6 +151,15 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
         }
       : null
 
+    const executionData =
+      (log.executionData as Record<string, unknown> | null | undefined) ?? undefined
+    const executionStatusContract = getExecutionStatusContract({
+      rawStatus: log.status as RawExecutionStatus,
+      finalizationPath: isExecutionFinalizationPath(executionData?.finalizationPath)
+        ? executionData.finalizationPath
+        : undefined,
+    })
+
     const response = {
       id: log.id,
       workflowId: log.workflowId,
@@ -157,7 +168,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       deploymentVersion: log.deploymentVersion ?? null,
       deploymentVersionName: log.deploymentVersionName ?? null,
       level: log.level,
-      status: log.status,
+      ...executionStatusContract,
       duration: log.totalDurationMs ? `${log.totalDurationMs}ms` : null,
       trigger: log.trigger,
       createdAt: log.startedAt.toISOString(),
@@ -165,7 +176,7 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
       workflow: workflowSummary,
       executionData: {
         totalDuration: log.totalDurationMs,
-        ...(log.executionData as any),
+        ...(executionData as any),
         enhanced: true,
       },
       cost: log.cost as any,
