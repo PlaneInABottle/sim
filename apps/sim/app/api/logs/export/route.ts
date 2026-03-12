@@ -4,7 +4,13 @@ import { createLogger } from '@sim/logger'
 import { and, desc, eq, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@/lib/auth'
-import { buildFilterConditions, LogFilterParamsSchema } from '@/lib/logs/filters'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import {
+  buildFilterConditions,
+  buildLogsLevelCondition,
+  LogFilterParamsSchema,
+} from '@/lib/logs/filters'
+import { isExecutionFinalizationPath, type RawExecutionStatus } from '@/lib/logs/types'
 
 const logger = createLogger('LogsExportAPI')
 
@@ -35,6 +41,10 @@ export async function GET(request: NextRequest) {
       workflowId: workflowExecutionLogs.workflowId,
       executionId: workflowExecutionLogs.executionId,
       level: workflowExecutionLogs.level,
+      status: workflowExecutionLogs.status,
+      finalizationPath: sql<
+        string | null
+      >`${workflowExecutionLogs.executionData}->>'finalizationPath'`,
       trigger: workflowExecutionLogs.trigger,
       startedAt: workflowExecutionLogs.startedAt,
       endedAt: workflowExecutionLogs.endedAt,
@@ -45,14 +55,16 @@ export async function GET(request: NextRequest) {
     }
 
     const workspaceCondition = eq(workflowExecutionLogs.workspaceId, params.workspaceId)
-    const filterConditions = buildFilterConditions(params)
-    const conditions = filterConditions
-      ? and(workspaceCondition, filterConditions)
-      : workspaceCondition
+    const levelCondition = params.level ? buildLogsLevelCondition(params.level) : undefined
+    const filterConditions = buildFilterConditions(params, { useSimpleLevelFilter: false })
+    const conditions = and(workspaceCondition, levelCondition, filterConditions)
 
     const header = [
       'startedAt',
       'level',
+      'status',
+      'rawStatus',
+      'finalizationPath',
       'workflow',
       'trigger',
       'durationMs',
@@ -93,6 +105,12 @@ export async function GET(request: NextRequest) {
             for (const r of rows as any[]) {
               let message = ''
               let traces: any = null
+              const executionStatusContract = getExecutionStatusContract({
+                rawStatus: r.status as RawExecutionStatus,
+                finalizationPath: isExecutionFinalizationPath(r.finalizationPath)
+                  ? r.finalizationPath
+                  : undefined,
+              })
               try {
                 const ed = (r as any).executionData
                 if (ed) {
@@ -108,6 +126,9 @@ export async function GET(request: NextRequest) {
               const line = [
                 escapeCsv(r.startedAt?.toISOString?.() || r.startedAt),
                 escapeCsv(r.level),
+                escapeCsv(executionStatusContract.status),
+                escapeCsv(executionStatusContract.rawStatus),
+                escapeCsv(r.finalizationPath ?? ''),
                 escapeCsv(r.workflowName),
                 escapeCsv(r.trigger),
                 escapeCsv(r.totalDurationMs ?? ''),

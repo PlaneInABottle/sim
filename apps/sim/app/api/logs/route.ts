@@ -16,7 +16,6 @@ import {
   gte,
   inArray,
   isNotNull,
-  isNull,
   lt,
   lte,
   ne,
@@ -28,7 +27,13 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { buildFilterConditions, LogFilterParamsSchema } from '@/lib/logs/filters'
+import { getExecutionStatusContract } from '@/lib/logs/execution/status-contract'
+import {
+  buildFilterConditions,
+  buildLogsLevelCondition,
+  LogFilterParamsSchema,
+} from '@/lib/logs/filters'
+import { isExecutionFinalizationPath, type RawExecutionStatus } from '@/lib/logs/types'
 
 const logger = createLogger('LogsAPI')
 
@@ -66,6 +71,9 @@ export async function GET(request: NextRequest) {
               deploymentVersionId: workflowExecutionLogs.deploymentVersionId,
               level: workflowExecutionLogs.level,
               status: workflowExecutionLogs.status,
+              finalizationPath: sql<
+                string | null
+              >`${workflowExecutionLogs.executionData}->>'finalizationPath'`,
               trigger: workflowExecutionLogs.trigger,
               startedAt: workflowExecutionLogs.startedAt,
               endedAt: workflowExecutionLogs.endedAt,
@@ -96,6 +104,9 @@ export async function GET(request: NextRequest) {
               deploymentVersionId: workflowExecutionLogs.deploymentVersionId,
               level: workflowExecutionLogs.level,
               status: workflowExecutionLogs.status,
+              finalizationPath: sql<
+                string | null
+              >`${workflowExecutionLogs.executionData}->>'finalizationPath'`,
               trigger: workflowExecutionLogs.trigger,
               startedAt: workflowExecutionLogs.startedAt,
               endedAt: workflowExecutionLogs.endedAt,
@@ -145,44 +156,9 @@ export async function GET(request: NextRequest) {
       let conditions: SQL | undefined
 
       if (params.level && params.level !== 'all') {
-        const levels = params.level.split(',').filter(Boolean)
-        const levelConditions: SQL[] = []
-
-        for (const level of levels) {
-          if (level === 'error') {
-            levelConditions.push(eq(workflowExecutionLogs.level, 'error'))
-          } else if (level === 'info') {
-            const condition = and(
-              eq(workflowExecutionLogs.level, 'info'),
-              isNotNull(workflowExecutionLogs.endedAt)
-            )
-            if (condition) levelConditions.push(condition)
-          } else if (level === 'running') {
-            const condition = and(
-              eq(workflowExecutionLogs.level, 'info'),
-              isNull(workflowExecutionLogs.endedAt)
-            )
-            if (condition) levelConditions.push(condition)
-          } else if (level === 'pending') {
-            const condition = and(
-              eq(workflowExecutionLogs.level, 'info'),
-              or(
-                sql`(${pausedExecutions.totalPauseCount} > 0 AND ${pausedExecutions.resumedCount} < ${pausedExecutions.totalPauseCount})`,
-                and(
-                  isNotNull(pausedExecutions.status),
-                  sql`${pausedExecutions.status} != 'fully_resumed'`
-                )
-              )
-            )
-            if (condition) levelConditions.push(condition)
-          }
-        }
-
-        if (levelConditions.length > 0) {
-          conditions = and(
-            conditions,
-            levelConditions.length === 1 ? levelConditions[0] : or(...levelConditions)
-          )
+        const levelCondition = buildLogsLevelCondition(params.level)
+        if (levelCondition) {
+          conditions = and(conditions, levelCondition)
         }
       }
 
@@ -454,6 +430,12 @@ export async function GET(request: NextRequest) {
 
       const transformedWorkflowLogs = workflowLogs.map((log) => {
         const blockExecutions = blockExecutionsByExecution[log.executionId] || []
+        const executionStatusContract = getExecutionStatusContract({
+          rawStatus: log.status as RawExecutionStatus,
+          finalizationPath: isExecutionFinalizationPath(log.finalizationPath)
+            ? log.finalizationPath
+            : undefined,
+        })
 
         let traceSpans = []
         let finalOutput: any
@@ -499,7 +481,7 @@ export async function GET(request: NextRequest) {
           deploymentVersion: log.deploymentVersion ?? null,
           deploymentVersionName: log.deploymentVersionName ?? null,
           level: log.level,
-          status: log.status,
+          ...executionStatusContract,
           duration: log.totalDurationMs ? `${log.totalDurationMs}ms` : null,
           trigger: log.trigger,
           createdAt: log.startedAt.toISOString(),

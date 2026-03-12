@@ -1,5 +1,5 @@
 import { workflow, workflowExecutionLogs } from '@sim/db/schema'
-import { and, eq, gt, gte, inArray, lt, lte, ne, type SQL, sql } from 'drizzle-orm'
+import { and, eq, gt, gte, inArray, isNotNull, lt, lte, ne, or, type SQL, sql } from 'drizzle-orm'
 import { z } from 'zod'
 import type { TimeRange } from '@/stores/logs/filters/types'
 
@@ -243,6 +243,58 @@ export function buildSimpleLevelCondition(level: string): SQL | undefined {
     return inArray(workflowExecutionLogs.level, levels)
   }
   return undefined
+}
+
+export function buildLogsLevelCondition(level: string): SQL | undefined {
+  if (!level || level === 'all') return undefined
+
+  const levels = level.split(',').filter(Boolean)
+  const levelConditions: SQL[] = []
+
+  for (const currentLevel of levels) {
+    if (currentLevel === 'error') {
+      levelConditions.push(eq(workflowExecutionLogs.level, 'error'))
+      continue
+    }
+
+    if (currentLevel === 'info') {
+      const condition = and(
+        eq(workflowExecutionLogs.level, 'info'),
+        isNotNull(workflowExecutionLogs.endedAt)
+      )
+      if (condition) levelConditions.push(condition)
+      continue
+    }
+
+    if (currentLevel === 'paused') {
+      levelConditions.push(
+        sql`${workflowExecutionLogs.executionData}->>'finalizationPath' = 'paused'`
+      )
+      continue
+    }
+
+    if (currentLevel === 'cancelled') {
+      levelConditions.push(eq(workflowExecutionLogs.status, 'cancelled'))
+      continue
+    }
+
+    if (currentLevel === 'running') {
+      levelConditions.push(eq(workflowExecutionLogs.status, 'running'))
+      continue
+    }
+
+    if (currentLevel === 'pending') {
+      const condition = and(
+        eq(workflowExecutionLogs.status, 'pending'),
+        sql`coalesce(${workflowExecutionLogs.executionData}->>'finalizationPath', '') != 'paused'`
+      )
+      if (condition) levelConditions.push(condition)
+    }
+  }
+
+  if (levelConditions.length === 0) return undefined
+  if (levelConditions.length === 1) return levelConditions[0]
+  return or(...levelConditions)
 }
 
 export interface BuildFilterConditionsOptions {

@@ -6,7 +6,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { buildFilterConditions, LogFilterParamsSchema } from '@/lib/logs/filters'
+import {
+  buildFilterConditions,
+  buildLogsLevelCondition,
+  LogFilterParamsSchema,
+} from '@/lib/logs/filters'
 
 const logger = createLogger('LogsStatsAPI')
 
@@ -63,8 +67,9 @@ export async function GET(request: NextRequest) {
 
       const workspaceFilter = eq(workflowExecutionLogs.workspaceId, params.workspaceId)
 
-      const commonFilters = buildFilterConditions(params, { useSimpleLevelFilter: true })
-      const whereCondition = commonFilters ? and(workspaceFilter, commonFilters) : workspaceFilter
+      const levelCondition = params.level ? buildLogsLevelCondition(params.level) : undefined
+      const commonFilters = buildFilterConditions(params, { useSimpleLevelFilter: false })
+      const whereCondition = and(workspaceFilter, levelCondition, commonFilters)
 
       const boundsQuery = await db
         .select({
@@ -111,7 +116,7 @@ export async function GET(request: NextRequest) {
             ),
           totalExecutions: sql<number>`COUNT(*)`.as('total_executions'),
           successfulExecutions:
-            sql<number>`COUNT(*) FILTER (WHERE ${workflowExecutionLogs.level} != 'error')`.as(
+            sql<number>`COUNT(*) FILTER (WHERE ${workflowExecutionLogs.status} = 'completed' AND coalesce(${workflowExecutionLogs.executionData}->>'finalizationPath', '') != 'paused')`.as(
               'successful_executions'
             ),
           avgDurationMs:
