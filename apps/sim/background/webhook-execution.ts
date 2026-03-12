@@ -222,6 +222,7 @@ async function executeWebhookJobInternal(
     triggerType: "webhook",
     executionId,
     requestId,
+    triggerData: { correlation },
     checkRateLimit: false,
     checkDeployment: false,
     skipUsageLimits: true,
