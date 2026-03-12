@@ -110,6 +110,45 @@ describe('GET /api/logs/execution/[executionId]', () => {
     expect(body.diagnostics.finalizationPath).toBeUndefined()
   })
 
+  it('normalizes diagnostics status to paused when persisted status is pending with paused finalization', async () => {
+    mocks.selectLimit
+      .mockResolvedValueOnce([
+        {
+          workflowId: 'wf-1',
+          stateSnapshotId: 'snap-1',
+          status: 'pending',
+          level: 'info',
+          trigger: 'api',
+          startedAt: new Date('2025-01-01T00:00:00.000Z'),
+          endedAt: new Date('2025-01-01T00:00:05.000Z'),
+          totalDurationMs: 5000,
+          cost: null,
+          executionData: {
+            finalizationPath: 'paused',
+            finalOutput: { paused: true },
+            traceSpans: [],
+          },
+        },
+      ])
+      .mockResolvedValueOnce([{ id: 'snap-1', stateData: { blocks: {} } }])
+
+    const response = await GET(new NextRequest('http://localhost/api/logs/execution/ex-paused'), {
+      params: Promise.resolve({ executionId: 'ex-paused' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.diagnostics).toEqual(
+      expect.objectContaining({
+        status: 'paused',
+        rawStatus: 'pending',
+        finalizationPath: 'paused',
+        hasTraceSpans: false,
+        traceSpanCount: 0,
+      })
+    )
+  })
+
   it('returns 401 for unauthorized requests', async () => {
     mocks.checkSessionOrInternalAuth.mockResolvedValue({ success: false, error: 'nope' })
 

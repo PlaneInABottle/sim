@@ -16,6 +16,14 @@ import type { TraceSpan, WorkflowExecutionLog } from '@/lib/logs/types'
 
 const logger = createLogger('LogsByExecutionIdAPI')
 
+function getExecutionResponseStatus(diagnostics: { status: string; finalizationPath?: string }) {
+  if (diagnostics.finalizationPath === 'paused' || diagnostics.status === 'paused') {
+    return 'paused'
+  }
+
+  return diagnostics.status
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ executionId: string }> }
@@ -158,6 +166,10 @@ export async function GET(
       endedAt: workflowLog.endedAt?.toISOString(),
       executionData,
     })
+    const responseStatus = getExecutionResponseStatus({
+      status: diagnostics.status,
+      finalizationPath: diagnostics.finalizationPath,
+    })
 
     const response = {
       executionId,
@@ -171,7 +183,11 @@ export async function GET(
         totalDurationMs: workflowLog.totalDurationMs,
         cost: workflowLog.cost || null,
       },
-      diagnostics,
+      diagnostics: {
+        ...diagnostics,
+        status: responseStatus,
+        ...(responseStatus !== diagnostics.status ? { rawStatus: diagnostics.status } : {}),
+      },
     }
 
     return NextResponse.json(response)
