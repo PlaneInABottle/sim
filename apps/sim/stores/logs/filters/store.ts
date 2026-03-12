@@ -54,7 +54,13 @@ const parseLogLevelFromURL = (value: string | null): LogLevel => {
   if (!value) return 'all'
   const levels = value.split(',').filter(Boolean)
   const validLevels = levels.filter(
-    (l) => l === 'error' || l === 'info' || l === 'running' || l === 'pending'
+    (l) =>
+      l === 'error' ||
+      l === 'info' ||
+      l === 'running' ||
+      l === 'pending' ||
+      l === 'paused' ||
+      l === 'cancelled'
   )
   if (validLevels.length === 0) return 'all'
   if (validLevels.length === 1) return validLevels[0] as LogLevel

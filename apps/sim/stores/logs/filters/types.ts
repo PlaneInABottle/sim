@@ -109,6 +109,7 @@ export interface WorkflowLog {
   deploymentVersionName?: string | null
   level: string
   status?: string | null
+  rawStatus?: 'running' | 'pending' | 'completed' | 'failed' | 'cancelled' | null
   duration: string | null
   trigger: string | null
   createdAt: string
@@ -179,6 +180,7 @@ export type LogLevel =
   | 'info'
   | 'running'
   | 'pending'
+  | 'paused'
   | 'cancelled'
   | 'all'
   | (string & {})

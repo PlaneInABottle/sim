@@ -138,7 +138,7 @@ const LogRow = memo(
         </div>
 
         {/* Resume Link */}
-        {log.status === 'pending' && log.executionId && (log.workflow?.id || log.workflowId) && (
+        {log.status === 'paused' && log.executionId && (log.workflow?.id || log.workflowId) && (
           <Link
             href={`/resume/${log.workflow?.id || log.workflowId}/${log.executionId}`}
             target='_blank'
