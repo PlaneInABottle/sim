@@ -38,6 +38,59 @@ import { getAllValidBlockTypes, WorkflowOperationSchema } from '@/socket/validat
 
 const logger = createLogger('WorkflowOperationsAPI')
 
+type PostgresLikeError = {
+  code?: string
+  detail?: string
+  cause?: {
+    code?: string
+    detail?: string
+  }
+}
+
+function getPostgresErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== 'object') return undefined
+  const err = error as PostgresLikeError
+  return err.code || err.cause?.code
+}
+
+function extractConflictingBlockIds(error: unknown): string[] {
+  if (!error || typeof error !== 'object') return []
+
+  const err = error as PostgresLikeError & { message?: string }
+  const candidates = [err.detail, err.cause?.detail, err.message].filter(
+    (value): value is string => typeof value === 'string' && value.length > 0
+  )
+
+  for (const candidate of candidates) {
+    const match = candidate.match(/Key \(id\)=\(([^)]+)\) already exists/i)
+    if (!match?.[1]) continue
+
+    return match[1]
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean)
+  }
+
+  return []
+}
+
+function createDuplicateBlockIdConflictMessage(error: unknown): string {
+  const conflictingIds = extractConflictingBlockIds(error)
+  const conflictingIdsSuffix =
+    conflictingIds.length > 0
+      ? ` Conflicting block ID${conflictingIds.length === 1 ? '' : 's'}: ${conflictingIds
+          .map((id) => `"${id}"`)
+          .join(', ')}.`
+      : ''
+
+  return (
+    'Unable to add blocks: one or more supplied block IDs are already in use. ' +
+    'Block IDs are globally unique across workflows. Choose unique IDs before retrying, ' +
+    'or omit explicit id values if your caller supports auto-generated IDs.' +
+    conflictingIdsSuffix
+  )
+}
+
 /**
  * Extended operation request schema.
  * Preprocesses request to inject default timestamp before validating against WorkflowOperationSchema.
@@ -263,6 +316,26 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         userId,
       })
     } catch (dbError) {
+      const isDuplicateBlockIdConflict =
+        validatedOperation.target === OPERATION_TARGETS.BLOCKS &&
+        validatedOperation.operation === BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS &&
+        getPostgresErrorCode(dbError) === '23505'
+
+      if (isDuplicateBlockIdConflict) {
+        const errorMessage = createDuplicateBlockIdConflictMessage(dbError)
+
+        logger.warn(`[${requestId}] Duplicate block ID conflict`, {
+          error: dbError,
+          workflowId,
+          operationId,
+          operation: validatedOperation.operation,
+          target: validatedOperation.target,
+          conflictingBlockIds: extractConflictingBlockIds(dbError),
+        })
+
+        return createErrorResponse(errorMessage, 409, 'DUPLICATE_BLOCK_ID')
+      }
+
       const errMsg = dbError instanceof Error 
         ? dbError.message 
         : 'Failed to persist operation to database'
