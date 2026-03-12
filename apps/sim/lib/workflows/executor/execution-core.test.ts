@@ -382,6 +382,64 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     expect(wasExecutionFinalizedByCore('engine failed', 'execution-fresh')).toBe(true)
   })
 
+  it('removes expired finalized ids even when a reused id stays earlier in map order', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-13T00:00:00.000Z'))
+
+    executorExecuteMock.mockRejectedValue('engine failed')
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: {
+          ...createSnapshot(),
+          metadata: {
+            ...createSnapshot().metadata,
+            executionId: 'execution-a',
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe('engine failed')
+
+    vi.setSystemTime(new Date('2026-03-13T00:01:00.000Z'))
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: {
+          ...createSnapshot(),
+          metadata: {
+            ...createSnapshot().metadata,
+            executionId: 'execution-b',
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe('engine failed')
+
+    vi.setSystemTime(new Date('2026-03-13T00:02:00.000Z'))
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: {
+          ...createSnapshot(),
+          metadata: {
+            ...createSnapshot().metadata,
+            executionId: 'execution-a',
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe('engine failed')
+
+    vi.setSystemTime(new Date('2026-03-13T00:06:01.000Z'))
+
+    expect(wasExecutionFinalizedByCore('engine failed', 'execution-b')).toBe(false)
+    expect(wasExecutionFinalizedByCore('engine failed', 'execution-a')).toBe(true)
+  })
+
   it('falls back to error finalization when success finalization rejects', async () => {
     executorExecuteMock.mockResolvedValue({
       success: true,

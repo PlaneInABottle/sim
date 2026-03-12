@@ -122,11 +122,9 @@ const finalizedExecutionIds = new Map<string, number>()
 
 function cleanupExpiredFinalizedExecutionIds(now = Date.now()): void {
   for (const [executionId, expiresAt] of finalizedExecutionIds.entries()) {
-    if (expiresAt > now) {
-      break
+    if (expiresAt <= now) {
+      finalizedExecutionIds.delete(executionId)
     }
-
-    finalizedExecutionIds.delete(executionId)
   }
 }
 
