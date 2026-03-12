@@ -119,6 +119,10 @@ vi.mock('@/executor/utils/errors', () => ({
   hasExecutionResult: vi.fn().mockReturnValue(false),
 }))
 
+vi.mock('@/triggers/constants', () => ({
+  MAX_CONSECUTIVE_FAILURES: 3,
+}))
+
 vi.mock('@sim/logger', () => ({
   createLogger: vi.fn().mockReturnValue({
     info: vi.fn(),
@@ -346,5 +350,81 @@ describe('async preprocessing correlation threading', () => {
     expect(session.onBlockStart).toHaveBeenCalledTimes(1)
     expect(session.onBlockComplete).toHaveBeenCalledTimes(1)
     expect(callOrder).toEqual(['execute:start', 'execute:after-start', 'execute:after-complete'])
+  })
+
+  it('workflow wrapper does not pre-start logging and passes the same session to core', async () => {
+    mockPreprocessExecution.mockResolvedValueOnce({
+      success: true,
+      actorUserId: 'user-1',
+      workflowRecord: { workflowId: 'workflow-1', userId: 'owner-1', workspaceId: 'workspace-1' },
+    })
+
+    mockExecuteWorkflowCore.mockResolvedValueOnce({
+      success: true,
+      status: 'completed',
+      output: { ok: true },
+      metadata: { duration: 1 },
+    })
+
+    await executeWorkflowJob({
+      workflowId: 'workflow-1',
+      userId: 'user-1',
+      triggerType: 'api',
+      executionId: 'execution-3',
+      requestId: 'request-3',
+    })
+
+    const session = loggingSessionInstances[0]
+
+    expect(session.safeStart).toHaveBeenCalledTimes(0)
+    expect(mockExecuteWorkflowCore).toHaveBeenCalledTimes(1)
+    expect(mockExecuteWorkflowCore.mock.calls[0]?.[0]?.loggingSession).toBe(session)
+  })
+
+  it('schedule wrapper does not pre-start logging and passes the same session to core', async () => {
+    mockPreprocessExecution.mockResolvedValueOnce({
+      success: true,
+      actorUserId: 'user-1',
+      workflowRecord: {
+        id: 'workflow-1',
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+        variables: {},
+      },
+      executionTimeout: {},
+    })
+    mockLoadDeployedWorkflowState.mockResolvedValueOnce({
+      blocks: {
+        starter: {
+          id: 'starter',
+          type: 'schedule',
+        },
+      },
+      deploymentVersionId: 'deployment-1',
+    })
+    mockGetSubBlockValue.mockReturnValue('cron')
+    mockGetScheduleTimeValues.mockReturnValue({ timezone: 'UTC' })
+    mockExecuteWorkflowCore.mockResolvedValueOnce({
+      success: true,
+      status: 'completed',
+      output: { ok: true },
+      metadata: { duration: 1 },
+    })
+
+    await executeScheduleJob({
+      scheduleId: 'schedule-1',
+      workflowId: 'workflow-1',
+      executionId: 'execution-4',
+      requestId: 'request-4',
+      now: '2025-01-01T00:00:00.000Z',
+      scheduledFor: '2025-01-01T00:00:00.000Z',
+      cronExpression: '* * * * *',
+    })
+
+    const session = loggingSessionInstances[0]
+
+    expect(session.safeStart).toHaveBeenCalledTimes(0)
+    expect(mockExecuteWorkflowCore).toHaveBeenCalledTimes(1)
+    expect(mockExecuteWorkflowCore.mock.calls[0]?.[0]?.loggingSession).toBe(session)
   })
 })
