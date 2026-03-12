@@ -4,12 +4,28 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockPreprocessExecution, mockTask, mockDbUpdate } = vi.hoisted(() => ({
+const {
+  mockPreprocessExecution,
+  mockTask,
+  mockDbUpdate,
+  mockExecuteWorkflowCore,
+  mockLoggingSession,
+  mockBlockExistsInDeployment,
+  mockLoadDeployedWorkflowState,
+  mockGetScheduleTimeValues,
+  mockGetSubBlockValue,
+} = vi.hoisted(() => ({
   mockPreprocessExecution: vi.fn(),
   mockTask: vi.fn((config) => config),
   mockDbUpdate: vi.fn(() => ({
     set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
   })),
+  mockExecuteWorkflowCore: vi.fn(),
+  mockLoggingSession: vi.fn(),
+  mockBlockExistsInDeployment: vi.fn(),
+  mockLoadDeployedWorkflowState: vi.fn(),
+  mockGetScheduleTimeValues: vi.fn(),
+  mockGetSubBlockValue: vi.fn(),
 }))
 
 vi.mock('@trigger.dev/sdk', () => ({ task: mockTask }))
@@ -30,11 +46,15 @@ vi.mock('@/lib/execution/preprocessing', () => ({
 }))
 
 vi.mock('@/lib/logs/execution/logging-session', () => ({
-  LoggingSession: vi.fn().mockImplementation(() => ({
-    safeStart: vi.fn().mockResolvedValue(true),
-    safeCompleteWithError: vi.fn().mockResolvedValue(undefined),
-    markAsFailed: vi.fn().mockResolvedValue(undefined),
-  })),
+  LoggingSession: vi.fn().mockImplementation(() => {
+    const instance = {
+      safeStart: vi.fn().mockResolvedValue(true),
+      safeCompleteWithError: vi.fn().mockResolvedValue(undefined),
+      markAsFailed: vi.fn().mockResolvedValue(undefined),
+    }
+    mockLoggingSession(instance)
+    return instance
+  }),
 }))
 
 vi.mock('@/lib/core/execution-limits', () => ({
@@ -52,7 +72,7 @@ vi.mock('@/lib/logs/execution/trace-spans/trace-spans', () => ({
 }))
 
 vi.mock('@/lib/workflows/executor/execution-core', () => ({
-  executeWorkflowCore: vi.fn(),
+  executeWorkflowCore: mockExecuteWorkflowCore,
   wasExecutionFinalizedByCore: vi.fn().mockReturnValue(false),
 }))
 
@@ -64,14 +84,14 @@ vi.mock('@/lib/workflows/executor/human-in-the-loop-manager', () => ({
 }))
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  blockExistsInDeployment: vi.fn(),
-  loadDeployedWorkflowState: vi.fn(),
+  blockExistsInDeployment: mockBlockExistsInDeployment,
+  loadDeployedWorkflowState: mockLoadDeployedWorkflowState,
 }))
 
 vi.mock('@/lib/workflows/schedules/utils', () => ({
   calculateNextRunTime: vi.fn(),
-  getScheduleTimeValues: vi.fn(),
-  getSubBlockValue: vi.fn(),
+  getScheduleTimeValues: mockGetScheduleTimeValues,
+  getSubBlockValue: mockGetSubBlockValue,
 }))
 
 vi.mock('@/executor/execution/snapshot', () => ({
@@ -97,6 +117,94 @@ import { executeWorkflowJob } from './workflow-execution'
 describe('async preprocessing correlation threading', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    mockLoadDeployedWorkflowState.mockResolvedValue({
+      blocks: {
+        'schedule-block': {
+          type: 'schedule',
+        },
+      },
+      edges: [],
+      loops: {},
+      parallels: {},
+      deploymentVersionId: 'deployment-1',
+    })
+    mockGetSubBlockValue.mockReturnValue('daily')
+    mockGetScheduleTimeValues.mockReturnValue({ timezone: 'UTC' })
+  })
+
+  it('does not pre-start workflow logging before core execution', async () => {
+    mockPreprocessExecution.mockResolvedValueOnce({
+      success: true,
+      actorUserId: 'actor-1',
+      workflowRecord: {
+        id: 'workflow-1',
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+        variables: {},
+      },
+      executionTimeout: {},
+    })
+    mockExecuteWorkflowCore.mockResolvedValueOnce({
+      success: true,
+      status: 'success',
+      output: { ok: true },
+      metadata: { duration: 10, userId: 'actor-1' },
+    })
+
+    await executeWorkflowJob({
+      workflowId: 'workflow-1',
+      userId: 'user-1',
+      triggerType: 'api',
+      executionId: 'execution-1',
+      requestId: 'request-1',
+    })
+
+    const loggingSession = mockLoggingSession.mock.calls[0]?.[0]
+    expect(loggingSession).toBeDefined()
+    expect(loggingSession.safeStart).not.toHaveBeenCalled()
+    expect(mockExecuteWorkflowCore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loggingSession,
+      })
+    )
+  })
+
+  it('does not pre-start schedule logging before core execution', async () => {
+    mockPreprocessExecution.mockResolvedValueOnce({
+      success: true,
+      actorUserId: 'actor-2',
+      workflowRecord: {
+        id: 'workflow-1',
+        userId: 'owner-1',
+        workspaceId: 'workspace-1',
+        variables: {},
+      },
+      executionTimeout: {},
+    })
+    mockExecuteWorkflowCore.mockResolvedValueOnce({
+      success: true,
+      status: 'success',
+      output: { ok: true },
+      metadata: { duration: 12, userId: 'actor-2' },
+    })
+
+    await executeScheduleJob({
+      scheduleId: 'schedule-1',
+      workflowId: 'workflow-1',
+      executionId: 'execution-2',
+      requestId: 'request-2',
+      now: '2025-01-01T00:00:00.000Z',
+      scheduledFor: '2025-01-01T00:00:00.000Z',
+    })
+
+    const loggingSession = mockLoggingSession.mock.calls[0]?.[0]
+    expect(loggingSession).toBeDefined()
+    expect(loggingSession.safeStart).not.toHaveBeenCalled()
+    expect(mockExecuteWorkflowCore).toHaveBeenCalledWith(
+      expect.objectContaining({
+        loggingSession,
+      })
+    )
   })
 
   it('passes workflow correlation into preprocessing', async () => {

@@ -492,13 +492,6 @@ export async function executeScheduleJob(payload: ScheduleExecutionPayload) {
       throw new Error(`Workflow ${payload.workflowId} has no associated workspace`)
     }
 
-    await loggingSession.safeStart({
-      userId: actorUserId,
-      workspaceId: workflowRecord.workspaceId,
-      variables: {},
-      triggerData: { correlation },
-    })
-
     logger.info(`[${requestId}] Executing scheduled workflow ${payload.workflowId}`)
 
     try {

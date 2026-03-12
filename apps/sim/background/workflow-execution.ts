@@ -95,13 +95,6 @@ export async function executeWorkflowJob(payload: WorkflowExecutionPayload) {
 
     logger.info(`[${requestId}] Preprocessing passed. Using actor: ${actorUserId}`)
 
-    await loggingSession.safeStart({
-      userId: actorUserId,
-      workspaceId,
-      variables: {},
-      triggerData: { correlation },
-    })
-
     const workflow = preprocessResult.workflowRecord!
 
     const metadata: ExecutionMetadata = {
