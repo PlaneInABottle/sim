@@ -52,23 +52,111 @@ vi.mock('@/lib/auth/hybrid', () => ({
   checkHybridAuth: mocks.checkHybridAuth,
 }))
 
-vi.mock('@/lib/core/async-jobs', async () => {
-  const actual = await vi.importActual('@/lib/core/async-jobs')
+vi.mock('@/lib/core/async-jobs', () => ({
+  getJobQueue: mocks.getJobQueue,
+  resolveAsyncJobCorrelation: (target: {
+    metadata?: Record<string, unknown>
+    payload?: Record<string, unknown>
+    output?: Record<string, unknown>
+  }) => {
+    const metadata = target.metadata ?? {}
+    const payload = target.payload ?? {}
+    const output = target.output ?? {}
+    const correlation =
+      metadata.correlation && typeof metadata.correlation === 'object'
+        ? (metadata.correlation as Record<string, unknown>)
+        : {}
+    const pick = (value: unknown) =>
+      typeof value === 'string' && value.length > 0 ? value : undefined
 
-  return {
-    ...actual,
-    getJobQueue: mocks.getJobQueue,
-    JOB_STATUS: {
-      PENDING: 'pending',
-      PROCESSING: 'processing',
-      COMPLETED: 'completed',
-      FAILED: 'failed',
-    },
-  }
-})
+    const correlatedExecutionId = pick(correlation.executionId)
+    if (correlatedExecutionId) {
+      return {
+        available: true,
+        executionId: correlatedExecutionId,
+        source: 'metadata.correlation',
+        fields: ['metadata.correlation.executionId'],
+      }
+    }
+
+    const metadataExecutionId = pick(metadata.executionId)
+    if (metadataExecutionId) {
+      return {
+        available: true,
+        executionId: metadataExecutionId,
+        source: 'metadata',
+        fields: ['metadata.executionId'],
+      }
+    }
+
+    const payloadExecutionId = pick(payload.executionId)
+    if (payloadExecutionId) {
+      return {
+        available: true,
+        executionId: payloadExecutionId,
+        source: 'payload',
+        fields: ['payload.executionId'],
+      }
+    }
+
+    const outputExecutionId = pick(output.executionId)
+    if (outputExecutionId) {
+      return {
+        available: true,
+        executionId: outputExecutionId,
+        source: 'output',
+        fields: ['output.executionId'],
+      }
+    }
+
+    return { available: false, source: 'none', fields: [] }
+  },
+  JOB_STATUS: {
+    PENDING: 'pending',
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    FAILED: 'failed',
+  },
+}))
 
 vi.mock('@/lib/core/utils/request', () => ({
   generateRequestId: mocks.generateRequestId,
+}))
+
+vi.mock('@/lib/logs/execution/diagnostics', () => ({
+  buildExecutionDiagnostics: (params: {
+    status: string
+    startedAt: string
+    endedAt?: string
+    executionData?: Record<string, unknown>
+  }) => {
+    const executionData = params.executionData ?? {}
+    return {
+      status: params.status,
+      startedAt: params.startedAt,
+      endedAt: params.endedAt,
+      finalizationPath: executionData.finalizationPath,
+      staleCleanup: executionData.staleCleanup,
+      errorMessage:
+        typeof executionData.error === 'string'
+          ? executionData.error
+          : typeof executionData.errorMessage === 'string'
+            ? executionData.errorMessage
+            : undefined,
+      completionFailure: executionData.completionFailure,
+      lastStartedBlock: executionData.lastStartedBlock,
+      lastCompletedBlock: executionData.lastCompletedBlock,
+      hasTraceSpans: executionData.hasTraceSpans ?? false,
+      traceSpanCount: executionData.traceSpanCount ?? 0,
+    }
+  },
+}))
+
+vi.mock('@/lib/logs/execution/status-contract', () => ({
+  getExecutionStatusContract: (params: { rawStatus: string; finalizationPath?: string }) => ({
+    status: params.finalizationPath === 'paused' ? 'paused' : params.rawStatus,
+    rawStatus: params.rawStatus,
+  }),
 }))
 
 vi.mock('@/socket/middleware/permissions', () => ({
@@ -105,8 +193,49 @@ describe('GET /api/jobs/[jobId]', () => {
     const body = await response.json()
 
     expect(response.status).toBe(200)
+    expect(body.jobId).toBe('job-1')
+    expect(body.taskId).toBe('job-1')
     expect(body.metadata.attempts).toBe(1)
     expect(body.correlation).toEqual({ available: false, source: 'none', fields: [] })
+    expect(body.executionLogAvailable).toBe(false)
+    expect(body.statusSource).toBe('job')
+    expect(body.executionDiagnostics).toBeUndefined()
+  })
+
+  it('keeps job state canonical until a correlated execution log exists', async () => {
+    mocks.getJob.mockResolvedValue({
+      id: 'job-1',
+      status: 'pending',
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      attempts: 0,
+      maxAttempts: 3,
+      metadata: {
+        workflowId: 'wf-1',
+        correlation: {
+          executionId: 'ex-queued',
+          requestId: 'req-1',
+          source: 'workflow',
+          workflowId: 'wf-1',
+        },
+      },
+    })
+    mocks.selectLimit.mockResolvedValue([])
+
+    const response = await GET(new NextRequest('http://localhost/api/jobs/job-1'), {
+      params: Promise.resolve({ jobId: 'job-1' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('queued')
+    expect(body.correlation).toEqual({
+      available: true,
+      executionId: 'ex-queued',
+      source: 'metadata.correlation',
+      fields: ['metadata.correlation.executionId'],
+    })
+    expect(body.executionLogAvailable).toBe(false)
+    expect(body.statusSource).toBe('job')
     expect(body.executionDiagnostics).toBeUndefined()
   })
 
@@ -170,12 +299,57 @@ describe('GET /api/jobs/[jobId]', () => {
       source: 'metadata.correlation',
       fields: ['metadata.correlation.executionId'],
     })
+    expect(body.executionLogAvailable).toBe(true)
+    expect(body.statusSource).toBe('job')
     expect(body.executionDiagnostics).toEqual(
       expect.objectContaining({
         executionId: 'ex-1',
         status: 'completed',
         finalizationPath: 'completed',
         traceSpanCount: 0,
+      })
+    )
+  })
+
+  it('keeps statusSource on job when a correlated execution log exists but does not change status', async () => {
+    mocks.getJob.mockResolvedValue({
+      id: 'job-1',
+      status: 'processing',
+      createdAt: new Date('2025-01-01T00:00:00.000Z'),
+      startedAt: new Date('2025-01-01T00:00:01.000Z'),
+      attempts: 1,
+      maxAttempts: 3,
+      metadata: { workflowId: 'wf-1', correlation: { executionId: 'ex-running' } },
+    })
+    mocks.selectLimit.mockResolvedValue([
+      {
+        executionId: 'ex-running',
+        status: 'running',
+        level: 'info',
+        startedAt: new Date('2025-01-01T00:00:03.000Z'),
+        endedAt: undefined,
+        executionData: {
+          hasTraceSpans: true,
+          traceSpanCount: 2,
+        },
+      },
+    ])
+
+    const response = await GET(new NextRequest('http://localhost/api/jobs/job-1'), {
+      params: Promise.resolve({ jobId: 'job-1' }),
+    })
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.status).toBe('processing')
+    expect(body.executionLogAvailable).toBe(true)
+    expect(body.statusSource).toBe('job')
+    expect(body.executionDiagnostics).toEqual(
+      expect.objectContaining({
+        executionId: 'ex-running',
+        status: 'running',
+        rawStatus: 'running',
+        traceSpanCount: 2,
       })
     )
   })
@@ -233,6 +407,8 @@ describe('GET /api/jobs/[jobId]', () => {
       source: 'payload',
       fields: ['payload.executionId'],
     })
+    expect(body.executionLogAvailable).toBe(true)
+    expect(body.statusSource).toBe('job')
     expect(body.executionDiagnostics).toEqual(
       expect.objectContaining({
         executionId: 'ex-payload',
@@ -279,6 +455,8 @@ describe('GET /api/jobs/[jobId]', () => {
       source: 'output',
       fields: ['output.executionId'],
     })
+    expect(body.executionLogAvailable).toBe(true)
+    expect(body.statusSource).toBe('job')
   })
 
   it('normalizes completed job status when linked execution is failed', async () => {
@@ -316,6 +494,8 @@ describe('GET /api/jobs/[jobId]', () => {
 
     expect(response.status).toBe(200)
     expect(body.status).toBe('failed')
+    expect(body.executionLogAvailable).toBe(true)
+    expect(body.statusSource).toBe('execution-log')
     expect(body.output).toBeUndefined()
     expect(body.error).toBe('boom')
     expect(body.executionDiagnostics).toEqual(

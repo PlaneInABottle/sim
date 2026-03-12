@@ -121,11 +121,22 @@ function stripNonApplicableResponseFields(response: Record<string, unknown>, sta
   }
 }
 
+function buildInitialObservabilityFields() {
+  return {
+    executionLogAvailable: false,
+    statusSource: 'job' as const,
+  }
+}
+
+function getStatusSource(mappedStatus: string, finalStatus: string) {
+  return mappedStatus === finalStatus ? 'job' : 'execution-log'
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ jobId: string }> }
 ) {
-  const { jobId: taskId } = await params
+  const { jobId } = await params
   const requestId = generateRequestId()
 
   try {
@@ -138,7 +149,7 @@ export async function GET(
     const authenticatedUserId = authResult.userId
 
     const jobQueue = await getJobQueue()
-    const job = await jobQueue.getJob(taskId)
+    const job = await jobQueue.getJob(jobId)
 
     if (!job) {
       return createErrorResponse('Task not found', 404)
@@ -166,7 +177,7 @@ export async function GET(
       logger.warn(`[${requestId}] Access denied to user ${job.metadata.userId}`)
       return createErrorResponse('Access denied', 403)
     } else if (!job.metadata?.userId && !job.metadata?.workflowId) {
-      logger.warn(`[${requestId}] Access denied to job ${taskId}`)
+      logger.warn(`[${requestId}] Access denied to job ${jobId}`)
       return createErrorResponse('Access denied', 403)
     }
 
@@ -175,10 +186,12 @@ export async function GET(
 
     const response: Record<string, unknown> = {
       success: true,
-      taskId,
+      jobId,
+      taskId: jobId,
       status: mappedStatus,
       metadata: buildJobMetadata(job),
       correlation,
+      ...buildInitialObservabilityFields(),
     }
 
     if (job.status === JOB_STATUS.PROCESSING || job.status === JOB_STATUS.PENDING) {
@@ -208,6 +221,7 @@ export async function GET(
         .limit(1)
 
       if (executionLog) {
+        response.executionLogAvailable = true
         const diagnostics = buildExecutionDiagnostics({
           status: executionLog.status,
           level: executionLog.level,
@@ -238,6 +252,7 @@ export async function GET(
         }
         const finalStatus = normalizeTaskStatus(mappedStatus, executionStatusContract.status)
         response.status = finalStatus
+        response.statusSource = getStatusSource(mappedStatus, finalStatus)
         applyTerminalStateToResponse({
           response,
           status: finalStatus,
