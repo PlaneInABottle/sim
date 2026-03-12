@@ -6,10 +6,27 @@ import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('RevertToDeploymentVersionAPI')
+
+async function validateDeploymentVersionAdminAccess(request: NextRequest, workflowId: string) {
+  const access = await validateWorkflowAccess(request, workflowId, {
+    requireDeployment: false,
+    action: 'admin',
+  })
+
+  if (access.error) {
+    return access
+  }
+
+  return {
+    error: null,
+    auth: access.auth,
+    workflow: access.workflow,
+  }
+}
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -23,12 +40,18 @@ export async function POST(
 
   try {
     const {
+      auth,
       error,
-      session,
       workflow: workflowRecord,
-    } = await validateWorkflowPermissions(id, requestId, 'admin')
+    } = await validateDeploymentVersionAdminAccess(request, id)
     if (error) {
       return createErrorResponse(error.message, error.status)
+    }
+
+    const actorUserId = auth?.userId
+    if (!actorUserId) {
+      logger.warn(`[${requestId}] Unable to resolve actor user for workflow deployment revert: ${id}`)
+      return createErrorResponse('Unable to determine reverting user', 400)
     }
 
     const versionSelector = version === 'active' ? null : Number(version)
@@ -106,12 +129,12 @@ export async function POST(
 
     recordAudit({
       workspaceId: workflowRecord?.workspaceId ?? null,
-      actorId: session!.user.id,
+      actorId: actorUserId,
       action: AuditAction.WORKFLOW_DEPLOYMENT_REVERTED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,
-      actorName: session!.user.name ?? undefined,
-      actorEmail: session!.user.email ?? undefined,
+      actorName: auth?.userName ?? undefined,
+      actorEmail: auth?.userEmail ?? undefined,
       resourceName: workflowRecord?.name ?? undefined,
       description: `Reverted workflow to deployment version ${version}`,
       request,

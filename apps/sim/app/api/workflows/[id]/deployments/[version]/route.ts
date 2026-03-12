@@ -13,11 +13,32 @@ import {
   createSchedulesForDeploy,
   validateWorkflowSchedules,
 } from '@/lib/workflows/schedules'
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowDeploymentVersionAPI')
+
+async function validateDeploymentVersionLifecycleAccess(
+  request: NextRequest,
+  workflowId: string,
+  action: 'read' | 'write' | 'admin'
+) {
+  const access = await validateWorkflowAccess(request, workflowId, {
+    requireDeployment: false,
+    action,
+  })
+
+  if (access.error) {
+    return access
+  }
+
+  return {
+    error: null,
+    auth: access.auth,
+    workflow: access.workflow,
+  }
+}
 
 const patchBodySchema = z
   .object({
@@ -53,9 +74,9 @@ export async function GET(
   const { id, version } = await params
 
   try {
-    const { error } = await validateWorkflowPermissions(id, requestId, 'read')
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateDeploymentVersionLifecycleAccess(request, id, 'read')
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
 
     const versionNum = Number(version)
@@ -108,10 +129,10 @@ export async function PATCH(
     // Activation requires admin permission, other updates require write
     const requiredPermission = isActive ? 'admin' : 'write'
     const {
+      auth,
       error,
-      session,
       workflow: workflowData,
-    } = await validateWorkflowPermissions(id, requestId, requiredPermission)
+    } = await validateDeploymentVersionLifecycleAccess(request, id, requiredPermission)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
@@ -123,7 +144,7 @@ export async function PATCH(
 
     // Handle activation
     if (isActive) {
-      const actorUserId = session?.user?.id
+      const actorUserId = auth?.userId
       if (!actorUserId) {
         logger.warn(`[${requestId}] Unable to resolve actor user for deployment activation: ${id}`)
         return createErrorResponse('Unable to determine activating user', 400)
@@ -301,8 +322,8 @@ export async function PATCH(
       recordAudit({
         workspaceId: workflowData?.workspaceId,
         actorId: actorUserId,
-        actorName: session?.user?.name,
-        actorEmail: session?.user?.email,
+        actorName: auth?.userName,
+        actorEmail: auth?.userEmail,
         action: AuditAction.WORKFLOW_DEPLOYMENT_ACTIVATED,
         resourceType: AuditResourceType.WORKFLOW,
         resourceId: id,

@@ -3,7 +3,7 @@ import { createLogger } from '@sim/logger'
 import { desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { generateRequestId } from '@/lib/core/utils/request'
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
 const logger = createLogger('WorkflowDeploymentsListAPI')
@@ -16,9 +16,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id } = await params
 
   try {
-    const { error } = await validateWorkflowPermissions(id, requestId, 'read')
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'read',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
 
     const rawVersions = await db
