@@ -116,10 +116,29 @@ type ExecutionErrorWithFinalizationFlag = Error & {
   executionFinalizedByCore?: boolean
 }
 
-const finalizedExecutionIds = new Set<string>()
+export const FINALIZED_EXECUTION_ID_TTL_MS = 5 * 60 * 1000
+
+const finalizedExecutionIds = new Map<string, number>()
+
+function cleanupExpiredFinalizedExecutionIds(now = Date.now()): void {
+  for (const [executionId, expiresAt] of finalizedExecutionIds.entries()) {
+    if (expiresAt > now) {
+      break
+    }
+
+    finalizedExecutionIds.delete(executionId)
+  }
+}
+
+function rememberFinalizedExecutionId(executionId: string): void {
+  const now = Date.now()
+
+  cleanupExpiredFinalizedExecutionIds(now)
+  finalizedExecutionIds.set(executionId, now + FINALIZED_EXECUTION_ID_TTL_MS)
+}
 
 function markExecutionFinalizedByCore(error: unknown, executionId: string): void {
-  finalizedExecutionIds.add(executionId)
+  rememberFinalizedExecutionId(executionId)
 
   if (error instanceof Error) {
     ;(error as ExecutionErrorWithFinalizationFlag).executionFinalizedByCore = true
@@ -127,7 +146,9 @@ function markExecutionFinalizedByCore(error: unknown, executionId: string): void
 }
 
 export function wasExecutionFinalizedByCore(error: unknown, executionId?: string): boolean {
-  if (executionId && finalizedExecutionIds.delete(executionId)) {
+  cleanupExpiredFinalizedExecutionIds()
+
+  if (executionId && finalizedExecutionIds.has(executionId)) {
     return true
   }
 

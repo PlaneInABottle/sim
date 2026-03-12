@@ -89,7 +89,11 @@ vi.mock('@/serializer', () => ({
   })),
 }))
 
-import { executeWorkflowCore, wasExecutionFinalizedByCore } from './execution-core'
+import {
+  executeWorkflowCore,
+  FINALIZED_EXECUTION_ID_TTL_MS,
+  wasExecutionFinalizedByCore,
+} from './execution-core'
 
 describe('executeWorkflowCore terminal finalization sequencing', () => {
   const loggingSession = {
@@ -127,6 +131,7 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
 
   beforeEach(() => {
     vi.clearAllMocks()
+    vi.useRealTimers()
 
     loadWorkflowFromNormalizedTablesMock.mockResolvedValue({
       blocks: {
@@ -330,7 +335,47 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
 
     expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
     expect(wasExecutionFinalizedByCore('engine failed', 'execution-1')).toBe(true)
-    expect(wasExecutionFinalizedByCore('engine failed', 'execution-1')).toBe(false)
+    expect(wasExecutionFinalizedByCore('engine failed', 'execution-1')).toBe(true)
+  })
+
+  it('expires stale finalized execution ids for callers that never consume the guard', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-03-13T00:00:00.000Z'))
+
+    executorExecuteMock.mockRejectedValue('engine failed')
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: {
+          ...createSnapshot(),
+          metadata: {
+            ...createSnapshot().metadata,
+            executionId: 'execution-stale',
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe('engine failed')
+
+    vi.setSystemTime(new Date(Date.now() + FINALIZED_EXECUTION_ID_TTL_MS + 1))
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: {
+          ...createSnapshot(),
+          metadata: {
+            ...createSnapshot().metadata,
+            executionId: 'execution-fresh',
+          },
+        } as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe('engine failed')
+
+    expect(wasExecutionFinalizedByCore('engine failed', 'execution-stale')).toBe(false)
+    expect(wasExecutionFinalizedByCore('engine failed', 'execution-fresh')).toBe(true)
   })
 
   it('falls back to error finalization when success finalization rejects', async () => {

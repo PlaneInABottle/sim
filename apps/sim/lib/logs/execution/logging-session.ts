@@ -25,6 +25,8 @@ type TriggerData = Record<string, unknown> & {
 
 const logger = createLogger('LoggingSession')
 
+type CompletionAttempt = 'complete' | 'error' | 'cancelled' | 'paused'
+
 export interface SessionStartParams {
   userId?: string
   workspaceId: string
@@ -98,6 +100,8 @@ export class LoggingSession {
   private completing = false
   /** Tracks the in-flight completion promise so callers can await it */
   private completionPromise: Promise<void> | null = null
+  private completionAttempt: CompletionAttempt | null = null
+  private completionAttemptFailed = false
   private accumulatedCost: AccumulatedCost = {
     total: BASE_EXECUTION_CHARGE,
     input: 0,
@@ -695,13 +699,30 @@ export class LoggingSession {
     }
   }
 
-  async safeComplete(params: SessionCompleteParams = {}): Promise<void> {
-    if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteImpl(params).catch((error) => {
-      this.completionPromise = null
+  private shouldStartNewCompletionAttempt(attempt: CompletionAttempt): boolean {
+    return this.completionAttemptFailed && this.completionAttempt !== 'error' && attempt === 'error'
+  }
+
+  private runCompletionAttempt(
+    attempt: CompletionAttempt,
+    run: () => Promise<void>
+  ): Promise<void> {
+    if (this.completionPromise && !this.shouldStartNewCompletionAttempt(attempt)) {
+      return this.completionPromise
+    }
+
+    this.completionAttempt = attempt
+    this.completionAttemptFailed = false
+    this.completionPromise = run().catch((error) => {
+      this.completionAttemptFailed = true
       throw error
     })
+
     return this.completionPromise
+  }
+
+  async safeComplete(params: SessionCompleteParams = {}): Promise<void> {
+    return this.runCompletionAttempt('complete', () => this._safeCompleteImpl(params))
   }
 
   private async _safeCompleteImpl(params: SessionCompleteParams = {}): Promise<void> {
@@ -724,12 +745,7 @@ export class LoggingSession {
   }
 
   async safeCompleteWithError(params?: SessionErrorCompleteParams): Promise<void> {
-    if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithErrorImpl(params).catch((error) => {
-      this.completionPromise = null
-      throw error
-    })
-    return this.completionPromise
+    return this.runCompletionAttempt('error', () => this._safeCompleteWithErrorImpl(params))
   }
 
   private async _safeCompleteWithErrorImpl(params?: SessionErrorCompleteParams): Promise<void> {
@@ -754,12 +770,9 @@ export class LoggingSession {
   }
 
   async safeCompleteWithCancellation(params?: SessionCancelledParams): Promise<void> {
-    if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithCancellationImpl(params).catch((error) => {
-      this.completionPromise = null
-      throw error
-    })
-    return this.completionPromise
+    return this.runCompletionAttempt('cancelled', () =>
+      this._safeCompleteWithCancellationImpl(params)
+    )
   }
 
   private async _safeCompleteWithCancellationImpl(params?: SessionCancelledParams): Promise<void> {
@@ -783,12 +796,7 @@ export class LoggingSession {
   }
 
   async safeCompleteWithPause(params?: SessionPausedParams): Promise<void> {
-    if (this.completionPromise) return this.completionPromise
-    this.completionPromise = this._safeCompleteWithPauseImpl(params).catch((error) => {
-      this.completionPromise = null
-      throw error
-    })
-    return this.completionPromise
+    return this.runCompletionAttempt('paused', () => this._safeCompleteWithPauseImpl(params))
   }
 
   private async _safeCompleteWithPauseImpl(params?: SessionPausedParams): Promise<void> {
