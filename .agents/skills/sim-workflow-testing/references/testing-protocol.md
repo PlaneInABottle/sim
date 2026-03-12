@@ -61,6 +61,15 @@ Inspect:
 - condition selections
 - final workflow output (when relevant)
 
+For live-seeded verification runs:
+
+- keep draft runs as the default path
+- use live authorized entrypoints only when verifying real runtime wiring
+- seed uniquely identifiable rows
+- seed FK-safe parents and IDs
+- capture database before/after evidence
+- clean up seeded rows and restore any temporary runtime or auth changes
+
 Use `verification-rules.md` for assertion patterns. If the workflow fails, capture
 the failing block and the exact error text before making more changes.
 

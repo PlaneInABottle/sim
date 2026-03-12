@@ -72,13 +72,22 @@ Run from repo root. The `db:migrate` script lives in `packages/db/package.json`,
 
 ### Step 3: Start App + Socket Server
 
-If you want the server to survive agent shutdown, use async mode with detach:
+Default path: if you want the server to survive agent shutdown, use async mode with detach:
 
 ```text
 bash(command: "bun run dev:full", mode="async", detach=true)
 ```
 
 **Important:** `detach=true` ensures the server survives agent shutdown. Use plain async (without detach) when you specifically need `read_bash` / `stop_bash` control during the same session.
+
+#### Temporary auth/env override runs under PM2
+
+If PM2 already owns the app, prefer `pm2 restart <app-name> --update-env` over starting a second process.
+
+- Use temporary secrets or auth overrides only for the verification window.
+- Verify health after the restart before running the check.
+- When the verification run is done, restore the original env/auth values and verify the restored posture with the same health checks.
+- Use `pm2 logs <app-name> --lines 50` if you need restart evidence or error output.
 
 ### Step 4: Verify Services Are Ready
 
@@ -100,7 +109,7 @@ Expected: `{"status":"ok","timestamp":"..."}`
 
 > **Note:** The socket health endpoint returns three fields: `status` (`"ok"` or `"error"`), `timestamp` (ISO 8601), and `connections` (active connection count). On error it returns HTTP 503 with `{"status":"error","message":"Health check failed"}`.
 
-If curl fails, the server is still compiling. Wait 10s and retry. If you started the process without detach, monitor with `read_bash`. If you started it detached, rely on health checks and the redirected log file instead.
+If curl fails, the server is still compiling. Wait 10s and retry. If you started the process without detach, monitor with `read_bash`. If you started it detached, rely on health checks and the redirected log file instead. If PM2 owns the app, check `pm2 logs <app-name>` and retry the same health endpoints after restart.
 
 ### Step 5: Confirm All Running
 
@@ -125,6 +134,8 @@ bash .agents/skills/sim-runtime/scripts/check-health.sh
 tail -f /var/folders/.../T/copilot-detached-*.log
 ```
 
+If PM2 owns the app, use `pm2 logs <app-name> --lines 50` for restart output and recent errors.
+
 **Best practice:** Use health checks (curl endpoints) instead of parsing logs to verify services are running. If you need live interactive output, start the server without detach and use `read_bash` on that session instead.
 
 **Database logs:**
@@ -139,6 +150,8 @@ docker compose -f docker-compose.local.yml logs db --tail 50
 
 ### Restart App (Keep Database)
 
+If PM2 owns the app, restart it with `pm2 restart <app-name> --update-env`.
+
 1. Find the process: `ps aux | grep "bun run dev:full"`
 2. Kill it: `kill <PID>` (detached processes cannot use `stop_bash`)
 3. Restart: `bash(command: "bun run dev:full", mode="async", detach=true)`
@@ -146,6 +159,9 @@ docker compose -f docker-compose.local.yml logs db --tail 50
 ### Stop Everything
 
 ```bash
+# Stop PM2-managed app if applicable:
+pm2 stop <app-name>
+
 # Stop app (detached process - use kill with PID)
 ps aux | grep "bun run dev:full" | grep -v grep | awk '{print $2}' | xargs kill
 
