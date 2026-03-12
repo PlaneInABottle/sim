@@ -104,7 +104,7 @@ describe('POST /api/workflows/[id]/executions/[executionId]/cancel', () => {
     await expect(response.json()).resolves.toEqual({
       success: false,
       executionId: 'ex-1',
-      redisAvailable: false,
+      redisAvailable: true,
       durablyRecorded: false,
       reason: 'redis_write_failed',
     })
