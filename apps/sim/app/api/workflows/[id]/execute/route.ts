@@ -169,6 +169,7 @@ type AsyncExecutionParams = {
 
 async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextResponse> {
   const { requestId, workflowId, userId, input, triggerType, executionId, callChain } = params
+  const statusUrl = `${getBaseUrl()}/api/jobs/`
 
   const correlation = {
     executionId,
@@ -233,8 +234,9 @@ async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextR
         async: true,
         jobId,
         executionId,
-        message: 'Workflow execution queued',
-        statusUrl: `${getBaseUrl()}/api/jobs/${jobId}`,
+        message:
+          'Workflow execution job queued. Poll statusUrl for immediate status. executionId is a correlation identifier and may not resolve on execution logs until the worker starts.',
+        statusUrl: `${statusUrl}${jobId}`,
       },
       { status: 202 }
     )

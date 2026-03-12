@@ -130,8 +130,14 @@ describe('workflow execute async route', () => {
     const body = await response.json()
 
     expect(response.status).toBe(202)
+    expect(body.async).toBe(true)
     expect(body.executionId).toBe('execution-123')
     expect(body.jobId).toBe('job-123')
+    expect(body.message).toContain('job queued')
+    expect(body.message).toContain('Poll statusUrl for immediate status')
+    expect(body.message).toContain('executionId is a correlation identifier')
+    expect(body.message).toContain('may not resolve on execution logs until the worker starts')
+    expect(body.statusUrl).toBe('http://localhost:3000/api/jobs/job-123')
     expect(mockEnqueue).toHaveBeenCalledWith(
       'workflow-execution',
       expect.objectContaining({
