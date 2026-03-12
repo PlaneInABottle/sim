@@ -549,6 +549,11 @@ export class LoggingSession {
   }
 
   async completeWithPause(params: SessionPausedParams = {}): Promise<void> {
+    if (this.completed || this.completing) {
+      return
+    }
+    this.completing = true
+
     try {
       const { endedAt, totalDurationMs, traceSpans, workflowInput } = params
 
@@ -579,6 +584,8 @@ export class LoggingSession {
         workflowInput,
         status: 'pending',
       })
+
+      this.completed = true
 
       try {
         const { PlatformEvents, createOTelSpansForWorkflowExecution } = await import(
@@ -616,6 +623,7 @@ export class LoggingSession {
         )
       }
     } catch (pauseError) {
+      this.completing = false
       logger.error(`Failed to complete paused logging for execution ${this.executionId}:`, {
         requestId: this.requestId,
         workflowId: this.workflowId,
@@ -697,6 +705,10 @@ export class LoggingSession {
         /* already handled by safe* wrapper */
       }
     }
+  }
+
+  hasCompleted(): boolean {
+    return this.completed
   }
 
   private shouldStartNewCompletionAttempt(attempt: CompletionAttempt): boolean {

@@ -89,4 +89,49 @@ describe('LoggingSession completion retries', () => {
 
     expect(completeWorkflowExecutionMock).toHaveBeenCalledTimes(2)
   })
+
+  it('marks paused completions as completed and deduplicates later attempts', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    completeWorkflowExecutionMock.mockResolvedValue({})
+
+    await expect(
+      session.safeCompleteWithPause({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: 10,
+        traceSpans: [],
+        workflowInput: { hello: 'world' },
+      })
+    ).resolves.toBeUndefined()
+
+    expect(session.hasCompleted()).toBe(true)
+
+    await expect(
+      session.safeCompleteWithError({
+        error: { message: 'should be ignored' },
+      })
+    ).resolves.toBeUndefined()
+
+    expect(completeWorkflowExecutionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('falls back to cost-only logging when paused completion fails', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-2', 'api', 'req-1')
+
+    completeWorkflowExecutionMock
+      .mockRejectedValueOnce(new Error('pause finalize failed'))
+      .mockResolvedValueOnce({})
+
+    await expect(
+      session.safeCompleteWithPause({
+        endedAt: new Date().toISOString(),
+        totalDurationMs: 10,
+        traceSpans: [],
+        workflowInput: { hello: 'world' },
+      })
+    ).resolves.toBeUndefined()
+
+    expect(session.hasCompleted()).toBe(true)
+    expect(completeWorkflowExecutionMock).toHaveBeenCalledTimes(2)
+  })
 })

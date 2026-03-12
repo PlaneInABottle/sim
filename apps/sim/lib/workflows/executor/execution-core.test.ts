@@ -10,6 +10,7 @@ const {
   safeCompleteWithErrorMock,
   safeCompleteWithCancellationMock,
   safeCompleteWithPauseMock,
+  hasCompletedMock,
   updateWorkflowRunCountsMock,
   clearExecutionCancellationMock,
   buildTraceSpansMock,
@@ -25,6 +26,7 @@ const {
   safeCompleteWithErrorMock: vi.fn(),
   safeCompleteWithCancellationMock: vi.fn(),
   safeCompleteWithPauseMock: vi.fn(),
+  hasCompletedMock: vi.fn(),
   updateWorkflowRunCountsMock: vi.fn(),
   clearExecutionCancellationMock: vi.fn(),
   buildTraceSpansMock: vi.fn(),
@@ -102,6 +104,7 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     safeCompleteWithError: safeCompleteWithErrorMock,
     safeCompleteWithCancellation: safeCompleteWithCancellationMock,
     safeCompleteWithPause: safeCompleteWithPauseMock,
+    hasCompleted: hasCompletedMock,
   }
 
   const createSnapshot = () => ({
@@ -165,11 +168,12 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     mergeSubblockStateWithValuesMock.mockImplementation((blocks) => blocks)
     serializeWorkflowMock.mockReturnValue({ loops: {}, parallels: {} })
     buildTraceSpansMock.mockReturnValue({ traceSpans: [{ id: 'span-1' }], totalDuration: 123 })
-    safeStartMock.mockResolvedValue(undefined)
+    safeStartMock.mockResolvedValue(true)
     safeCompleteMock.mockResolvedValue(undefined)
     safeCompleteWithErrorMock.mockResolvedValue(undefined)
     safeCompleteWithCancellationMock.mockResolvedValue(undefined)
     safeCompleteWithPauseMock.mockResolvedValue(undefined)
+    hasCompletedMock.mockReturnValue(true)
     updateWorkflowRunCountsMock.mockResolvedValue(undefined)
     clearExecutionCancellationMock.mockResolvedValue(undefined)
   })
@@ -443,5 +447,78 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     ).rejects.toBe(error)
 
     expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not mark core finalization when error completion never persists a log row', async () => {
+    const error = new Error('engine failed')
+    executorExecuteMock.mockRejectedValue(error)
+    hasCompletedMock.mockReturnValue(false)
+    const snapshot = {
+      ...createSnapshot(),
+      metadata: {
+        ...createSnapshot().metadata,
+        executionId: 'execution-unfinalized',
+      },
+    }
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: snapshot as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe(error)
+
+    expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
+    expect(wasExecutionFinalizedByCore(error, 'execution-unfinalized')).toBe(false)
+  })
+
+  it('starts a minimal log session before error completion when setup fails early', async () => {
+    const envError = new Error('env lookup failed')
+    getPersonalAndWorkspaceEnvMock.mockRejectedValue(envError)
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: createSnapshot() as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe(envError)
+
+    expect(safeStartMock).toHaveBeenCalledTimes(1)
+    expect(safeStartMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        userId: 'user-1',
+        workspaceId: 'workspace-1',
+        variables: {},
+      })
+    )
+    expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
+    expect(wasExecutionFinalizedByCore(envError, 'execution-1')).toBe(true)
+  })
+
+  it('skips core finalization when minimal error logging cannot start', async () => {
+    const envError = new Error('env lookup failed')
+    getPersonalAndWorkspaceEnvMock.mockRejectedValue(envError)
+    safeStartMock.mockResolvedValue(false)
+    const snapshot = {
+      ...createSnapshot(),
+      metadata: {
+        ...createSnapshot().metadata,
+        executionId: 'execution-no-log-start',
+      },
+    }
+
+    await expect(
+      executeWorkflowCore({
+        snapshot: snapshot as any,
+        callbacks: {},
+        loggingSession: loggingSession as any,
+      })
+    ).rejects.toBe(envError)
+
+    expect(safeStartMock).toHaveBeenCalledTimes(1)
+    expect(safeCompleteWithErrorMock).not.toHaveBeenCalled()
+    expect(wasExecutionFinalizedByCore(envError, 'execution-no-log-start')).toBe(false)
   })
 })

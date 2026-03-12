@@ -234,7 +234,7 @@ async function finalizeExecutionError(params: {
       traceSpans,
     })
 
-    return true
+    return loggingSession.hasCompleted()
   } catch (postExecError) {
     logger.error(`[${requestId}] Post-execution error logging failed`, {
       error: postExecError,
@@ -270,13 +270,14 @@ export async function executeWorkflowCore(
   }
 
   let processedInput = input || {}
+  let deploymentVersionId: string | undefined
+  let loggingStarted = false
 
   try {
     let blocks
     let edges: Edge[]
     let loops
     let parallels
-    let deploymentVersionId: string | undefined
 
     // Use workflowStateOverride if provided (for diff workflows)
     if (metadata.workflowStateOverride) {
@@ -333,7 +334,7 @@ export async function executeWorkflowCore(
     // Use already-decrypted values for execution (no redundant decryption)
     const decryptedEnvVars: Record<string, string> = { ...personalDecrypted, ...workspaceDecrypted }
 
-    await loggingSession.safeStart({
+    loggingStarted = await loggingSession.safeStart({
       userId,
       workspaceId: providedWorkspaceId,
       variables,
@@ -520,12 +521,25 @@ export async function executeWorkflowCore(
   } catch (error: unknown) {
     logger.error(`[${requestId}] Execution failed:`, error)
 
-    const finalized = await finalizeExecutionError({
-      error,
-      loggingSession,
-      executionId,
-      requestId,
-    })
+    if (!loggingStarted) {
+      loggingStarted = await loggingSession.safeStart({
+        userId,
+        workspaceId: providedWorkspaceId,
+        variables: {},
+        triggerData: metadata.correlation ? { correlation: metadata.correlation } : undefined,
+        skipLogCreation,
+        deploymentVersionId,
+      })
+    }
+
+    const finalized = loggingStarted
+      ? await finalizeExecutionError({
+          error,
+          loggingSession,
+          executionId,
+          requestId,
+        })
+      : false
 
     if (finalized) {
       markExecutionFinalizedByCore(error, executionId)
