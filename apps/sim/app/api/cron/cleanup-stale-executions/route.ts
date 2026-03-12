@@ -1,11 +1,18 @@
 import { asyncJobs, db } from '@sim/db'
 import { pausedExecutions, resumeQueue, workflowExecutionLogs } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
-import { and, eq, inArray, lt, sql } from 'drizzle-orm'
+import { and, eq, inArray, isNull, lt, sql } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { verifyCronAuth } from '@/lib/auth/internal'
-import { JOB_RETENTION_HOURS, JOB_STATUS } from '@/lib/core/async-jobs'
+import type { AsyncJobCorrelationEvidence } from '@/lib/core/async-jobs'
+import {
+  getAsyncBackendType,
+  JOB_RETENTION_HOURS,
+  JOB_STATUS,
+  resolveAsyncJobCorrelation,
+} from '@/lib/core/async-jobs'
 import { getMaxExecutionTimeout } from '@/lib/core/execution-limits'
+import { buildExecutionDiagnostics } from '@/lib/logs/execution/diagnostics'
 
 const logger = createLogger('CleanupStaleExecutions')
 
@@ -25,6 +32,13 @@ type AsyncJobCleanupBucket =
   | 'paused-handoff-processing-job'
   | 'orphaned-processing-job'
   | 'pending-never-started-job'
+
+type AsyncJobCleanupSupport = {
+  backendType: 'trigger-dev' | 'redis' | 'database'
+  staleAsyncJobCleanup: 'supported' | 'db-only'
+  supported: boolean
+  reason?: string
+}
 
 type StaleExecutionRow = {
   id: string
@@ -65,12 +79,6 @@ type AsyncJobRow = {
   output: unknown
 }
 
-type AsyncJobCorrelationEvidence = {
-  executionId?: string
-  source: 'metadata.correlation' | 'metadata' | 'payload' | 'output' | 'none'
-  fields: string[]
-}
-
 type CorrelatedExecutionRow = StaleExecutionRow & {
   status: string
 }
@@ -89,6 +97,51 @@ function createAsyncJobBucketCounts(): Record<AsyncJobCleanupBucket, number> {
     'paused-handoff-processing-job': 0,
     'orphaned-processing-job': 0,
     'pending-never-started-job': 0,
+  }
+}
+
+function getAsyncJobCleanupSupport(): AsyncJobCleanupSupport {
+  const backendType = getAsyncBackendType()
+
+  if (backendType === 'database') {
+    return {
+      backendType,
+      staleAsyncJobCleanup: 'supported',
+      supported: true,
+    }
+  }
+
+  return {
+    backendType,
+    staleAsyncJobCleanup: 'db-only',
+    supported: false,
+    reason: 'stale async job cleanup only mutates async_jobs for the database backend',
+  }
+}
+
+function createAsyncJobCleanupSummary(args: {
+  support: AsyncJobCleanupSupport
+  classified?: number
+  mutated?: number
+  failed?: number
+  skipped?: number
+  noOp?: number
+  buckets?: Record<AsyncJobCleanupBucket, number>
+  oldDeleted?: number
+}) {
+  return {
+    support: args.support,
+    classified: args.classified ?? 0,
+    mutated: args.mutated ?? 0,
+    mutatedToFailed: args.mutated ?? 0,
+    failed: args.failed ?? 0,
+    cleanupErrors: args.failed ?? 0,
+    skipped: args.skipped ?? 0,
+    noOp: args.noOp ?? 0,
+    buckets: args.buckets ?? createAsyncJobBucketCounts(),
+    oldDeleted: args.oldDeleted ?? 0,
+    staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
+    retentionHours: JOB_RETENTION_HOURS,
   }
 }
 
@@ -167,47 +220,7 @@ function classifyExecution(args: {
 }
 
 function getAsyncJobCorrelationEvidence(job: AsyncJobRow): AsyncJobCorrelationEvidence {
-  const metadata = toJsonRecord(job.metadata)
-  const payload = toJsonRecord(job.payload)
-  const output = toJsonRecord(job.output)
-  const correlation = toJsonRecord(metadata.correlation)
-
-  if (hasNonEmptyString(correlation.executionId)) {
-    return {
-      executionId: correlation.executionId,
-      source: 'metadata.correlation',
-      fields: ['metadata.correlation.executionId'],
-    }
-  }
-
-  if (hasNonEmptyString(metadata.executionId)) {
-    return {
-      executionId: metadata.executionId,
-      source: 'metadata',
-      fields: ['metadata.executionId'],
-    }
-  }
-
-  if (hasNonEmptyString(payload.executionId)) {
-    return {
-      executionId: payload.executionId,
-      source: 'payload',
-      fields: ['payload.executionId'],
-    }
-  }
-
-  if (hasNonEmptyString(output.executionId)) {
-    return {
-      executionId: output.executionId,
-      source: 'output',
-      fields: ['output.executionId'],
-    }
-  }
-
-  return {
-    source: 'none',
-    fields: [],
-  }
+  return resolveAsyncJobCorrelation(job)
 }
 
 function buildExecutionCleanupMessage(
@@ -219,6 +232,49 @@ function buildExecutionCleanupMessage(
   }
 
   return `Execution classified as ${bucket}`
+}
+
+function hasPausedPartialFinalizationEvidence(execution: StaleExecutionRow): boolean {
+  const diagnostics = buildExecutionDiagnostics({
+    status: 'running',
+    startedAt: execution.startedAt.toISOString(),
+    endedAt: execution.endedAt?.toISOString(),
+    executionData: toJsonRecord(execution.executionData),
+  })
+
+  return diagnostics.finalizationPath === 'paused'
+}
+
+function normalizePartialFinalizationStatus(
+  execution: StaleExecutionRow
+): 'completed' | 'cancelled' | 'failed' {
+  const diagnostics = buildExecutionDiagnostics({
+    status: 'running',
+    startedAt: execution.startedAt.toISOString(),
+    endedAt: execution.endedAt?.toISOString(),
+    executionData: toJsonRecord(execution.executionData),
+  })
+
+  if (
+    diagnostics.finalizationPath === 'completed' ||
+    diagnostics.finalizationPath === 'fallback_completed'
+  ) {
+    return 'completed'
+  }
+
+  if (diagnostics.finalizationPath === 'cancelled') {
+    return 'cancelled'
+  }
+
+  if (diagnostics.finalizationPath === 'paused') {
+    return 'completed'
+  }
+
+  return 'failed'
+}
+
+function getExecutionCleanupLevel(normalizedStatus: 'completed' | 'cancelled' | 'failed') {
+  return normalizedStatus === 'failed' ? 'error' : 'info'
 }
 
 function buildAsyncJobCleanupMessage(bucket: AsyncJobCleanupBucket): string {
@@ -245,20 +301,26 @@ function buildExecutionCleanupDataSql(args: {
   message: string
   cleanedAt: Date
   staleDurationMinutes: number
+  normalizedStatus: 'completed' | 'cancelled' | 'failed'
 }) {
-  const { bucket, message, cleanedAt, staleDurationMinutes } = args
+  const { bucket, message, cleanedAt, staleDurationMinutes, normalizedStatus } = args
+
+  const baseExecutionData =
+    normalizedStatus === 'failed'
+      ? sql`CASE
+          WHEN COALESCE(execution_data, '{}'::jsonb) ? 'error'
+            THEN COALESCE(execution_data, '{}'::jsonb)
+          ELSE jsonb_set(
+            COALESCE(execution_data, '{}'::jsonb),
+            ARRAY['error'],
+            to_jsonb(${message}::text),
+            true
+          )
+        END`
+      : sql`COALESCE(execution_data, '{}'::jsonb)`
 
   return sql`jsonb_set(
-    CASE
-      WHEN COALESCE(execution_data, '{}'::jsonb) ? 'error'
-        THEN COALESCE(execution_data, '{}'::jsonb)
-      ELSE jsonb_set(
-        COALESCE(execution_data, '{}'::jsonb),
-        ARRAY['error'],
-        to_jsonb(${message}::text),
-        true
-      )
-    END,
+    ${baseExecutionData},
     ARRAY['staleCleanup'],
     jsonb_build_object(
       'bucket', ${bucket}::text,
@@ -291,6 +353,38 @@ function buildAsyncJobMetadataSql(args: {
     ),
     true
   )`
+}
+
+function buildExecutionCleanupWhere(args: { execution: StaleExecutionRow; staleThreshold: Date }) {
+  const { execution, staleThreshold } = args
+
+  return and(
+    eq(workflowExecutionLogs.id, execution.id),
+    eq(workflowExecutionLogs.status, 'running'),
+    lt(workflowExecutionLogs.startedAt, staleThreshold),
+    execution.endedAt === null
+      ? isNull(workflowExecutionLogs.endedAt)
+      : eq(workflowExecutionLogs.endedAt, execution.endedAt)
+  )
+}
+
+function getObservedExecutionEndTime(execution: StaleExecutionRow, fallback: Date) {
+  return execution.endedAt ?? fallback
+}
+
+function buildAsyncJobCleanupWhere(args: { job: AsyncJobRow; staleThreshold: Date }) {
+  const { job, staleThreshold } = args
+
+  return and(
+    eq(asyncJobs.id, job.id),
+    eq(asyncJobs.status, job.status),
+    job.completedAt === null
+      ? isNull(asyncJobs.completedAt)
+      : eq(asyncJobs.completedAt, job.completedAt),
+    job.status === JOB_STATUS.PROCESSING
+      ? lt(asyncJobs.startedAt, staleThreshold)
+      : and(isNull(asyncJobs.startedAt), lt(asyncJobs.createdAt, staleThreshold))
+  )
 }
 
 function hasLiveCorrelatedExecution(args: {
@@ -343,6 +437,30 @@ function hasPositiveAbandonmentEvidence(args: {
   )
 }
 
+function hasPausedParentTruth(args: {
+  execution?: CorrelatedExecutionRow
+  pausedExecution?: PausedExecutionRow
+}): boolean {
+  const { execution, pausedExecution } = args
+
+  if (!execution) {
+    return false
+  }
+
+  if (execution.status === 'paused') {
+    return true
+  }
+
+  if (!pausedExecution || !hasPartialFinalizationEvidence(execution)) {
+    return false
+  }
+
+  return (
+    hasPausedPartialFinalizationEvidence(execution) &&
+    hasPausedAwaitingResumeEvidence(pausedExecution)
+  )
+}
+
 function classifyAsyncJob(args: {
   job: AsyncJobRow
   correlation: AsyncJobCorrelationEvidence
@@ -378,6 +496,15 @@ function classifyAsyncJob(args: {
 
   if (correlatedBucket === 'resume-in-flight') {
     return 'skip'
+  }
+
+  if (
+    hasPausedParentTruth({
+      execution: correlatedExecution,
+      pausedExecution: correlatedPausedExecution,
+    })
+  ) {
+    return 'paused-handoff-processing-job'
   }
 
   if (correlatedBucket === 'paused-awaiting-resume') {
@@ -465,22 +592,26 @@ export async function GET(request: NextRequest) {
 
     let cleaned = 0
     let failed = 0
+    let executionsClassified = 0
+    let executionsSkipped = 0
+    let executionsNoOp = 0
     const executionBuckets = createExecutionBucketCounts()
 
     for (const execution of staleExecutions) {
       try {
         const staleDurationMs = Date.now() - new Date(execution.startedAt).getTime()
         const staleDurationMinutes = Math.round(staleDurationMs / 60000)
-        const totalDurationMs = Math.min(staleDurationMs, MAX_INT32)
         const bucket = classifyExecution({
           execution: execution as StaleExecutionRow,
           pausedExecution: pausedExecutionById.get(execution.executionId),
           resumeEntries: resumeQueueByExecutionId.get(execution.executionId) ?? [],
         })
 
+        executionsClassified += 1
         executionBuckets[bucket] += 1
 
-        if (bucket !== 'abandoned-running-execution') {
+        if (bucket === 'resume-in-flight' || bucket === 'paused-awaiting-resume') {
+          executionsSkipped += 1
           logger.info(`Skipped stale execution ${execution.executionId}`, {
             workflowId: execution.workflowId,
             classification: bucket,
@@ -490,22 +621,52 @@ export async function GET(request: NextRequest) {
         }
 
         const now = new Date()
+        const observedEndTime = getObservedExecutionEndTime(execution as StaleExecutionRow, now)
         const cleanupMessage = buildExecutionCleanupMessage(bucket, staleDurationMinutes)
+        const normalizedStatus =
+          bucket === 'partially-finalized-execution'
+            ? normalizePartialFinalizationStatus(execution as StaleExecutionRow)
+            : 'failed'
+        const normalizedTotalDurationMs = Math.min(
+          observedEndTime.getTime() - new Date(execution.startedAt).getTime(),
+          MAX_INT32
+        )
 
-        await db
+        const updatedExecutions = await db
           .update(workflowExecutionLogs)
           .set({
-            status: 'failed',
-            endedAt: now,
-            totalDurationMs,
+            level: getExecutionCleanupLevel(normalizedStatus),
+            status: normalizedStatus,
+            endedAt: observedEndTime,
+            totalDurationMs: normalizedTotalDurationMs,
             executionData: buildExecutionCleanupDataSql({
               bucket,
               message: cleanupMessage,
               cleanedAt: now,
               staleDurationMinutes,
+              normalizedStatus,
             }),
           })
-          .where(eq(workflowExecutionLogs.id, execution.id))
+          .where(
+            buildExecutionCleanupWhere({
+              execution: execution as StaleExecutionRow,
+              staleThreshold,
+            })
+          )
+          .returning({ id: workflowExecutionLogs.id })
+
+        if (updatedExecutions.length === 0) {
+          executionsNoOp += 1
+          logger.info(
+            `Skipped stale execution ${execution.executionId} because row was unchanged`,
+            {
+              workflowId: execution.workflowId,
+              classification: bucket,
+              staleDurationMinutes,
+            }
+          )
+          continue
+        }
 
         logger.info(`Cleaned up stale execution ${execution.executionId}`, {
           workflowId: execution.workflowId,
@@ -523,6 +684,29 @@ export async function GET(request: NextRequest) {
     }
 
     logger.info(`Stale execution cleanup completed. Cleaned: ${cleaned}, Failed: ${failed}`)
+
+    const asyncJobCleanupSupport = getAsyncJobCleanupSupport()
+
+    if (!asyncJobCleanupSupport.supported) {
+      return NextResponse.json({
+        success: true,
+        executions: {
+          found: staleExecutions.length,
+          classified: executionsClassified,
+          mutated: cleaned,
+          skipped: executionsSkipped,
+          noOp: executionsNoOp,
+          cleaned,
+          failed,
+          buckets: executionBuckets,
+          thresholdMinutes: STALE_THRESHOLD_MINUTES,
+        },
+        asyncJobs: createAsyncJobCleanupSummary({
+          support: asyncJobCleanupSupport,
+          skipped: 0,
+        }),
+      })
+    }
 
     const staleAsyncJobRows = await db
       .select({
@@ -551,8 +735,11 @@ export async function GET(request: NextRequest) {
       )
 
     const asyncJobBuckets = createAsyncJobBucketCounts()
-    let asyncJobsFailed = 0
+    let asyncJobsMutatedToFailed = 0
+    let asyncJobsCleanupErrors = 0
     let asyncJobsSkipped = 0
+    let asyncJobsClassified = 0
+    let asyncJobsNoOp = 0
 
     const correlatedExecutionIds = Array.from(
       new Set(
@@ -639,11 +826,12 @@ export async function GET(request: NextRequest) {
           continue
         }
 
+        asyncJobsClassified += 1
         asyncJobBuckets[bucket] += 1
         const now = new Date()
         const cleanupMessage = buildAsyncJobCleanupMessage(bucket)
 
-        await db
+        const updatedAsyncJobs = await db
           .update(asyncJobs)
           .set({
             status: JOB_STATUS.FAILED,
@@ -656,13 +844,20 @@ export async function GET(request: NextRequest) {
               correlation,
             }),
           })
-          .where(eq(asyncJobs.id, job.id))
+          .where(buildAsyncJobCleanupWhere({ job: typedJob, staleThreshold }))
+          .returning({ id: asyncJobs.id })
 
-        asyncJobsFailed += 1
+        if (updatedAsyncJobs.length === 0) {
+          asyncJobsNoOp += 1
+          continue
+        }
+
+        asyncJobsMutatedToFailed += 1
       } catch (error) {
         logger.error(`Failed to clean up async job ${job.id}:`, {
           error: error instanceof Error ? error.message : String(error),
         })
+        asyncJobsCleanupErrors += 1
       }
     }
 
@@ -697,18 +892,26 @@ export async function GET(request: NextRequest) {
       success: true,
       executions: {
         found: staleExecutions.length,
+        classified: executionsClassified,
+        mutated: cleaned,
+        skipped: executionsSkipped,
+        noOp: executionsNoOp,
         cleaned,
         failed,
         buckets: executionBuckets,
         thresholdMinutes: STALE_THRESHOLD_MINUTES,
       },
       asyncJobs: {
-        failed: asyncJobsFailed,
-        skipped: asyncJobsSkipped,
-        buckets: asyncJobBuckets,
-        oldDeleted: asyncJobsDeleted,
-        staleThresholdMinutes: STALE_THRESHOLD_MINUTES,
-        retentionHours: JOB_RETENTION_HOURS,
+        ...createAsyncJobCleanupSummary({
+          support: asyncJobCleanupSupport,
+          classified: asyncJobsClassified,
+          mutated: asyncJobsMutatedToFailed,
+          failed: asyncJobsCleanupErrors,
+          skipped: asyncJobsSkipped,
+          noOp: asyncJobsNoOp,
+          buckets: asyncJobBuckets,
+          oldDeleted: asyncJobsDeleted,
+        }),
       },
     })
   } catch (error) {
