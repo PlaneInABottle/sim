@@ -306,13 +306,26 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    const auth = await checkSessionOrInternalAuth(request, { requireWorkflowId: false })
-    if (!auth.success || !auth.userId) {
+    const validation = await validateWorkflowAccess(request, workflowId, {
+      requireDeployment: false,
+      action: 'write',
+    })
+    if (validation.error) {
       logger.warn(`[${requestId}] Unauthorized update attempt for workflow ${workflowId}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      return NextResponse.json(
+        { error: validation.error.message },
+        { status: validation.error.status }
+      )
     }
 
-    const userId = auth.userId
+    const userId = validation.auth?.userId
+    if (!userId) {
+      logger.warn(`[${requestId}] Missing user identity for workflow update ${workflowId}`)
+      return NextResponse.json(
+        { error: 'Workflow update requires a user-backed session or API key identity' },
+        { status: 400 }
+      )
+    }
 
     const body = await request.json()
     const updates = UpdateWorkflowSchema.parse(body)

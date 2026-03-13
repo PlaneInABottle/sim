@@ -5,12 +5,21 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockValidateWorkflowAccess = vi.fn()
-const mockDbSelect = vi.fn()
-const mockDbFrom = vi.fn()
-const mockDbLeftJoin = vi.fn()
-const mockDbWhere = vi.fn()
-const mockDbOrderBy = vi.fn()
+const {
+  mockDbFrom,
+  mockDbLeftJoin,
+  mockDbOrderBy,
+  mockDbSelect,
+  mockDbWhere,
+  mockValidateWorkflowAccess,
+} = vi.hoisted(() => ({
+  mockDbFrom: vi.fn(),
+  mockDbLeftJoin: vi.fn(),
+  mockDbOrderBy: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbWhere: vi.fn(),
+  mockValidateWorkflowAccess: vi.fn(),
+}))
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -39,10 +48,14 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-vi.mock('drizzle-orm', () => ({
-  desc: vi.fn(),
-  eq: vi.fn(),
-}))
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>()
+  return {
+    ...actual,
+    desc: vi.fn(),
+    eq: vi.fn(),
+  }
+})
 
 import { GET } from '@/app/api/workflows/[id]/deployments/route'
 

@@ -5,16 +5,43 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockValidateWorkflowAccess = vi.fn()
-const mockDbSelect = vi.fn()
-const mockDbFrom = vi.fn()
-const mockDbWhere = vi.fn()
-const mockDbLimit = vi.fn()
-const mockDbOrderBy = vi.fn()
-const mockDeployWorkflow = vi.fn()
-const mockUndeployWorkflow = vi.fn()
-const mockCleanupWebhooksForWorkflow = vi.fn()
-const mockRemoveMcpToolsForWorkflow = vi.fn()
+const {
+  mockCleanupWebhooksForWorkflow,
+  mockDbLimit,
+  mockDbOrderBy,
+  mockDbFrom,
+  mockDbSelect,
+  mockDbSet,
+  mockDbUpdate,
+  mockDbWhere,
+  mockCreateSchedulesForDeploy,
+  mockDeployWorkflow,
+  mockLoadWorkflowFromNormalizedTables,
+  mockRemoveMcpToolsForWorkflow,
+  mockSaveTriggerWebhooksForDeploy,
+  mockSyncMcpToolsForWorkflow,
+  mockUndeployWorkflow,
+  mockValidatePublicApiAllowed,
+  mockValidateWorkflowAccess,
+} = vi.hoisted(() => ({
+  mockCleanupWebhooksForWorkflow: vi.fn(),
+  mockDbLimit: vi.fn(),
+  mockDbOrderBy: vi.fn(),
+  mockDbFrom: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbSet: vi.fn(),
+  mockDbUpdate: vi.fn(),
+  mockDbWhere: vi.fn(),
+  mockCreateSchedulesForDeploy: vi.fn(),
+  mockDeployWorkflow: vi.fn(),
+  mockLoadWorkflowFromNormalizedTables: vi.fn(),
+  mockRemoveMcpToolsForWorkflow: vi.fn(),
+  mockSaveTriggerWebhooksForDeploy: vi.fn(),
+  mockSyncMcpToolsForWorkflow: vi.fn(),
+  mockUndeployWorkflow: vi.fn(),
+  mockValidatePublicApiAllowed: vi.fn(),
+  mockValidateWorkflowAccess: vi.fn(),
+}))
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -33,19 +60,23 @@ vi.mock('@/lib/core/utils/request', () => ({
 }))
 
 vi.mock('@sim/db', () => ({
-  db: { select: mockDbSelect },
+  db: { select: mockDbSelect, update: mockDbUpdate },
   workflow: { variables: 'variables', id: 'id' },
   workflowDeploymentVersion: { state: 'state', workflowId: 'workflowId', isActive: 'isActive', createdAt: 'createdAt', id: 'id' },
 }))
 
-vi.mock('drizzle-orm', () => ({
-  and: vi.fn(),
-  desc: vi.fn(),
-  eq: vi.fn(),
-}))
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>()
+  return {
+    ...actual,
+    and: vi.fn(),
+    desc: vi.fn(),
+    eq: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  loadWorkflowFromNormalizedTables: vi.fn().mockResolvedValue(null),
+  loadWorkflowFromNormalizedTables: (...args: unknown[]) => mockLoadWorkflowFromNormalizedTables(...args),
   deployWorkflow: (...args: unknown[]) => mockDeployWorkflow(...args),
   undeployWorkflow: (...args: unknown[]) => mockUndeployWorkflow(...args),
 }))
@@ -56,19 +87,19 @@ vi.mock('@/lib/workflows/comparison', () => ({
 
 vi.mock('@/lib/workflows/schedules', () => ({
   cleanupDeploymentVersion: vi.fn(),
-  createSchedulesForDeploy: vi.fn(),
+  createSchedulesForDeploy: (...args: unknown[]) => mockCreateSchedulesForDeploy(...args),
   validateWorkflowSchedules: vi.fn().mockReturnValue({ isValid: true }),
 }))
 
 vi.mock('@/lib/webhooks/deploy', () => ({
   cleanupWebhooksForWorkflow: (...args: unknown[]) => mockCleanupWebhooksForWorkflow(...args),
   restorePreviousVersionWebhooks: vi.fn(),
-  saveTriggerWebhooksForDeploy: vi.fn(),
+  saveTriggerWebhooksForDeploy: (...args: unknown[]) => mockSaveTriggerWebhooksForDeploy(...args),
 }))
 
 vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
   removeMcpToolsForWorkflow: (...args: unknown[]) => mockRemoveMcpToolsForWorkflow(...args),
-  syncMcpToolsForWorkflow: vi.fn(),
+  syncMcpToolsForWorkflow: (...args: unknown[]) => mockSyncMcpToolsForWorkflow(...args),
 }))
 
 vi.mock('@/lib/audit/log', () => ({
@@ -77,7 +108,12 @@ vi.mock('@/lib/audit/log', () => ({
   recordAudit: vi.fn(),
 }))
 
-import { POST, DELETE } from '@/app/api/workflows/[id]/deploy/route'
+vi.mock('@/ee/access-control/utils/permission-check', () => ({
+  PublicApiNotAllowedError: class PublicApiNotAllowedError extends Error {},
+  validatePublicApiAllowed: (...args: unknown[]) => mockValidatePublicApiAllowed(...args),
+}))
+
+import { DELETE, PATCH, POST } from '@/app/api/workflows/[id]/deploy/route'
 
 describe('Workflow deploy route', () => {
   beforeEach(() => {
@@ -87,8 +123,20 @@ describe('Workflow deploy route', () => {
     mockDbWhere.mockReturnValue({ limit: mockDbLimit, orderBy: mockDbOrderBy })
     mockDbOrderBy.mockReturnValue({ limit: mockDbLimit })
     mockDbLimit.mockResolvedValue([])
+    mockDbUpdate.mockReturnValue({ set: mockDbSet })
+    mockDbSet.mockReturnValue({ where: mockDbWhere })
     mockCleanupWebhooksForWorkflow.mockResolvedValue(undefined)
+    mockCreateSchedulesForDeploy.mockResolvedValue({ success: true })
+    mockLoadWorkflowFromNormalizedTables.mockResolvedValue({
+      blocks: { 'block-1': { id: 'block-1', type: 'start_trigger', name: 'Start' } },
+      edges: [],
+      loops: {},
+      parallels: {},
+    })
+    mockSaveTriggerWebhooksForDeploy.mockResolvedValue({ success: true, warnings: [] })
     mockRemoveMcpToolsForWorkflow.mockResolvedValue(undefined)
+    mockSyncMcpToolsForWorkflow.mockResolvedValue(undefined)
+    mockValidatePublicApiAllowed.mockResolvedValue(undefined)
   })
 
   it('allows API-key auth for deploy using hybrid auth userId', async () => {
@@ -135,5 +183,22 @@ describe('Workflow deploy route', () => {
     const data = await response.json()
     expect(data.isDeployed).toBe(false)
     expect(mockUndeployWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-1' })
+  })
+
+  it('checks public API restrictions against hybrid auth userId', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'test-key' },
+      body: JSON.stringify({ isPublicApi: true }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockValidatePublicApiAllowed).toHaveBeenCalledWith('api-user')
   })
 })

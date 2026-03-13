@@ -5,16 +5,29 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockValidateWorkflowAccess = vi.fn()
-const mockDbSelect = vi.fn()
-const mockDbFrom = vi.fn()
-const mockDbWhere = vi.fn()
-const mockDbLimit = vi.fn()
-const mockDbUpdate = vi.fn()
-const mockDbSet = vi.fn()
-const mockDbWhereUpdate = vi.fn()
-const mockSaveWorkflowToNormalizedTables = vi.fn()
-const mockSyncMcpToolsForWorkflow = vi.fn()
+const {
+  mockDbFrom,
+  mockDbLimit,
+  mockDbSelect,
+  mockDbSet,
+  mockDbUpdate,
+  mockDbWhere,
+  mockDbWhereUpdate,
+  mockSaveWorkflowToNormalizedTables,
+  mockSyncMcpToolsForWorkflow,
+  mockValidateWorkflowAccess,
+} = vi.hoisted(() => ({
+  mockDbFrom: vi.fn(),
+  mockDbLimit: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbSet: vi.fn(),
+  mockDbUpdate: vi.fn(),
+  mockDbWhere: vi.fn(),
+  mockDbWhereUpdate: vi.fn(),
+  mockSaveWorkflowToNormalizedTables: vi.fn(),
+  mockSyncMcpToolsForWorkflow: vi.fn(),
+  mockValidateWorkflowAccess: vi.fn(),
+}))
 const mockFetch = vi.fn()
 
 vi.stubGlobal('fetch', mockFetch)
@@ -49,10 +62,14 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-vi.mock('drizzle-orm', () => ({
-  and: vi.fn(),
-  eq: vi.fn(),
-}))
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>()
+  return {
+    ...actual,
+    and: vi.fn(),
+    eq: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
   saveWorkflowToNormalizedTables: (...args: unknown[]) => mockSaveWorkflowToNormalizedTables(...args),

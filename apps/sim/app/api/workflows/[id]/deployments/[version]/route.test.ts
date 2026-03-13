@@ -5,15 +5,35 @@
 import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const mockValidateWorkflowAccess = vi.fn()
-const mockDbSelect = vi.fn()
-const mockDbFrom = vi.fn()
-const mockDbWhere = vi.fn()
-const mockDbLimit = vi.fn()
-const mockSaveTriggerWebhooksForDeploy = vi.fn()
-const mockCreateSchedulesForDeploy = vi.fn()
-const mockActivateWorkflowVersion = vi.fn()
-const mockSyncMcpToolsForWorkflow = vi.fn()
+const {
+  mockActivateWorkflowVersion,
+  mockCreateSchedulesForDeploy,
+  mockDbFrom,
+  mockDbLimit,
+  mockDbReturning,
+  mockDbSelect,
+  mockDbSet,
+  mockDbUpdate,
+  mockDbWhere,
+  mockDbWhereUpdate,
+  mockSaveTriggerWebhooksForDeploy,
+  mockSyncMcpToolsForWorkflow,
+  mockValidateWorkflowAccess,
+} = vi.hoisted(() => ({
+  mockActivateWorkflowVersion: vi.fn(),
+  mockCreateSchedulesForDeploy: vi.fn(),
+  mockDbFrom: vi.fn(),
+  mockDbLimit: vi.fn(),
+  mockDbReturning: vi.fn(),
+  mockDbSelect: vi.fn(),
+  mockDbSet: vi.fn(),
+  mockDbUpdate: vi.fn(),
+  mockDbWhere: vi.fn(),
+  mockDbWhereUpdate: vi.fn(),
+  mockSaveTriggerWebhooksForDeploy: vi.fn(),
+  mockSyncMcpToolsForWorkflow: vi.fn(),
+  mockValidateWorkflowAccess: vi.fn(),
+}))
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
@@ -30,7 +50,7 @@ vi.mock('@/lib/core/utils/request', () => ({
 vi.mock('@sim/db', () => ({
   db: {
     select: mockDbSelect,
-    update: vi.fn(() => ({ set: vi.fn(() => ({ where: vi.fn(() => ({ returning: vi.fn() })) })) }),
+    update: mockDbUpdate,
   },
   workflowDeploymentVersion: {
     id: 'id',
@@ -43,10 +63,14 @@ vi.mock('@sim/db', () => ({
   },
 }))
 
-vi.mock('drizzle-orm', () => ({
-  and: vi.fn(),
-  eq: vi.fn(),
-}))
+vi.mock('drizzle-orm', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('drizzle-orm')>()
+  return {
+    ...actual,
+    and: vi.fn(),
+    eq: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/webhooks/deploy', () => ({
   restorePreviousVersionWebhooks: vi.fn(),
@@ -91,6 +115,10 @@ describe('Workflow deployment version route', () => {
         },
       ])
       .mockResolvedValueOnce([{ id: 'dep-2' }])
+    mockDbUpdate.mockReturnValue({ set: mockDbSet })
+    mockDbSet.mockReturnValue({ where: mockDbWhereUpdate })
+    mockDbWhereUpdate.mockReturnValue({ returning: mockDbReturning })
+    mockDbReturning.mockResolvedValue([])
     mockSaveTriggerWebhooksForDeploy.mockResolvedValue({ success: true, warnings: [] })
     mockCreateSchedulesForDeploy.mockResolvedValue({ success: true })
     mockActivateWorkflowVersion.mockResolvedValue({

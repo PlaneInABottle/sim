@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
+import type { AuthResult } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { removeMcpToolsForWorkflow, syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import {
@@ -31,11 +32,22 @@ const logger = createLogger('WorkflowDeployAPI')
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+type LifecycleAdminAccessResult = {
+  error: { message: string; status: number } | null | undefined
+  auth: AuthResult | null | undefined
+  session: Awaited<ReturnType<typeof validateWorkflowPermissions>>['session'] | null | undefined
+  workflow:
+    | Awaited<ReturnType<typeof validateWorkflowPermissions>>['workflow']
+    | Awaited<ReturnType<typeof validateWorkflowAccess>>['workflow']
+    | null
+    | undefined
+}
+
 async function validateLifecycleAdminAccess(
   request: NextRequest,
   workflowId: string,
   requestId: string
-) {
+): Promise<LifecycleAdminAccessResult> {
   const hybridAccess = await validateWorkflowAccess(request, workflowId, {
     requireDeployment: false,
     action: 'admin',
@@ -44,18 +56,27 @@ async function validateLifecycleAdminAccess(
   if (hybridAccess.error) {
     return {
       error: hybridAccess.error,
-      auth: null,
+      auth: hybridAccess.auth,
       session: null,
-      workflow: null,
+      workflow: hybridAccess.workflow,
     }
   }
 
   if (hybridAccess.auth?.authType === 'session') {
     const sessionAccess = await validateWorkflowPermissions(workflowId, requestId, 'admin')
+    const auth: AuthResult | null = sessionAccess.session?.user?.id
+      ? {
+          success: true,
+          userId: sessionAccess.session.user.id,
+          userName: sessionAccess.session.user.name,
+          userEmail: sessionAccess.session.user.email,
+          authType: 'session',
+        }
+      : null
 
     return {
       error: sessionAccess.error,
-      auth: null,
+      auth,
       session: sessionAccess.session,
       workflow: sessionAccess.workflow,
     }
@@ -363,7 +384,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params
 
   try {
-    const { error, session } = await validateLifecycleAdminAccess(request, id, requestId)
+    const { auth, error, session } = await validateLifecycleAdminAccess(request, id, requestId)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
@@ -379,8 +400,9 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const { validatePublicApiAllowed, PublicApiNotAllowedError } = await import(
         '@/ee/access-control/utils/permission-check'
       )
+      const actorUserId = session?.user?.id ?? auth?.userId
       try {
-        await validatePublicApiAllowed(session?.user?.id)
+        await validatePublicApiAllowed(actorUserId)
       } catch (err) {
         if (err instanceof PublicApiNotAllowedError) {
           return createErrorResponse('Public API access is disabled', 403)
