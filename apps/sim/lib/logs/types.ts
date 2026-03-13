@@ -81,12 +81,6 @@ export const EXECUTION_FINALIZATION_PATHS = [
 
 export type ExecutionFinalizationPath = (typeof EXECUTION_FINALIZATION_PATHS)[number]
 
-export function isExecutionFinalizationPath(value: unknown): value is ExecutionFinalizationPath {
-  return (
-    typeof value === 'string' && (EXECUTION_FINALIZATION_PATHS as readonly string[]).includes(value)
-  )
-}
-
 export interface ExecutionLastStartedBlock {
   blockId: string
   blockName: string
