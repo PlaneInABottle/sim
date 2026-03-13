@@ -13,6 +13,7 @@ const {
   mockDbUpdate,
   mockDbWhere,
   mockDbWhereUpdate,
+  mockRecordAudit,
   mockSaveWorkflowToNormalizedTables,
   mockSyncMcpToolsForWorkflow,
   mockValidateWorkflowAccess,
@@ -24,6 +25,7 @@ const {
   mockDbUpdate: vi.fn(),
   mockDbWhere: vi.fn(),
   mockDbWhereUpdate: vi.fn(),
+  mockRecordAudit: vi.fn(),
   mockSaveWorkflowToNormalizedTables: vi.fn(),
   mockSyncMcpToolsForWorkflow: vi.fn(),
   mockValidateWorkflowAccess: vi.fn(),
@@ -82,7 +84,7 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
 vi.mock('@/lib/audit/log', () => ({
   AuditAction: { WORKFLOW_DEPLOYMENT_REVERTED: 'WORKFLOW_DEPLOYMENT_REVERTED' },
   AuditResourceType: { WORKFLOW: 'WORKFLOW' },
-  recordAudit: vi.fn(),
+  recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
 }))
 
 import { POST } from '@/app/api/workflows/[id]/deployments/[version]/revert/route'
@@ -132,5 +134,12 @@ describe('Workflow deployment version revert route', () => {
     })
     expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalled()
     expect(mockSyncMcpToolsForWorkflow).toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'api-user',
+        actorName: undefined,
+        actorEmail: undefined,
+      })
+    )
   })
 })

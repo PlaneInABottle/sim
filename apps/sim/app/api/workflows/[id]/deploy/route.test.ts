@@ -149,8 +149,6 @@ describe('Workflow deploy route', () => {
       auth: {
         success: true,
         userId: 'api-user',
-        userName: 'API Key User',
-        userEmail: 'api@example.com',
         authType: 'api_key',
       },
     })
@@ -178,8 +176,8 @@ describe('Workflow deploy route', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'api-user',
-        actorName: 'API Key User',
-        actorEmail: 'api@example.com',
+        actorName: undefined,
+        actorEmail: undefined,
       })
     )
   })
@@ -190,8 +188,6 @@ describe('Workflow deploy route', () => {
       auth: {
         success: true,
         userId: 'api-user',
-        userName: 'API Key User',
-        userEmail: 'api@example.com',
         authType: 'api_key',
       },
     })
@@ -211,8 +207,8 @@ describe('Workflow deploy route', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'api-user',
-        actorName: 'API Key User',
-        actorEmail: 'api@example.com',
+        actorName: undefined,
+        actorEmail: undefined,
       })
     )
   })

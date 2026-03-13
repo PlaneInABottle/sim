@@ -2,6 +2,7 @@ import { db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import type { AuthResult } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -59,6 +60,10 @@ async function validateLifecycleAdminAccess(
     auth: hybridAccess.auth,
     workflow: hybridAccess.workflow,
   }
+}
+
+function getLifecycleAuditActor(auth: AuthResult | null | undefined) {
+  return getAuditActorMetadata(auth)
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -302,11 +307,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Sync MCP tools with the latest parameter schema
     await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
 
+    const { actorName, actorEmail } = getLifecycleAuditActor(auth)
+
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
       actorId: actorUserId,
-      actorName: auth?.userName,
-      actorEmail: auth?.userEmail,
+      actorName,
+      actorEmail,
       action: AuditAction.WORKFLOW_DEPLOYED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,
@@ -425,11 +432,13 @@ export async function DELETE(
       // Silently fail
     }
 
+    const { actorName, actorEmail } = getLifecycleAuditActor(auth)
+
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
       actorId: actorUserId,
-      actorName: auth?.userName,
-      actorEmail: auth?.userEmail,
+      actorName,
+      actorEmail,
       action: AuditAction.WORKFLOW_UNDEPLOYED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,

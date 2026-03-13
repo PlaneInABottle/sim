@@ -2,6 +2,7 @@ import { db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
+import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -127,14 +128,16 @@ export async function POST(
       logger.error('Error sending workflow reverted event to socket server', e)
     }
 
+    const { actorName, actorEmail } = getAuditActorMetadata(auth)
+
     recordAudit({
       workspaceId: workflowRecord?.workspaceId ?? null,
       actorId: actorUserId,
       action: AuditAction.WORKFLOW_DEPLOYMENT_REVERTED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,
-      actorName: auth?.userName ?? undefined,
-      actorEmail: auth?.userEmail ?? undefined,
+      actorName,
+      actorEmail,
       resourceName: workflowRecord?.name ?? undefined,
       description: `Reverted workflow to deployment version ${version}`,
       request,

@@ -16,6 +16,7 @@ const {
   mockDbUpdate,
   mockDbWhere,
   mockDbWhereUpdate,
+  mockRecordAudit,
   mockSaveTriggerWebhooksForDeploy,
   mockSyncMcpToolsForWorkflow,
   mockValidateWorkflowAccess,
@@ -30,6 +31,7 @@ const {
   mockDbUpdate: vi.fn(),
   mockDbWhere: vi.fn(),
   mockDbWhereUpdate: vi.fn(),
+  mockRecordAudit: vi.fn(),
   mockSaveTriggerWebhooksForDeploy: vi.fn(),
   mockSyncMcpToolsForWorkflow: vi.fn(),
   mockValidateWorkflowAccess: vi.fn(),
@@ -94,7 +96,7 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
 vi.mock('@/lib/audit/log', () => ({
   AuditAction: { WORKFLOW_DEPLOYMENT_ACTIVATED: 'WORKFLOW_DEPLOYMENT_ACTIVATED' },
   AuditResourceType: { WORKFLOW: 'WORKFLOW' },
-  recordAudit: vi.fn(),
+  recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
 }))
 
 import { PATCH } from '@/app/api/workflows/[id]/deployments/[version]/route'
@@ -147,6 +149,13 @@ describe('Workflow deployment version route', () => {
     })
     expect(mockSaveTriggerWebhooksForDeploy).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'api-user' })
+    )
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'api-user',
+        actorName: undefined,
+        actorEmail: undefined,
+      })
     )
   })
 })

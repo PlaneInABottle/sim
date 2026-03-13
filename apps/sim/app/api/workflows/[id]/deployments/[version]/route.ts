@@ -3,6 +3,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { z } from 'zod'
+import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
@@ -319,11 +320,13 @@ export async function PATCH(
         }
       }
 
+      const { actorName, actorEmail } = getAuditActorMetadata(auth)
+
       recordAudit({
         workspaceId: workflowData?.workspaceId,
         actorId: actorUserId,
-        actorName: auth?.userName,
-        actorEmail: auth?.userEmail,
+        actorName,
+        actorEmail,
         action: AuditAction.WORKFLOW_DEPLOYMENT_ACTIVATED,
         resourceType: AuditResourceType.WORKFLOW,
         resourceId: id,
