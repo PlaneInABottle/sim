@@ -4,6 +4,7 @@ import { createLogger } from '@sim/logger'
 import { and, eq, isNull, ne } from 'drizzle-orm'
 import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
+import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { AuthType, checkHybridAuth, checkSessionOrInternalAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -253,11 +254,13 @@ export async function DELETE(
     const elapsed = Date.now() - startTime
     logger.info(`[${requestId}] Successfully archived workflow ${workflowId} in ${elapsed}ms`)
 
+    const { actorName, actorEmail } = getAuditActorMetadata(auth)
+
     recordAudit({
       workspaceId: workflowData.workspaceId || null,
       actorId: userId,
-      actorName: auth.userName,
-      actorEmail: auth.userEmail,
+      actorName,
+      actorEmail,
       action: AuditAction.WORKFLOW_DELETED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: workflowId,

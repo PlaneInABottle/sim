@@ -385,7 +385,13 @@ describe('Workflow By ID API Route', () => {
 
       mockValidateWorkflowAccess.mockResolvedValue({
         workflow: mockWorkflow,
-        auth: { success: true, userId: 'api-user-1', authType: 'api_key' },
+        auth: {
+          success: true,
+          userId: 'api-user-1',
+          authType: 'api_key',
+          userName: 'API Key Actor',
+          userEmail: null,
+        },
       })
       mockGetWorkflowById.mockResolvedValue(mockWorkflow)
       mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
@@ -414,6 +420,13 @@ describe('Workflow By ID API Route', () => {
 
       expect(response.status).toBe(200)
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+      expect(auditMock.recordAudit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'api-user-1',
+          actorName: undefined,
+          actorEmail: undefined,
+        })
+      )
     })
 
     it('should prevent deletion of the last workflow in workspace', async () => {

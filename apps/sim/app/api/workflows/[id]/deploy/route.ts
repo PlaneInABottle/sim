@@ -62,10 +62,6 @@ async function validateLifecycleAdminAccess(
   }
 }
 
-function getLifecycleAuditActor(auth: AuthResult | null | undefined) {
-  return getAuditActorMetadata(auth)
-}
-
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = generateRequestId()
   const { id } = await params
@@ -307,7 +303,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     // Sync MCP tools with the latest parameter schema
     await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
 
-    const { actorName, actorEmail } = getLifecycleAuditActor(auth)
+    const { actorName, actorEmail } = getAuditActorMetadata(auth)
 
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
@@ -432,7 +428,7 @@ export async function DELETE(
       // Silently fail
     }
 
-    const { actorName, actorEmail } = getLifecycleAuditActor(auth)
+    const { actorName, actorEmail } = getAuditActorMetadata(auth)
 
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
