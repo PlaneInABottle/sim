@@ -1,3 +1,4 @@
+import { countTraceSpans } from '@/lib/logs/execution/trace-span-count'
 import type { ExecutionFinalizationPath } from '@/lib/logs/types'
 import { isExecutionFinalizationPath } from '@/lib/logs/types'
 
@@ -12,21 +13,6 @@ type ExecutionData = {
   traceSpanCount?: number
   completionFailure?: string
   finalizationPath?: unknown
-}
-
-function countTraceSpans(traceSpans: unknown[] | undefined): number {
-  if (!Array.isArray(traceSpans) || traceSpans.length === 0) {
-    return 0
-  }
-
-  return traceSpans.reduce<number>((count, span) => {
-    const children =
-      span && typeof span === 'object' && 'children' in span && Array.isArray(span.children)
-        ? (span.children as unknown[])
-        : undefined
-
-    return count + 1 + countTraceSpans(children)
-  }, 0)
 }
 
 export function buildExecutionDiagnostics(params: {

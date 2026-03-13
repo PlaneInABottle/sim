@@ -224,11 +224,9 @@ export class LoggingSession {
   }
 
   private async drainPendingProgressWrites(): Promise<void> {
-    if (this.pendingProgressWrites.size === 0) {
-      return
+    while (this.pendingProgressWrites.size > 0) {
+      await Promise.allSettled(Array.from(this.pendingProgressWrites))
     }
-
-    await Promise.allSettled(Array.from(this.pendingProgressWrites))
   }
 
   private async completeExecutionWithFinalization(params: {
@@ -330,7 +328,7 @@ export class LoggingSession {
       }
     }
 
-    void this.flushAccumulatedCost()
+    void this.trackProgressWrite(this.flushAccumulatedCost())
   }
 
   private async flushAccumulatedCost(): Promise<void> {
@@ -921,6 +919,7 @@ export class LoggingSession {
         errorMessage: `Failed to store trace spans: ${errorMsg}`,
         isError: false,
         finalizationPath: 'fallback_completed',
+        finalOutput: params.finalOutput || {},
       })
     }
   }
@@ -947,6 +946,9 @@ export class LoggingSession {
           params?.error?.message || `Execution failed to store trace spans: ${errorMsg}`,
         isError: true,
         finalizationPath: 'force_failed',
+        finalOutput: {
+          error: params?.error?.message || `Execution failed to store trace spans: ${errorMsg}`,
+        },
         status: 'failed',
       })
     }
@@ -975,6 +977,7 @@ export class LoggingSession {
         errorMessage: 'Execution was cancelled',
         isError: false,
         finalizationPath: 'cancelled',
+        finalOutput: { cancelled: true },
         status: 'cancelled',
       })
     }
@@ -1001,6 +1004,7 @@ export class LoggingSession {
         errorMessage: 'Execution paused but failed to store full trace spans',
         isError: false,
         finalizationPath: 'paused',
+        finalOutput: { paused: true },
         status: 'pending',
       })
     }
@@ -1054,6 +1058,7 @@ export class LoggingSession {
     errorMessage: string
     isError: boolean
     finalizationPath: ExecutionFinalizationPath
+    finalOutput?: Record<string, unknown>
     status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<void> {
     if (this.completed || this.completing) {
@@ -1066,25 +1071,45 @@ export class LoggingSession {
     )
 
     try {
-      const costSummary = params.traceSpans?.length
-        ? calculateCostSummary(params.traceSpans)
-        : {
-            totalCost: BASE_EXECUTION_CHARGE,
-            totalInputCost: 0,
-            totalOutputCost: 0,
-            totalTokens: 0,
-            totalPromptTokens: 0,
-            totalCompletionTokens: 0,
+      const hasAccumulatedCost =
+        this.costFlushed ||
+        this.accumulatedCost.total > BASE_EXECUTION_CHARGE ||
+        this.accumulatedCost.tokens.total > 0 ||
+        Object.keys(this.accumulatedCost.models).length > 0
+
+      const costSummary = hasAccumulatedCost
+        ? {
+            totalCost: this.accumulatedCost.total,
+            totalInputCost: this.accumulatedCost.input,
+            totalOutputCost: this.accumulatedCost.output,
+            totalTokens: this.accumulatedCost.tokens.total,
+            totalPromptTokens: this.accumulatedCost.tokens.input,
+            totalCompletionTokens: this.accumulatedCost.tokens.output,
             baseExecutionCharge: BASE_EXECUTION_CHARGE,
-            modelCost: 0,
-            models: {},
+            modelCost: Math.max(0, this.accumulatedCost.total - BASE_EXECUTION_CHARGE),
+            models: this.accumulatedCost.models,
           }
+        : params.traceSpans?.length
+          ? calculateCostSummary(params.traceSpans)
+          : {
+              totalCost: BASE_EXECUTION_CHARGE,
+              totalInputCost: 0,
+              totalOutputCost: 0,
+              totalTokens: 0,
+              totalPromptTokens: 0,
+              totalCompletionTokens: 0,
+              baseExecutionCharge: BASE_EXECUTION_CHARGE,
+              modelCost: 0,
+              models: {},
+            }
+
+      const finalOutput = params.finalOutput || { _fallback: true, error: params.errorMessage }
 
       await this.completeExecutionWithFinalization({
         endedAt: params.endedAt || new Date().toISOString(),
         totalDurationMs: params.totalDurationMs || 0,
         costSummary,
-        finalOutput: { _fallback: true, error: params.errorMessage },
+        finalOutput,
         traceSpans: [],
         finalizationPath: params.finalizationPath,
         completionFailure: params.errorMessage,

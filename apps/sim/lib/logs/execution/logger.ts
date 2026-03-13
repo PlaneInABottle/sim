@@ -23,6 +23,7 @@ import { redactApiKeys } from '@/lib/core/security/redaction'
 import { filterForDisplay } from '@/lib/core/utils/display-filters'
 import { emitWorkflowExecutionCompleted } from '@/lib/logs/events'
 import { snapshotService } from '@/lib/logs/execution/snapshot/service'
+import { countTraceSpans } from '@/lib/logs/execution/trace-span-count'
 import type {
   BlockOutputData,
   ExecutionEnvironment,
@@ -48,14 +49,6 @@ export interface ToolCall {
 }
 
 const logger = createLogger('ExecutionLogger')
-
-function countTraceSpans(traceSpans?: TraceSpan[]): number {
-  if (!Array.isArray(traceSpans) || traceSpans.length === 0) {
-    return 0
-  }
-
-  return traceSpans.reduce((count, span) => count + 1 + countTraceSpans(span.children), 0)
-}
 
 export class ExecutionLogger implements IExecutionLoggerService {
   private buildCompletedExecutionData(params: {

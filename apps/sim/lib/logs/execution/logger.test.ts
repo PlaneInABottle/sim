@@ -1,6 +1,6 @@
 import { databaseMock, loggerMock } from '@sim/testing'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
-import { ExecutionLogger } from './logger'
+import { ExecutionLogger } from '@/lib/logs/execution/logger'
 
 vi.mock('@sim/db', () => databaseMock)
 

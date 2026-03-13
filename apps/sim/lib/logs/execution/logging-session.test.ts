@@ -157,6 +157,64 @@ describe('LoggingSession completion retries', () => {
     expect(session.hasCompleted()).toBe(true)
   })
 
+  it('preserves successful final output during fallback completion', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-5', 'api', 'req-1')
+
+    completeWorkflowExecutionMock
+      .mockRejectedValueOnce(new Error('success finalize failed'))
+      .mockResolvedValueOnce({})
+
+    await expect(
+      session.safeComplete({ finalOutput: { ok: true, stage: 'done' } })
+    ).resolves.toBeUndefined()
+
+    expect(completeWorkflowExecutionMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        executionId: 'execution-5',
+        finalOutput: { ok: true, stage: 'done' },
+        finalizationPath: 'fallback_completed',
+      })
+    )
+  })
+
+  it('preserves accumulated cost during fallback completion', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-6', 'api', 'req-1') as any
+
+    session.accumulatedCost = {
+      total: 12,
+      input: 5,
+      output: 7,
+      tokens: { input: 11, output: 13, total: 24 },
+      models: {
+        'test-model': {
+          input: 5,
+          output: 7,
+          total: 12,
+          tokens: { input: 11, output: 13, total: 24 },
+        },
+      },
+    }
+    session.costFlushed = true
+
+    completeWorkflowExecutionMock
+      .mockRejectedValueOnce(new Error('success finalize failed'))
+      .mockResolvedValueOnce({})
+
+    await expect(session.safeComplete({ finalOutput: { ok: true } })).resolves.toBeUndefined()
+
+    expect(completeWorkflowExecutionMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        executionId: 'execution-6',
+        costSummary: expect.objectContaining({
+          totalCost: 12,
+          totalInputCost: 5,
+          totalOutputCost: 7,
+          totalTokens: 24,
+        }),
+      })
+    )
+  })
+
   it('persists failed error semantics when completeWithError receives non-error trace spans', async () => {
     const session = new LoggingSession('workflow-1', 'execution-4', 'api', 'req-1')
     const traceSpans = [
@@ -292,6 +350,75 @@ describe('LoggingSession completion retries', () => {
 
     expect(session.persistLastStartedBlock).toHaveBeenCalledTimes(1)
     expect(session.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('drains fire-and-forget cost flushes before terminal completion', async () => {
+    let releaseFlush: (() => void) | undefined
+    const flushPromise = new Promise<void>((resolve) => {
+      releaseFlush = resolve
+    })
+
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1') as any
+    session.flushAccumulatedCost = vi.fn(() => flushPromise)
+    session.complete = vi.fn().mockResolvedValue(undefined)
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      output: { value: true },
+      cost: { total: 1, input: 1, output: 0 },
+      tokens: { input: 1, output: 0, total: 1 },
+      model: 'test-model',
+    })
+
+    const completionPromise = session.safeComplete({ finalOutput: { ok: true } })
+
+    await Promise.resolve()
+
+    expect(session.complete).not.toHaveBeenCalled()
+
+    releaseFlush?.()
+
+    await completionPromise
+
+    expect(session.flushAccumulatedCost).toHaveBeenCalledTimes(1)
+    expect(session.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps draining when new progress writes arrive during drain', async () => {
+    let releaseFirst: (() => void) | undefined
+    let releaseSecond: (() => void) | undefined
+    const firstPromise = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const secondPromise = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1') as any
+
+    void session.trackProgressWrite(firstPromise)
+
+    const drainPromise = session.drainPendingProgressWrites()
+
+    await Promise.resolve()
+
+    void session.trackProgressWrite(secondPromise)
+    releaseFirst?.()
+
+    await Promise.resolve()
+
+    let drained = false
+    void drainPromise.then(() => {
+      drained = true
+    })
+
+    await Promise.resolve()
+    expect(drained).toBe(false)
+
+    releaseSecond?.()
+    await drainPromise
+
+    expect(session.pendingProgressWrites.size).toBe(0)
   })
 
   it('marks pause completion as terminal and prevents duplicate pause finalization', async () => {

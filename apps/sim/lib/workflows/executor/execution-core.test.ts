@@ -615,7 +615,7 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     expect(wasExecutionFinalizedByCore('engine failed', 'execution-a')).toBe(true)
   })
 
-  it('falls back to error finalization when success finalization rejects', async () => {
+  it('does not replace a successful outcome when success finalization rejects', async () => {
     executorExecuteMock.mockResolvedValue({
       success: true,
       status: 'completed',
@@ -626,22 +626,14 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
 
     safeCompleteMock.mockRejectedValue(new Error('completion failed'))
 
-    await expect(
-      executeWorkflowCore({
-        snapshot: createSnapshot() as any,
-        callbacks: {},
-        loggingSession: loggingSession as any,
-      })
-    ).rejects.toThrow('completion failed')
+    const result = await executeWorkflowCore({
+      snapshot: createSnapshot() as any,
+      callbacks: {},
+      loggingSession: loggingSession as any,
+    })
 
-    expect(safeCompleteWithErrorMock).toHaveBeenCalledTimes(1)
-    expect(safeCompleteWithErrorMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        error: expect.objectContaining({
-          message: 'completion failed',
-        }),
-      })
-    )
+    expect(result).toMatchObject({ status: 'completed', success: true })
+    expect(safeCompleteWithErrorMock).not.toHaveBeenCalled()
   })
 
   it('does not replace a successful outcome when cancellation cleanup fails', async () => {
