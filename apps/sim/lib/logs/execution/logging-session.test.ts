@@ -1,11 +1,48 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+const dbMocks = vi.hoisted(() => {
+  const selectLimit = vi.fn()
+  const selectWhere = vi.fn()
+  const selectFrom = vi.fn()
+  const select = vi.fn()
+  const updateWhere = vi.fn()
+  const updateSet = vi.fn()
+  const update = vi.fn()
+  const execute = vi.fn()
+  const eq = vi.fn()
+  const sql = vi.fn((strings: TemplateStringsArray, ...values: unknown[]) => ({ strings, values }))
+
+  select.mockReturnValue({ from: selectFrom })
+  selectFrom.mockReturnValue({ where: selectWhere })
+  selectWhere.mockReturnValue({ limit: selectLimit })
+
+  update.mockReturnValue({ set: updateSet })
+  updateSet.mockReturnValue({ where: updateWhere })
+
+  return {
+    select,
+    selectFrom,
+    selectWhere,
+    selectLimit,
+    update,
+    updateSet,
+    updateWhere,
+    execute,
+    eq,
+    sql,
+  }
+})
+
 const { completeWorkflowExecutionMock } = vi.hoisted(() => ({
   completeWorkflowExecutionMock: vi.fn(),
 }))
 
 vi.mock('@sim/db', () => ({
-  db: {},
+  db: {
+    select: dbMocks.select,
+    update: dbMocks.update,
+    execute: dbMocks.execute,
+  },
 }))
 
 vi.mock('@sim/db/schema', () => ({
@@ -22,8 +59,8 @@ vi.mock('@sim/logger', () => ({
 }))
 
 vi.mock('drizzle-orm', () => ({
-  eq: vi.fn(),
-  sql: vi.fn(),
+  eq: dbMocks.eq,
+  sql: dbMocks.sql,
 }))
 
 vi.mock('@/lib/logs/execution/logger', () => ({
@@ -56,6 +93,9 @@ import { LoggingSession } from './logging-session'
 describe('LoggingSession completion retries', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    dbMocks.selectLimit.mockResolvedValue([{ executionData: {} }])
+    dbMocks.updateWhere.mockResolvedValue(undefined)
+    dbMocks.execute.mockResolvedValue(undefined)
   })
 
   it('keeps completion best-effort when a later error completion retries after full completion and fallback both fail', async () => {
@@ -86,7 +126,6 @@ describe('LoggingSession completion retries', () => {
       .mockRejectedValueOnce(new Error('cost only failed'))
 
     await expect(session.safeComplete({ finalOutput: { ok: true } })).resolves.toBeUndefined()
-
     await expect(session.safeComplete({ finalOutput: { ok: true } })).resolves.toBeUndefined()
 
     expect(completeWorkflowExecutionMock).toHaveBeenCalledTimes(2)
@@ -148,6 +187,8 @@ describe('LoggingSession completion retries', () => {
         traceSpans,
         level: 'error',
         status: 'failed',
+        finalizationPath: 'force_failed',
+        completionFailure: 'persist me as failed',
       })
     )
   })
@@ -195,5 +236,73 @@ describe('LoggingSession completion retries', () => {
 
     expect(session.hasCompleted()).toBe(true)
     expect(completeWorkflowExecutionMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('persists last started block independently from cost accumulation', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+
+    expect(dbMocks.select).not.toHaveBeenCalled()
+    expect(dbMocks.execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('enforces started marker monotonicity in the database write path', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+
+    expect(dbMocks.sql).toHaveBeenCalled()
+    expect(dbMocks.execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('persists last completed block for zero-cost outputs', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      output: { value: true },
+    })
+
+    expect(dbMocks.select).not.toHaveBeenCalled()
+    expect(dbMocks.execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('drains pending lifecycle writes before terminal completion', async () => {
+    let releasePersist: (() => void) | undefined
+    const persistPromise = new Promise<void>((resolve) => {
+      releasePersist = resolve
+    })
+
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1') as any
+    session.persistLastStartedBlock = vi.fn(() => persistPromise)
+    session.complete = vi.fn().mockResolvedValue(undefined)
+
+    const startPromise = session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+    const completionPromise = session.safeComplete({ finalOutput: { ok: true } })
+
+    await Promise.resolve()
+
+    expect(session.complete).not.toHaveBeenCalled()
+
+    releasePersist?.()
+
+    await startPromise
+    await completionPromise
+
+    expect(session.persistLastStartedBlock).toHaveBeenCalledTimes(1)
+    expect(session.complete).toHaveBeenCalledTimes(1)
+  })
+
+  it('marks pause completion as terminal and prevents duplicate pause finalization', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1') as any
+    session.completeExecutionWithFinalization = vi.fn().mockResolvedValue(undefined)
+
+    await session.completeWithPause({ workflowInput: { ok: true } })
+    await session.completeWithPause({ workflowInput: { ok: true } })
+
+    expect(session.completeExecutionWithFinalization).toHaveBeenCalledTimes(1)
+    expect(session.completed).toBe(true)
+    expect(session.completing).toBe(true)
   })
 })

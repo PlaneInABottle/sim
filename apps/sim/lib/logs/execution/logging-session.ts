@@ -13,6 +13,9 @@ import {
 } from '@/lib/logs/execution/logging-factory'
 import type {
   ExecutionEnvironment,
+  ExecutionFinalizationPath,
+  ExecutionLastCompletedBlock,
+  ExecutionLastStartedBlock,
   ExecutionTrigger,
   TraceSpan,
   WorkflowState,
@@ -21,6 +24,46 @@ import type { SerializableExecutionState } from '@/executor/execution/types'
 
 type TriggerData = Record<string, unknown> & {
   correlation?: NonNullable<ExecutionTrigger['data']>['correlation']
+}
+
+function buildStartedMarkerPersistenceQuery(params: {
+  executionId: string
+  marker: ExecutionLastStartedBlock
+}) {
+  const markerJson = JSON.stringify(params.marker)
+
+  return sql`UPDATE workflow_execution_logs
+    SET execution_data = jsonb_set(
+      COALESCE(execution_data, '{}'::jsonb),
+      '{lastStartedBlock}',
+      ${markerJson}::jsonb,
+      true
+    )
+    WHERE execution_id = ${params.executionId}
+      AND COALESCE(
+        jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastStartedBlock', 'startedAt'),
+        ''
+      ) < ${params.marker.startedAt}`
+}
+
+function buildCompletedMarkerPersistenceQuery(params: {
+  executionId: string
+  marker: ExecutionLastCompletedBlock
+}) {
+  const markerJson = JSON.stringify(params.marker)
+
+  return sql`UPDATE workflow_execution_logs
+    SET execution_data = jsonb_set(
+      COALESCE(execution_data, '{}'::jsonb),
+      '{lastCompletedBlock}',
+      ${markerJson}::jsonb,
+      true
+    )
+    WHERE execution_id = ${params.executionId}
+      AND COALESCE(
+        jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastCompletedBlock', 'endedAt'),
+        ''
+      ) < ${params.marker.endedAt}`
 }
 
 const logger = createLogger('LoggingSession')
@@ -109,6 +152,7 @@ export class LoggingSession {
     tokens: { input: 0, output: 0, total: 0 },
     models: {},
   }
+  private pendingProgressWrites = new Set<Promise<void>>()
   private costFlushed = false
 
   constructor(
@@ -123,12 +167,134 @@ export class LoggingSession {
     this.requestId = requestId
   }
 
+  async onBlockStart(
+    blockId: string,
+    blockName: string,
+    blockType: string,
+    startedAt: string
+  ): Promise<void> {
+    await this.trackProgressWrite(
+      this.persistLastStartedBlock({
+        blockId,
+        blockName,
+        blockType,
+        startedAt,
+      })
+    )
+  }
+
+  private async persistLastStartedBlock(marker: ExecutionLastStartedBlock): Promise<void> {
+    try {
+      await db.execute(
+        buildStartedMarkerPersistenceQuery({
+          executionId: this.executionId,
+          marker,
+        })
+      )
+    } catch (error) {
+      logger.error(`Failed to persist last started block for execution ${this.executionId}:`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  private async persistLastCompletedBlock(marker: ExecutionLastCompletedBlock): Promise<void> {
+    try {
+      await db.execute(
+        buildCompletedMarkerPersistenceQuery({
+          executionId: this.executionId,
+          marker,
+        })
+      )
+    } catch (error) {
+      logger.error(`Failed to persist last completed block for execution ${this.executionId}:`, {
+        error: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
+  private async trackProgressWrite(writePromise: Promise<void>): Promise<void> {
+    this.pendingProgressWrites.add(writePromise)
+
+    try {
+      await writePromise
+    } finally {
+      this.pendingProgressWrites.delete(writePromise)
+    }
+  }
+
+  private async drainPendingProgressWrites(): Promise<void> {
+    if (this.pendingProgressWrites.size === 0) {
+      return
+    }
+
+    await Promise.allSettled(Array.from(this.pendingProgressWrites))
+  }
+
+  private async completeExecutionWithFinalization(params: {
+    endedAt: string
+    totalDurationMs: number
+    costSummary: {
+      totalCost: number
+      totalInputCost: number
+      totalOutputCost: number
+      totalTokens: number
+      totalPromptTokens: number
+      totalCompletionTokens: number
+      baseExecutionCharge: number
+      modelCost: number
+      models: Record<
+        string,
+        {
+          input: number
+          output: number
+          total: number
+          tokens: { input: number; output: number; total: number }
+        }
+      >
+    }
+    finalOutput: Record<string, unknown>
+    traceSpans: TraceSpan[]
+    workflowInput?: unknown
+    executionState?: SerializableExecutionState
+    finalizationPath: ExecutionFinalizationPath
+    completionFailure?: string
+    level?: 'info' | 'error'
+    status?: 'completed' | 'failed' | 'cancelled' | 'pending'
+  }): Promise<void> {
+    await executionLogger.completeWorkflowExecution({
+      executionId: this.executionId,
+      endedAt: params.endedAt,
+      totalDurationMs: params.totalDurationMs,
+      costSummary: params.costSummary,
+      finalOutput: params.finalOutput,
+      traceSpans: params.traceSpans,
+      workflowInput: params.workflowInput,
+      executionState: params.executionState,
+      finalizationPath: params.finalizationPath,
+      completionFailure: params.completionFailure,
+      isResume: this.isResume,
+      level: params.level,
+      status: params.status,
+    })
+  }
+
   async onBlockComplete(
     blockId: string,
     blockName: string,
     blockType: string,
     output: any
   ): Promise<void> {
+    await this.trackProgressWrite(
+      this.persistLastCompletedBlock({
+        blockId,
+        blockName,
+        blockType,
+        endedAt: output?.endedAt || new Date().toISOString(),
+        success: !output?.output?.error,
+      })
+    )
+
     if (!output?.cost || typeof output.cost.total !== 'number' || output.cost.total <= 0) {
       return
     }
@@ -164,7 +330,7 @@ export class LoggingSession {
       }
     }
 
-    await this.flushAccumulatedCost()
+    void this.flushAccumulatedCost()
   }
 
   private async flushAccumulatedCost(): Promise<void> {
@@ -275,8 +441,7 @@ export class LoggingSession {
       const endTime = endedAt || new Date().toISOString()
       const duration = totalDurationMs || 0
 
-      await executionLogger.completeWorkflowExecution({
-        executionId: this.executionId,
+      await this.completeExecutionWithFinalization({
         endedAt: endTime,
         totalDurationMs: duration,
         costSummary,
@@ -284,7 +449,7 @@ export class LoggingSession {
         traceSpans: traceSpans || [],
         workflowInput,
         executionState,
-        isResume: this.isResume,
+        finalizationPath: 'completed',
       })
 
       this.completed = true
@@ -402,8 +567,7 @@ export class LoggingSession {
 
       const spans = hasProvidedSpans ? traceSpans : [errorSpan]
 
-      await executionLogger.completeWorkflowExecution({
-        executionId: this.executionId,
+      await this.completeExecutionWithFinalization({
         endedAt: endTime.toISOString(),
         totalDurationMs: Math.max(1, durationMs),
         costSummary,
@@ -411,6 +575,8 @@ export class LoggingSession {
         traceSpans: spans,
         level: 'error',
         status: 'failed',
+        finalizationPath: 'force_failed',
+        completionFailure: message,
       })
 
       this.completed = true
@@ -489,13 +655,13 @@ export class LoggingSession {
             models: {},
           }
 
-      await executionLogger.completeWorkflowExecution({
-        executionId: this.executionId,
+      await this.completeExecutionWithFinalization({
         endedAt: endTime.toISOString(),
         totalDurationMs: Math.max(1, durationMs),
         costSummary,
         finalOutput: { cancelled: true },
         traceSpans: traceSpans || [],
+        finalizationPath: 'cancelled',
         status: 'cancelled',
       })
 
@@ -576,14 +742,14 @@ export class LoggingSession {
             models: {},
           }
 
-      await executionLogger.completeWorkflowExecution({
-        executionId: this.executionId,
+      await this.completeExecutionWithFinalization({
         endedAt: endTime.toISOString(),
         totalDurationMs: Math.max(1, durationMs),
         costSummary,
         finalOutput: { paused: true },
         traceSpans: traceSpans || [],
         workflowInput,
+        finalizationPath: 'paused',
         status: 'pending',
       })
 
@@ -731,7 +897,6 @@ export class LoggingSession {
       this.completionAttemptFailed = true
       throw error
     })
-
     return this.completionPromise
   }
 
@@ -741,6 +906,7 @@ export class LoggingSession {
 
   private async _safeCompleteImpl(params: SessionCompleteParams = {}): Promise<void> {
     try {
+      await this.drainPendingProgressWrites()
       await this.complete(params)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -754,6 +920,7 @@ export class LoggingSession {
         totalDurationMs: params.totalDurationMs,
         errorMessage: `Failed to store trace spans: ${errorMsg}`,
         isError: false,
+        finalizationPath: 'fallback_completed',
       })
     }
   }
@@ -764,6 +931,7 @@ export class LoggingSession {
 
   private async _safeCompleteWithErrorImpl(params?: SessionErrorCompleteParams): Promise<void> {
     try {
+      await this.drainPendingProgressWrites()
       await this.completeWithError(params)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -778,6 +946,7 @@ export class LoggingSession {
         errorMessage:
           params?.error?.message || `Execution failed to store trace spans: ${errorMsg}`,
         isError: true,
+        finalizationPath: 'force_failed',
         status: 'failed',
       })
     }
@@ -791,6 +960,7 @@ export class LoggingSession {
 
   private async _safeCompleteWithCancellationImpl(params?: SessionCancelledParams): Promise<void> {
     try {
+      await this.drainPendingProgressWrites()
       await this.completeWithCancellation(params)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -804,6 +974,7 @@ export class LoggingSession {
         totalDurationMs: params?.totalDurationMs,
         errorMessage: 'Execution was cancelled',
         isError: false,
+        finalizationPath: 'cancelled',
         status: 'cancelled',
       })
     }
@@ -815,6 +986,7 @@ export class LoggingSession {
 
   private async _safeCompleteWithPauseImpl(params?: SessionPausedParams): Promise<void> {
     try {
+      await this.drainPendingProgressWrites()
       await this.completeWithPause(params)
     } catch (error) {
       const errorMsg = error instanceof Error ? error.message : String(error)
@@ -828,6 +1000,7 @@ export class LoggingSession {
         totalDurationMs: params?.totalDurationMs,
         errorMessage: 'Execution paused but failed to store full trace spans',
         isError: false,
+        finalizationPath: 'paused',
         status: 'pending',
       })
     }
@@ -852,12 +1025,16 @@ export class LoggingSession {
           status: 'failed',
           executionData: sql`jsonb_set(
             jsonb_set(
-              COALESCE(execution_data, '{}'::jsonb),
-              ARRAY['error'],
-              to_jsonb(${message}::text)
+              jsonb_set(
+                COALESCE(execution_data, '{}'::jsonb),
+                ARRAY['error'],
+                to_jsonb(${message}::text)
+              ),
+              ARRAY['finalOutput'],
+              jsonb_build_object('error', ${message}::text)
             ),
-            ARRAY['finalOutput'],
-            jsonb_build_object('error', ${message}::text)
+            ARRAY['finalizationPath'],
+            to_jsonb('force_failed'::text)
           )`,
         })
         .where(eq(workflowExecutionLogs.executionId, executionId))
@@ -876,6 +1053,7 @@ export class LoggingSession {
     totalDurationMs?: number
     errorMessage: string
     isError: boolean
+    finalizationPath: ExecutionFinalizationPath
     status?: 'completed' | 'failed' | 'cancelled' | 'pending'
   }): Promise<void> {
     if (this.completed || this.completing) {
@@ -902,14 +1080,14 @@ export class LoggingSession {
             models: {},
           }
 
-      await executionLogger.completeWorkflowExecution({
-        executionId: this.executionId,
+      await this.completeExecutionWithFinalization({
         endedAt: params.endedAt || new Date().toISOString(),
         totalDurationMs: params.totalDurationMs || 0,
         costSummary,
         finalOutput: { _fallback: true, error: params.errorMessage },
         traceSpans: [],
-        isResume: this.isResume,
+        finalizationPath: params.finalizationPath,
+        completionFailure: params.errorMessage,
         level: params.isError ? 'error' : 'info',
         status: params.status,
       })
