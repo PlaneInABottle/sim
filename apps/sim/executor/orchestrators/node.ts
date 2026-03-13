@@ -53,14 +53,14 @@ export class NodeExecutionOrchestrator {
 
     const loopId = node.metadata.loopId
     if (loopId && !this.loopOrchestrator.getLoopScope(ctx, loopId)) {
-      this.loopOrchestrator.initializeLoopScope(ctx, loopId)
+      await this.loopOrchestrator.initializeLoopScope(ctx, loopId)
     }
 
     const parallelId = node.metadata.parallelId
     if (parallelId && !this.parallelOrchestrator.getParallelScope(ctx, parallelId)) {
       const parallelConfig = this.dag.parallelConfigs.get(parallelId)
       const nodesInParallel = parallelConfig?.nodes?.length || 1
-      this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+      await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
     }
 
     if (node.metadata.isSentinel) {
@@ -158,7 +158,7 @@ export class NodeExecutionOrchestrator {
         const parallelConfig = this.dag.parallelConfigs.get(parallelId)
         if (parallelConfig) {
           const nodesInParallel = parallelConfig.nodes?.length || 1
-          this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+          await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
         }
       }
 
@@ -239,7 +239,7 @@ export class NodeExecutionOrchestrator {
     if (!scope) {
       const parallelConfig = this.dag.parallelConfigs.get(parallelId)
       const nodesInParallel = parallelConfig?.nodes?.length || 1
-      this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
+      await this.parallelOrchestrator.initializeParallelScope(ctx, parallelId, nodesInParallel)
     }
     const allComplete = this.parallelOrchestrator.handleParallelBranchCompletion(
       ctx,
