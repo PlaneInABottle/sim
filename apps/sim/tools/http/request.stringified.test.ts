@@ -90,4 +90,21 @@ describe('HTTP Request Tool - Stringified Params Fix', () => {
     )(params)
     expect(body).toBe('grant_type=client_credentials')
   })
+
+  it('should handle invalid JSON strings gracefully', () => {
+    const params = {
+      url: 'https://api.example.com/test',
+      method: 'GET' as const,
+      params: 'not-valid-json',
+      headers: '{broken',
+    }
+
+    const url = (requestTool.request.url as (input: RequestParams) => string)(params)
+    expect(url).toBe('https://api.example.com/test')
+
+    const headers = (
+      requestTool.request.headers as (input: RequestParams) => Record<string, string>
+    )(params)
+    expect(headers).toBeDefined()
+  })
 })
