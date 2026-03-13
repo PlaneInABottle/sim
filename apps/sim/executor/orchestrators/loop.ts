@@ -238,7 +238,7 @@ export class LoopOrchestrator {
     }
     if (isCancelled) {
       logger.info('Loop execution cancelled', { loopId, iteration: scope.iteration })
-      return this.createExitResult(ctx, loopId, scope)
+      return await this.createExitResult(ctx, loopId, scope)
     }
 
     const iterationResults: NormalizedBlockOutput[] = []
@@ -253,7 +253,7 @@ export class LoopOrchestrator {
     scope.currentIterationOutputs.clear()
 
     if (!(await this.evaluateCondition(ctx, scope, scope.iteration + 1))) {
-      return this.createExitResult(ctx, loopId, scope)
+      return await this.createExitResult(ctx, loopId, scope)
     }
 
     scope.iteration++
@@ -269,11 +269,11 @@ export class LoopOrchestrator {
     }
   }
 
-  private createExitResult(
+  private async createExitResult(
     ctx: ExecutionContext,
     loopId: string,
     scope: LoopScope
-  ): LoopContinuationResult {
+  ): Promise<LoopContinuationResult> {
     const results = scope.allIterationOutputs
     const output = { results }
     this.state.setBlockOutput(loopId, output, DEFAULTS.EXECUTION_TIME)
@@ -282,19 +282,26 @@ export class LoopOrchestrator {
       const now = new Date().toISOString()
       const iterationContext = buildContainerIterationContext(ctx, loopId)
 
-      this.contextExtensions.onBlockComplete(
-        loopId,
-        'Loop',
-        'loop',
-        {
-          output,
-          executionTime: DEFAULTS.EXECUTION_TIME,
-          startedAt: now,
-          executionOrder: getNextExecutionOrder(ctx),
-          endedAt: now,
-        },
-        iterationContext
-      )
+      try {
+        await this.contextExtensions.onBlockComplete(
+          loopId,
+          'Loop',
+          'loop',
+          {
+            output,
+            executionTime: DEFAULTS.EXECUTION_TIME,
+            startedAt: now,
+            executionOrder: getNextExecutionOrder(ctx),
+            endedAt: now,
+          },
+          iterationContext
+        )
+      } catch (error) {
+        logger.warn('Loop completion callback failed', {
+          loopId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
 
     return {

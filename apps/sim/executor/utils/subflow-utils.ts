@@ -1,8 +1,11 @@
+import { createLogger } from '@sim/logger'
 import { DEFAULTS, LOOP, PARALLEL, REFERENCE } from '@/executor/constants'
 import type { ContextExtensions } from '@/executor/execution/types'
 import { type BlockLog, type ExecutionContext, getNextExecutionOrder } from '@/executor/types'
 import { buildContainerIterationContext } from '@/executor/utils/iteration-context'
 import type { VariableResolver } from '@/executor/variables/resolver'
+
+const logger = createLogger('SubflowUtils')
 
 const BRANCH_PATTERN = new RegExp(`${PARALLEL.BRANCH.PREFIX}\\d+${PARALLEL.BRANCH.SUFFIX}$`)
 const BRANCH_INDEX_PATTERN = new RegExp(`${PARALLEL.BRANCH.PREFIX}(\\d+)${PARALLEL.BRANCH.SUFFIX}$`)
@@ -296,18 +299,32 @@ export function addSubflowErrorLog(
   ctx.blockLogs.push(blockLog)
 
   if (contextExtensions?.onBlockStart) {
-    contextExtensions.onBlockStart(blockId, blockName, blockType, execOrder)
+    void contextExtensions.onBlockStart(blockId, blockName, blockType, execOrder).catch((error) => {
+      logger.warn('Subflow error start callback failed', {
+        blockId,
+        blockType,
+        error: error instanceof Error ? error.message : String(error),
+      })
+    })
   }
 
   if (contextExtensions?.onBlockComplete) {
-    contextExtensions.onBlockComplete(blockId, blockName, blockType, {
-      input: inputData,
-      output: { error: errorMessage },
-      executionTime: 0,
-      startedAt: now,
-      executionOrder: execOrder,
-      endedAt: now,
-    })
+    void contextExtensions
+      .onBlockComplete(blockId, blockName, blockType, {
+        input: inputData,
+        output: { error: errorMessage },
+        executionTime: 0,
+        startedAt: now,
+        executionOrder: execOrder,
+        endedAt: now,
+      })
+      .catch((error) => {
+        logger.warn('Subflow error completion callback failed', {
+          blockId,
+          blockType,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
   }
 }
 
@@ -342,22 +359,38 @@ export function emitEmptySubflowEvents(
   })
 
   if (contextExtensions?.onBlockStart) {
-    contextExtensions.onBlockStart(blockId, blockName, blockType, executionOrder)
+    void contextExtensions
+      .onBlockStart(blockId, blockName, blockType, executionOrder)
+      .catch((error) => {
+        logger.warn('Empty subflow start callback failed', {
+          blockId,
+          blockType,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
   }
 
   if (contextExtensions?.onBlockComplete) {
-    contextExtensions.onBlockComplete(
-      blockId,
-      blockName,
-      blockType,
-      {
-        output,
-        executionTime: DEFAULTS.EXECUTION_TIME,
-        startedAt: now,
-        executionOrder,
-        endedAt: now,
-      },
-      iterationContext
-    )
+    void contextExtensions
+      .onBlockComplete(
+        blockId,
+        blockName,
+        blockType,
+        {
+          output,
+          executionTime: DEFAULTS.EXECUTION_TIME,
+          startedAt: now,
+          executionOrder,
+          endedAt: now,
+        },
+        iterationContext
+      )
+      .catch((error) => {
+        logger.warn('Empty subflow completion callback failed', {
+          blockId,
+          blockType,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      })
   }
 }

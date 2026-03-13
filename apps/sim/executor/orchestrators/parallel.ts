@@ -291,7 +291,10 @@ export class ParallelOrchestrator {
     return allComplete
   }
 
-  aggregateParallelResults(ctx: ExecutionContext, parallelId: string): ParallelAggregationResult {
+  async aggregateParallelResults(
+    ctx: ExecutionContext,
+    parallelId: string
+  ): Promise<ParallelAggregationResult> {
     const scope = ctx.parallelExecutions?.get(parallelId)
     if (!scope) {
       logger.error('Parallel scope not found for aggregation', { parallelId })
@@ -316,19 +319,26 @@ export class ParallelOrchestrator {
       const now = new Date().toISOString()
       const iterationContext = buildContainerIterationContext(ctx, parallelId)
 
-      this.contextExtensions.onBlockComplete(
-        parallelId,
-        'Parallel',
-        'parallel',
-        {
-          output,
-          executionTime: 0,
-          startedAt: now,
-          executionOrder: getNextExecutionOrder(ctx),
-          endedAt: now,
-        },
-        iterationContext
-      )
+      try {
+        await this.contextExtensions.onBlockComplete(
+          parallelId,
+          'Parallel',
+          'parallel',
+          {
+            output,
+            executionTime: 0,
+            startedAt: now,
+            executionOrder: getNextExecutionOrder(ctx),
+            endedAt: now,
+          },
+          iterationContext
+        )
+      } catch (error) {
+        logger.warn('Parallel completion callback failed', {
+          parallelId,
+          error: error instanceof Error ? error.message : String(error),
+        })
+      }
     }
 
     return {
