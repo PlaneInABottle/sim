@@ -355,9 +355,21 @@ vi.mock('@/lib/webhooks/processor', () => ({
         return null
       }
     ),
-  checkWebhookPreprocessing: vi
-    .fn()
-    .mockResolvedValue({ error: null, actorUserId: 'test-user-id' }),
+  checkWebhookPreprocessing: vi.fn().mockResolvedValue({
+    error: null,
+    actorUserId: 'test-user-id',
+    executionId: 'preprocess-execution-id',
+    correlation: {
+      executionId: 'preprocess-execution-id',
+      requestId: 'mock-request-id',
+      source: 'webhook',
+      workflowId: 'test-workflow-id',
+      webhookId: 'generic-webhook-id',
+      path: 'test-path',
+      provider: 'generic',
+      triggerType: 'webhook',
+    },
+  }),
   formatProviderErrorResponse: vi.fn().mockImplementation((_webhook, error, status) => {
     const { NextResponse } = require('next/server')
     return NextResponse.json({ error }, { status })
@@ -516,7 +528,22 @@ describe('Webhook Trigger API Route', () => {
       expect(call[1]).toEqual(expect.objectContaining({ id: 'test-workflow-id' }))
       expect(call[2]).toEqual(expect.objectContaining({ event: 'test', id: 'test-123' }))
       expect(call[4]).toEqual(
-        expect.objectContaining({ requestId: 'mock-request-id', path: 'test-path' })
+        expect.objectContaining({
+          requestId: 'mock-request-id',
+          path: 'test-path',
+          actorUserId: 'test-user-id',
+          executionId: 'preprocess-execution-id',
+          correlation: {
+            executionId: 'preprocess-execution-id',
+            requestId: 'mock-request-id',
+            source: 'webhook',
+            workflowId: 'test-workflow-id',
+            webhookId: 'generic-webhook-id',
+            path: 'test-path',
+            provider: 'generic',
+            triggerType: 'webhook',
+          },
+        })
       )
     })
 

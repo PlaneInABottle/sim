@@ -6,6 +6,7 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { v4 as uuidv4 } from 'uuid'
 import { checkEnterprisePlan, checkTeamPlan } from '@/lib/billing/subscriptions/utils'
 import { getInlineJobQueue, getJobQueue, shouldExecuteInline } from '@/lib/core/async-jobs'
+import type { AsyncExecutionCorrelation } from '@/lib/core/async-jobs/types'
 import { isProd } from '@/lib/core/config/feature-flags'
 import { safeCompare } from '@/lib/core/security/encryption'
 import { getEffectiveDecryptedEnv } from '@/lib/environment/utils'
@@ -46,11 +47,15 @@ export interface WebhookProcessorOptions {
   path?: string
   webhookId?: string
   actorUserId?: string
+  executionId?: string
+  correlation?: AsyncExecutionCorrelation
 }
 
 export interface WebhookPreprocessingResult {
   error: NextResponse | null
   actorUserId?: string
+  executionId?: string
+  correlation?: AsyncExecutionCorrelation
 }
 
 function getExternalUrl(request: NextRequest): string {
@@ -977,7 +982,12 @@ export async function checkWebhookPreprocessing(
       }
     }
 
-    return { error: null, actorUserId: preprocessResult.actorUserId }
+    return {
+      error: null,
+      actorUserId: preprocessResult.actorUserId,
+      executionId,
+      correlation,
+    }
   } catch (preprocessError) {
     logger.error(`[${requestId}] Error during webhook preprocessing:`, preprocessError)
 
@@ -1204,17 +1214,19 @@ export async function queueWebhookExecution(
       return NextResponse.json({ error: 'Unable to resolve billing account' }, { status: 500 })
     }
 
-    const executionId = uuidv4()
-    const correlation = {
-      executionId,
-      requestId: options.requestId,
-      source: 'webhook' as const,
-      workflowId: foundWorkflow.id,
-      webhookId: foundWebhook.id,
-      path: options.path || foundWebhook.path,
-      provider: foundWebhook.provider,
-      triggerType: 'webhook',
-    }
+    const executionId = options.executionId ?? uuidv4()
+    const correlation =
+      options.correlation ??
+      ({
+        executionId,
+        requestId: options.requestId,
+        source: 'webhook' as const,
+        workflowId: foundWorkflow.id,
+        webhookId: foundWebhook.id,
+        path: options.path || foundWebhook.path,
+        provider: foundWebhook.provider,
+        triggerType: 'webhook',
+      } satisfies AsyncExecutionCorrelation)
 
     const payload = {
       webhookId: foundWebhook.id,
