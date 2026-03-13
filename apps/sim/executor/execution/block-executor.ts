@@ -105,7 +105,7 @@ export class BlockExecutor {
       }
     } catch (error) {
       cleanupSelfReference?.()
-      return this.handleBlockError(
+      return await this.handleBlockError(
         error,
         ctx,
         node,
