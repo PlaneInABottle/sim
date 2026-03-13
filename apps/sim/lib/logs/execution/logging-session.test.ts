@@ -314,6 +314,18 @@ describe('LoggingSession completion retries', () => {
     expect(dbMocks.execute).toHaveBeenCalledTimes(1)
   })
 
+  it('allows same-millisecond started markers to replace the prior marker', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+
+    const queryCall = dbMocks.sql.mock.calls.at(-1)
+    expect(queryCall).toBeDefined()
+
+    const [query] = queryCall!
+    expect(Array.from(query).join(' ')).toContain('<=')
+  })
+
   it('persists last completed block for zero-cost outputs', async () => {
     const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
 
@@ -324,6 +336,21 @@ describe('LoggingSession completion retries', () => {
 
     expect(dbMocks.select).not.toHaveBeenCalled()
     expect(dbMocks.execute).toHaveBeenCalledTimes(1)
+  })
+
+  it('allows same-millisecond completed markers to replace the prior marker', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      output: { value: true },
+    })
+
+    const queryCall = dbMocks.sql.mock.calls.at(-1)
+    expect(queryCall).toBeDefined()
+
+    const [query] = queryCall!
+    expect(Array.from(query).join(' ')).toContain('<=')
   })
 
   it('drains pending lifecycle writes before terminal completion', async () => {

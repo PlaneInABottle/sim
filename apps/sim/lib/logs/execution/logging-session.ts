@@ -43,7 +43,7 @@ function buildStartedMarkerPersistenceQuery(params: {
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastStartedBlock', 'startedAt'),
         ''
-      ) < ${params.marker.startedAt}`
+      ) <= ${params.marker.startedAt}`
 }
 
 function buildCompletedMarkerPersistenceQuery(params: {
@@ -63,7 +63,7 @@ function buildCompletedMarkerPersistenceQuery(params: {
       AND COALESCE(
         jsonb_extract_path_text(COALESCE(execution_data, '{}'::jsonb), 'lastCompletedBlock', 'endedAt'),
         ''
-      ) < ${params.marker.endedAt}`
+      ) <= ${params.marker.endedAt}`
 }
 
 const logger = createLogger('LoggingSession')
