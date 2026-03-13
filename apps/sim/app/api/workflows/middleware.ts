@@ -33,7 +33,7 @@ export async function validateWorkflowAccess(
       typeof options === 'boolean' ? { requireDeployment: options } : options
     const requireDeployment = normalizedOptions.requireDeployment ?? true
     const action = normalizedOptions.action ?? 'read'
-    const allowInternalSecret = normalizedOptions.allowInternalSecret ?? requireDeployment
+    const allowInternalSecret = normalizedOptions.allowInternalSecret ?? false
 
     const workflow = await getWorkflowById(workflowId)
     if (!workflow) {

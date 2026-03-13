@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockCleanupWebhooksForWorkflow,
+  mockRecordAudit,
   mockDbLimit,
   mockDbOrderBy,
   mockDbFrom,
@@ -23,8 +24,10 @@ const {
   mockUndeployWorkflow,
   mockValidatePublicApiAllowed,
   mockValidateWorkflowAccess,
+  mockValidateWorkflowPermissions,
 } = vi.hoisted(() => ({
   mockCleanupWebhooksForWorkflow: vi.fn(),
+  mockRecordAudit: vi.fn(),
   mockDbLimit: vi.fn(),
   mockDbOrderBy: vi.fn(),
   mockDbFrom: vi.fn(),
@@ -41,6 +44,7 @@ const {
   mockUndeployWorkflow: vi.fn(),
   mockValidatePublicApiAllowed: vi.fn(),
   mockValidateWorkflowAccess: vi.fn(),
+  mockValidateWorkflowPermissions: vi.fn(),
 }))
 
 vi.mock('@sim/logger', () => ({
@@ -48,7 +52,7 @@ vi.mock('@sim/logger', () => ({
 }))
 
 vi.mock('@/lib/workflows/utils', () => ({
-  validateWorkflowPermissions: vi.fn(),
+  validateWorkflowPermissions: (...args: unknown[]) => mockValidateWorkflowPermissions(...args),
 }))
 
 vi.mock('@/app/api/workflows/middleware', () => ({
@@ -105,7 +109,7 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
 vi.mock('@/lib/audit/log', () => ({
   AuditAction: {},
   AuditResourceType: {},
-  recordAudit: vi.fn(),
+  recordAudit: (...args: unknown[]) => mockRecordAudit(...args),
 }))
 
 vi.mock('@/ee/access-control/utils/permission-check', () => ({
@@ -142,7 +146,13 @@ describe('Workflow deploy route', () => {
   it('allows API-key auth for deploy using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
-      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key User',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
     })
     mockDeployWorkflow.mockResolvedValue({
       success: true,
@@ -164,12 +174,26 @@ describe('Workflow deploy route', () => {
       deployedBy: 'api-user',
       workflowName: 'Test Workflow',
     })
+    expect(mockValidateWorkflowPermissions).not.toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'api-user',
+        actorName: 'API Key User',
+        actorEmail: 'api@example.com',
+      })
+    )
   })
 
   it('allows API-key auth for undeploy using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
-      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key User',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
     })
     mockUndeployWorkflow.mockResolvedValue({ success: true })
 
@@ -183,6 +207,14 @@ describe('Workflow deploy route', () => {
     const data = await response.json()
     expect(data.isDeployed).toBe(false)
     expect(mockUndeployWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-1' })
+    expect(mockValidateWorkflowPermissions).not.toHaveBeenCalled()
+    expect(mockRecordAudit).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actorId: 'api-user',
+        actorName: 'API Key User',
+        actorEmail: 'api@example.com',
+      })
+    )
   })
 
   it('checks public API restrictions against hybrid auth userId', async () => {

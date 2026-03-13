@@ -22,7 +22,6 @@ import {
   createSchedulesForDeploy,
   validateWorkflowSchedules,
 } from '@/lib/workflows/schedules'
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import type { WorkflowState } from '@/stores/workflows/workflow/types'
@@ -35,18 +34,12 @@ export const runtime = 'nodejs'
 type LifecycleAdminAccessResult = {
   error: { message: string; status: number } | null | undefined
   auth: AuthResult | null | undefined
-  session: Awaited<ReturnType<typeof validateWorkflowPermissions>>['session'] | null | undefined
-  workflow:
-    | Awaited<ReturnType<typeof validateWorkflowPermissions>>['workflow']
-    | Awaited<ReturnType<typeof validateWorkflowAccess>>['workflow']
-    | null
-    | undefined
+  workflow: Awaited<ReturnType<typeof validateWorkflowAccess>>['workflow'] | null | undefined
 }
 
 async function validateLifecycleAdminAccess(
   request: NextRequest,
-  workflowId: string,
-  requestId: string
+  workflowId: string
 ): Promise<LifecycleAdminAccessResult> {
   const hybridAccess = await validateWorkflowAccess(request, workflowId, {
     requireDeployment: false,
@@ -57,35 +50,13 @@ async function validateLifecycleAdminAccess(
     return {
       error: hybridAccess.error,
       auth: hybridAccess.auth,
-      session: null,
       workflow: hybridAccess.workflow,
-    }
-  }
-
-  if (hybridAccess.auth?.authType === 'session') {
-    const sessionAccess = await validateWorkflowPermissions(workflowId, requestId, 'admin')
-    const auth: AuthResult | null = sessionAccess.session?.user?.id
-      ? {
-          success: true,
-          userId: sessionAccess.session.user.id,
-          userName: sessionAccess.session.user.name,
-          userEmail: sessionAccess.session.user.email,
-          authType: 'session',
-        }
-      : null
-
-    return {
-      error: sessionAccess.error,
-      auth,
-      session: sessionAccess.session,
-      workflow: sessionAccess.workflow,
     }
   }
 
   return {
     error: null,
     auth: hybridAccess.auth,
-    session: null,
     workflow: hybridAccess.workflow,
   }
 }
@@ -176,17 +147,12 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
 
   try {
-    const {
-      auth,
-      error,
-      session,
-      workflow: workflowData,
-    } = await validateLifecycleAdminAccess(request, id, requestId)
+    const { auth, error, workflow: workflowData } = await validateLifecycleAdminAccess(request, id)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
 
-    const actorUserId: string | null = session?.user?.id ?? auth?.userId ?? null
+    const actorUserId: string | null = auth?.userId ?? null
     if (!actorUserId) {
       logger.warn(`[${requestId}] Unable to resolve actor user for workflow deployment: ${id}`)
       return createErrorResponse('Unable to determine deploying user', 400)
@@ -339,8 +305,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
       actorId: actorUserId,
-      actorName: session?.user?.name,
-      actorEmail: session?.user?.email,
+      actorName: auth?.userName,
+      actorEmail: auth?.userEmail,
       action: AuditAction.WORKFLOW_DEPLOYED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,
@@ -384,7 +350,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params
 
   try {
-    const { auth, error, session } = await validateLifecycleAdminAccess(request, id, requestId)
+    const { auth, error } = await validateLifecycleAdminAccess(request, id)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
@@ -400,7 +366,7 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
       const { validatePublicApiAllowed, PublicApiNotAllowedError } = await import(
         '@/ee/access-control/utils/permission-check'
       )
-      const actorUserId = session?.user?.id ?? auth?.userId
+      const actorUserId = auth?.userId
       try {
         await validatePublicApiAllowed(actorUserId)
       } catch (err) {
@@ -431,17 +397,12 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    const {
-      auth,
-      error,
-      session,
-      workflow: workflowData,
-    } = await validateLifecycleAdminAccess(request, id, requestId)
+    const { auth, error, workflow: workflowData } = await validateLifecycleAdminAccess(request, id)
     if (error) {
       return createErrorResponse(error.message, error.status)
     }
 
-    const actorUserId = session?.user?.id ?? auth?.userId ?? null
+    const actorUserId = auth?.userId ?? null
     if (!actorUserId) {
       return createErrorResponse('Unable to determine undeploying user', 400)
     }
@@ -467,8 +428,8 @@ export async function DELETE(
     recordAudit({
       workspaceId: workflowData?.workspaceId || null,
       actorId: actorUserId,
-      actorName: session?.user?.name,
-      actorEmail: session?.user?.email,
+      actorName: auth?.userName,
+      actorEmail: auth?.userEmail,
       action: AuditAction.WORKFLOW_UNDEPLOYED,
       resourceType: AuditResourceType.WORKFLOW,
       resourceId: id,

@@ -413,6 +413,7 @@ describe('Workflow By ID API Route', () => {
       const response = await DELETE(req, { params })
 
       expect(response.status).toBe(200)
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
 
     it('should prevent deletion of the last workflow in workspace', async () => {
@@ -453,22 +454,11 @@ describe('Workflow By ID API Route', () => {
     })
 
     it.concurrent('should deny deletion for non-admin users', async () => {
-      const mockWorkflow = {
-        id: 'workflow-123',
-        userId: 'other-user',
-        name: 'Test Workflow',
-        workspaceId: 'workspace-456',
-      }
-
-      mockGetSession({ user: { id: 'user-123' } })
-
-      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
-      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
-        allowed: false,
-        status: 403,
-        message: 'Unauthorized: Access denied to admin this workflow',
-        workflow: mockWorkflow,
-        workspacePermission: null,
+      mockValidateWorkflowAccess.mockResolvedValue({
+        error: {
+          message: 'Unauthorized: Access denied to admin this workflow',
+          status: 403,
+        },
       })
 
       const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
@@ -537,6 +527,7 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       expect(data.workflow.name).toBe('Updated Workflow')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
 
     it('should allow users with write permission to update workflow', async () => {
@@ -584,24 +575,13 @@ describe('Workflow By ID API Route', () => {
     })
 
     it('should deny update for users with only read permission', async () => {
-      const mockWorkflow = {
-        id: 'workflow-123',
-        userId: 'other-user',
-        name: 'Test Workflow',
-        workspaceId: 'workspace-456',
-      }
-
       const updateData = { name: 'Updated Workflow' }
 
-      mockGetSession({ user: { id: 'user-123' } })
-
-      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
-      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
-        allowed: false,
-        status: 403,
-        message: 'Unauthorized: Access denied to write this workflow',
-        workflow: mockWorkflow,
-        workspacePermission: 'read',
+      mockValidateWorkflowAccess.mockResolvedValue({
+        error: {
+          message: 'Unauthorized: Access denied to write this workflow',
+          status: 403,
+        },
       })
 
       const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
@@ -770,7 +750,10 @@ describe('Workflow By ID API Route', () => {
 
       const updatedWorkflow = { ...mockWorkflow, folderId: 'folder-2', updatedAt: new Date() }
 
-      mockGetSession({ user: { id: 'user-123' } })
+      mockValidateWorkflowAccess.mockResolvedValue({
+        workflow: mockWorkflow,
+        auth: { success: true, userId: 'user-123', authType: 'session' },
+      })
       mockGetWorkflowById.mockResolvedValue(mockWorkflow)
       mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
         allowed: true,
@@ -812,7 +795,10 @@ describe('Workflow By ID API Route', () => {
         workspaceId: 'workspace-456',
       }
 
-      mockGetSession({ user: { id: 'user-123' } })
+      mockValidateWorkflowAccess.mockResolvedValue({
+        workflow: mockWorkflow,
+        auth: { success: true, userId: 'user-123', authType: 'session' },
+      })
       mockGetWorkflowById.mockResolvedValue(mockWorkflow)
       mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
         allowed: true,

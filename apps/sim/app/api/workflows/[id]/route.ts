@@ -167,6 +167,7 @@ export async function DELETE(
 
     const auth = validation.auth
     const userId = auth?.userId
+    const workflowData = validation.workflow
 
     if (!userId) {
       logger.warn(`[${requestId}] Missing user identity for workflow deletion ${workflowId}`)
@@ -176,28 +177,9 @@ export async function DELETE(
       )
     }
 
-    const authorization = await authorizeWorkflowByWorkspacePermission({
-      workflowId,
-      userId,
-      action: 'admin',
-    })
-    const workflowData = authorization.workflow || (await getWorkflowById(workflowId))
-
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow ${workflowId} not found for deletion`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-    }
-
-    const canDelete = authorization.allowed
-
-    if (!canDelete) {
-      logger.warn(
-        `[${requestId}] User ${userId} denied permission to delete workflow ${workflowId}`
-      )
-      return NextResponse.json(
-        { error: authorization.message || 'Access denied' },
-        { status: authorization.status || 403 }
-      )
     }
 
     // Check if this is the last workflow in the workspace
@@ -319,6 +301,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     const userId = validation.auth?.userId
+    const workflowData = validation.workflow
     if (!userId) {
       logger.warn(`[${requestId}] Missing user identity for workflow update ${workflowId}`)
       return NextResponse.json(
@@ -330,29 +313,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const body = await request.json()
     const updates = UpdateWorkflowSchema.parse(body)
 
-    // Fetch the workflow to check ownership/access
-    const authorization = await authorizeWorkflowByWorkspacePermission({
-      workflowId,
-      userId,
-      action: 'write',
-    })
-    const workflowData = authorization.workflow || (await getWorkflowById(workflowId))
-
     if (!workflowData) {
       logger.warn(`[${requestId}] Workflow ${workflowId} not found for update`)
       return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-    }
-
-    const canUpdate = authorization.allowed
-
-    if (!canUpdate) {
-      logger.warn(
-        `[${requestId}] User ${userId} denied permission to update workflow ${workflowId}`
-      )
-      return NextResponse.json(
-        { error: authorization.message || 'Access denied' },
-        { status: authorization.status || 403 }
-      )
     }
 
     const updateData: Record<string, unknown> = { updatedAt: new Date() }

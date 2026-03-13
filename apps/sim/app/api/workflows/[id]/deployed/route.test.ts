@@ -56,7 +56,6 @@ describe('Workflow deployed-state route', () => {
     expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'wf-1', {
       requireDeployment: false,
       action: 'read',
-      allowInternalSecret: false,
     })
   })
 })

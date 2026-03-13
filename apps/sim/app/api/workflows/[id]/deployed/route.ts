@@ -34,7 +34,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       const validation = await validateWorkflowAccess(request, id, {
         requireDeployment: false,
         action: 'read',
-        allowInternalSecret: false,
       })
       if (validation.error) {
         const response = createErrorResponse(validation.error.message, validation.error.status)
