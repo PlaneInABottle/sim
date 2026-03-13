@@ -2,6 +2,7 @@ import { createLogger } from '@sim/logger'
 import { type NextRequest, NextResponse } from 'next/server'
 import { checkHybridAuth } from '@/lib/auth/hybrid'
 import { markExecutionCancelled } from '@/lib/execution/cancellation'
+import { abortManualExecution } from '@/lib/execution/manual-cancellation'
 import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 
 const logger = createLogger('CancelExecutionAPI')
@@ -36,9 +37,12 @@ export async function POST(
     logger.info('Cancel execution requested', { workflowId, executionId, userId: auth.userId })
 
     const cancellation = await markExecutionCancelled(executionId)
+    const locallyAborted = abortManualExecution(executionId)
 
     if (cancellation.durablyRecorded) {
       logger.info('Execution marked as cancelled in Redis', { executionId })
+    } else if (locallyAborted) {
+      logger.info('Execution cancelled via local in-process fallback', { executionId })
     } else {
       logger.warn('Execution cancellation was not durably recorded', {
         executionId,
@@ -47,10 +51,11 @@ export async function POST(
     }
 
     return NextResponse.json({
-      success: cancellation.durablyRecorded,
+      success: cancellation.durablyRecorded || locallyAborted,
       executionId,
       redisAvailable: cancellation.reason !== 'redis_unavailable',
       durablyRecorded: cancellation.durablyRecorded,
+      locallyAborted,
       reason: cancellation.reason,
     })
   } catch (error: any) {

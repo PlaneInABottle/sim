@@ -20,6 +20,10 @@ import {
 } from '@/lib/execution/call-chain'
 import { createExecutionEventWriter, setExecutionMeta } from '@/lib/execution/event-buffer'
 import { processInputFileFields } from '@/lib/execution/files'
+import {
+  registerManualExecutionAborter,
+  unregisterManualExecutionAborter,
+} from '@/lib/execution/manual-cancellation'
 import { preprocessExecution } from '@/lib/execution/preprocessing'
 import { LoggingSession } from '@/lib/logs/execution/logging-session'
 import {
@@ -775,6 +779,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const encoder = new TextEncoder()
     const timeoutController = createTimeoutAbortController(preprocessResult.executionTimeout?.sync)
     let isStreamClosed = false
+    let isManualAbortRegistered = false
 
     const eventWriter = createExecutionEventWriter(executionId)
     setExecutionMeta(executionId, {
@@ -786,6 +791,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
         let finalMetaStatus: 'complete' | 'error' | 'cancelled' | null = null
+
+        registerManualExecutionAborter(executionId, timeoutController.abort)
+        isManualAbortRegistered = true
 
         const sendEvent = (event: ExecutionEvent) => {
           if (!isStreamClosed) {
@@ -1154,6 +1162,10 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           })
           finalMetaStatus = 'error'
         } finally {
+          if (isManualAbortRegistered) {
+            unregisterManualExecutionAborter(executionId)
+            isManualAbortRegistered = false
+          }
           try {
             await eventWriter.close()
           } catch (closeError) {

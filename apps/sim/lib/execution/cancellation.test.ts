@@ -13,6 +13,11 @@ vi.mock('@/lib/core/config/redis', () => ({
 }))
 
 import { markExecutionCancelled } from './cancellation'
+import {
+  abortManualExecution,
+  registerManualExecutionAborter,
+  unregisterManualExecutionAborter,
+} from './manual-cancellation'
 
 describe('markExecutionCancelled', () => {
   beforeEach(() => {
@@ -46,5 +51,34 @@ describe('markExecutionCancelled', () => {
       durablyRecorded: false,
       reason: 'redis_write_failed',
     })
+  })
+})
+
+describe('manual execution cancellation registry', () => {
+  beforeEach(() => {
+    unregisterManualExecutionAborter('execution-1')
+  })
+
+  it('aborts registered executions', () => {
+    const abort = vi.fn()
+
+    registerManualExecutionAborter('execution-1', abort)
+
+    expect(abortManualExecution('execution-1')).toBe(true)
+    expect(abort).toHaveBeenCalledTimes(1)
+  })
+
+  it('returns false when no execution is registered', () => {
+    expect(abortManualExecution('execution-missing')).toBe(false)
+  })
+
+  it('unregisters executions', () => {
+    const abort = vi.fn()
+
+    registerManualExecutionAborter('execution-1', abort)
+    unregisterManualExecutionAborter('execution-1')
+
+    expect(abortManualExecution('execution-1')).toBe(false)
+    expect(abort).not.toHaveBeenCalled()
   })
 })
