@@ -409,6 +409,8 @@ export class LoggingSession {
         costSummary,
         finalOutput: { error: message },
         traceSpans: spans,
+        level: 'error',
+        status: 'failed',
       })
 
       this.completed = true
@@ -919,6 +921,7 @@ export class LoggingSession {
       )
     } catch (fallbackError) {
       this.completing = false
+      this.completionAttemptFailed = true
       logger.error(
         `[${this.requestId || 'unknown'}] Cost-only fallback also failed for execution ${this.executionId}:`,
         { error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError) }
