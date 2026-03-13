@@ -4,7 +4,6 @@ import { and, desc, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
 import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
-import type { AuthResult } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { removeMcpToolsForWorkflow, syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import {
@@ -31,36 +30,6 @@ const logger = createLogger('WorkflowDeployAPI')
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-
-type LifecycleAdminAccessResult = {
-  error: { message: string; status: number } | null | undefined
-  auth: AuthResult | null | undefined
-  workflow: Awaited<ReturnType<typeof validateWorkflowAccess>>['workflow'] | null | undefined
-}
-
-async function validateLifecycleAdminAccess(
-  request: NextRequest,
-  workflowId: string
-): Promise<LifecycleAdminAccessResult> {
-  const hybridAccess = await validateWorkflowAccess(request, workflowId, {
-    requireDeployment: false,
-    action: 'admin',
-  })
-
-  if (hybridAccess.error) {
-    return {
-      error: hybridAccess.error,
-      auth: hybridAccess.auth,
-      workflow: hybridAccess.workflow,
-    }
-  }
-
-  return {
-    error: null,
-    auth: hybridAccess.auth,
-    workflow: hybridAccess.workflow,
-  }
-}
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = generateRequestId()
@@ -148,10 +117,16 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const { id } = await params
 
   try {
-    const { auth, error, workflow: workflowData } = await validateLifecycleAdminAccess(request, id)
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const auth = access.auth
+    const workflowData = access.workflow
 
     const actorUserId: string | null = auth?.userId ?? null
     if (!actorUserId) {
@@ -353,10 +328,15 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
   const { id } = await params
 
   try {
-    const { auth, error } = await validateLifecycleAdminAccess(request, id)
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const auth = access.auth
 
     const body = await request.json()
     const { isPublicApi } = body
@@ -400,10 +380,16 @@ export async function DELETE(
   const { id } = await params
 
   try {
-    const { auth, error, workflow: workflowData } = await validateLifecycleAdminAccess(request, id)
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const auth = access.auth
+    const workflowData = access.workflow
 
     const actorUserId = auth?.userId ?? null
     if (!actorUserId) {

@@ -20,27 +20,6 @@ import type { BlockState } from '@/stores/workflows/workflow/types'
 
 const logger = createLogger('WorkflowDeploymentVersionAPI')
 
-async function validateDeploymentVersionLifecycleAccess(
-  request: NextRequest,
-  workflowId: string,
-  action: 'read' | 'write' | 'admin'
-) {
-  const access = await validateWorkflowAccess(request, workflowId, {
-    requireDeployment: false,
-    action,
-  })
-
-  if (access.error) {
-    return access
-  }
-
-  return {
-    error: null,
-    auth: access.auth,
-    workflow: access.workflow,
-  }
-}
-
 const patchBodySchema = z
   .object({
     name: z
@@ -75,7 +54,10 @@ export async function GET(
   const { id, version } = await params
 
   try {
-    const access = await validateDeploymentVersionLifecycleAccess(request, id, 'read')
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'read',
+    })
     if (access.error) {
       return createErrorResponse(access.error.message, access.error.status)
     }
@@ -129,14 +111,16 @@ export async function PATCH(
 
     // Activation requires admin permission, other updates require write
     const requiredPermission = isActive ? 'admin' : 'write'
-    const {
-      auth,
-      error,
-      workflow: workflowData,
-    } = await validateDeploymentVersionLifecycleAccess(request, id, requiredPermission)
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: requiredPermission,
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const auth = access.auth
+    const workflowData = access.workflow
 
     const versionNum = Number(version)
     if (!Number.isFinite(versionNum)) {

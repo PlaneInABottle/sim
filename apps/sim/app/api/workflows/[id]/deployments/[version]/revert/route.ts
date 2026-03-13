@@ -12,23 +12,6 @@ import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/
 
 const logger = createLogger('RevertToDeploymentVersionAPI')
 
-async function validateDeploymentVersionAdminAccess(request: NextRequest, workflowId: string) {
-  const access = await validateWorkflowAccess(request, workflowId, {
-    requireDeployment: false,
-    action: 'admin',
-  })
-
-  if (access.error) {
-    return access
-  }
-
-  return {
-    error: null,
-    auth: access.auth,
-    workflow: access.workflow,
-  }
-}
-
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
@@ -40,18 +23,22 @@ export async function POST(
   const { id, version } = await params
 
   try {
-    const {
-      auth,
-      error,
-      workflow: workflowRecord,
-    } = await validateDeploymentVersionAdminAccess(request, id)
-    if (error) {
-      return createErrorResponse(error.message, error.status)
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
     }
+
+    const auth = access.auth
+    const workflowRecord = access.workflow
 
     const actorUserId = auth?.userId
     if (!actorUserId) {
-      logger.warn(`[${requestId}] Unable to resolve actor user for workflow deployment revert: ${id}`)
+      logger.warn(
+        `[${requestId}] Unable to resolve actor user for workflow deployment revert: ${id}`
+      )
       return createErrorResponse('Unable to determine reverting user', 400)
     }
 

@@ -40,6 +40,7 @@ function mockGetSession(session: { user: { id: string } } | null) {
   } else {
     mockCheckHybridAuth.mockResolvedValue({ success: false })
     mockCheckSessionOrInternalAuth.mockResolvedValue({ success: false })
+
     mockValidateWorkflowAccess.mockResolvedValue({
       error: { message: 'Unauthorized', status: 401 },
     })
