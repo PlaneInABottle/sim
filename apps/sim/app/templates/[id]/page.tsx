@@ -26,6 +26,10 @@ function getUnavailableTemplateMetadata(): Metadata {
 }
 
 async function getPublicTemplateMetadataRecord(id: string) {
+  if (!isPublicTemplatesPagesEnabled) {
+    return null
+  }
+
   const result = await db
     .select({
       template: templates,
@@ -42,7 +46,7 @@ async function getPublicTemplateMetadataRecord(id: string) {
 
   const [{ template, creator }] = result
 
-  if (!isPublicTemplatesPagesEnabled || template.status !== 'approved') {
+  if (template.status !== 'approved') {
     return null
   }
 

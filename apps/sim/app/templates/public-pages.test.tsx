@@ -147,6 +147,7 @@ describe('public templates pages', () => {
         follow: false,
       },
     })
+    expect(mockTemplateMetadataSelect).not.toHaveBeenCalled()
   })
 
   it('returns noindex metadata for non-approved templates', async () => {
