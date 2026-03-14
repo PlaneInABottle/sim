@@ -66,7 +66,13 @@ vi.mock('@/lib/core/utils/request', () => ({
 vi.mock('@sim/db', () => ({
   db: { select: mockDbSelect, update: mockDbUpdate },
   workflow: { variables: 'variables', id: 'id' },
-  workflowDeploymentVersion: { state: 'state', workflowId: 'workflowId', isActive: 'isActive', createdAt: 'createdAt', id: 'id' },
+  workflowDeploymentVersion: {
+    state: 'state',
+    workflowId: 'workflowId',
+    isActive: 'isActive',
+    createdAt: 'createdAt',
+    id: 'id',
+  },
 }))
 
 vi.mock('drizzle-orm', async (importOriginal) => {
@@ -80,7 +86,8 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 })
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  loadWorkflowFromNormalizedTables: (...args: unknown[]) => mockLoadWorkflowFromNormalizedTables(...args),
+  loadWorkflowFromNormalizedTables: (...args: unknown[]) =>
+    mockLoadWorkflowFromNormalizedTables(...args),
   deployWorkflow: (...args: unknown[]) => mockDeployWorkflow(...args),
   undeployWorkflow: (...args: unknown[]) => mockUndeployWorkflow(...args),
 }))

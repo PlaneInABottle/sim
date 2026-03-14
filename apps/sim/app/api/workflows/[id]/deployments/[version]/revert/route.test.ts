@@ -74,7 +74,8 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 })
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  saveWorkflowToNormalizedTables: (...args: unknown[]) => mockSaveWorkflowToNormalizedTables(...args),
+  saveWorkflowToNormalizedTables: (...args: unknown[]) =>
+    mockSaveWorkflowToNormalizedTables(...args),
 }))
 
 vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
@@ -118,13 +119,10 @@ describe('Workflow deployment version revert route', () => {
       auth: { success: true, userId: 'api-user', authType: 'api_key' },
     })
 
-    const req = new NextRequest(
-      'http://localhost:3000/api/workflows/wf-1/deployments/3/revert',
-      {
-        method: 'POST',
-        headers: { 'x-api-key': 'test-key' },
-      }
-    )
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3/revert', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
     const response = await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
     expect(response.status).toBe(200)

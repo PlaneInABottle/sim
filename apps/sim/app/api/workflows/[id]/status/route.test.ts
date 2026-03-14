@@ -34,7 +34,8 @@ vi.mock('@/app/api/workflows/middleware', () => ({
 }))
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  loadWorkflowFromNormalizedTables: (...args: unknown[]) => mockLoadWorkflowFromNormalizedTables(...args),
+  loadWorkflowFromNormalizedTables: (...args: unknown[]) =>
+    mockLoadWorkflowFromNormalizedTables(...args),
 }))
 
 vi.mock('@/lib/workflows/comparison', () => ({
@@ -50,7 +51,12 @@ vi.mock('@sim/db', () => ({
     select: mockDbSelect,
   },
   workflow: { variables: 'variables', id: 'id' },
-  workflowDeploymentVersion: { state: 'state', workflowId: 'workflowId', isActive: 'isActive', createdAt: 'createdAt' },
+  workflowDeploymentVersion: {
+    state: 'state',
+    workflowId: 'workflowId',
+    isActive: 'isActive',
+    createdAt: 'createdAt',
+  },
 }))
 
 vi.mock('drizzle-orm', async (importOriginal) => {
