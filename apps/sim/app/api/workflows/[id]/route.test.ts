@@ -422,7 +422,7 @@ describe('Workflow By ID API Route', () => {
       expect(auditMock.recordAudit).toHaveBeenCalledWith(
         expect.objectContaining({
           actorId: 'api-user-1',
-          actorName: undefined,
+          actorName: 'API Key Actor',
           actorEmail: undefined,
         })
       )

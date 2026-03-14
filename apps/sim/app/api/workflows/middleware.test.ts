@@ -170,4 +170,39 @@ describe('validateWorkflowAccess', () => {
 
     expect(result).toEqual({ workflow, auth })
   })
+
+  it('returns 404 for deployed access when workflow is missing', async () => {
+    mockGetWorkflowById.mockResolvedValue(null)
+
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Workflow not found',
+        status: 404,
+      },
+    })
+    expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+  })
+
+  it('returns 403 for deployed access when workflow has no workspace', async () => {
+    mockGetWorkflowById.mockResolvedValue(createWorkflow({ workspaceId: null, isDeployed: true }))
+
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+        status: 403,
+      },
+    })
+    expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+  })
 })

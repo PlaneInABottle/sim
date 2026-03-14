@@ -4,7 +4,7 @@ export function getAuditActorMetadata(auth: AuthResult | null | undefined): {
   actorName: string | undefined
   actorEmail: string | undefined
 } {
-  if (auth?.authType !== 'session') {
+  if (!auth) {
     return {
       actorName: undefined,
       actorEmail: undefined,

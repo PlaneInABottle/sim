@@ -23,6 +23,30 @@ export interface WorkflowAccessOptions {
   allowInternalSecret?: boolean
 }
 
+async function getValidatedWorkflow(workflowId: string): Promise<ValidationResult> {
+  const workflow = await getWorkflowById(workflowId)
+  if (!workflow) {
+    return {
+      error: {
+        message: 'Workflow not found',
+        status: 404,
+      },
+    }
+  }
+
+  if (!workflow.workspaceId) {
+    return {
+      error: {
+        message:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+        status: 403,
+      },
+    }
+  }
+
+  return { workflow }
+}
+
 export async function validateWorkflowAccess(
   request: NextRequest,
   workflowId: string,
@@ -46,25 +70,11 @@ export async function validateWorkflowAccess(
         }
       }
 
-      const workflow = await getWorkflowById(workflowId)
-      if (!workflow) {
-        return {
-          error: {
-            message: 'Workflow not found',
-            status: 404,
-          },
-        }
+      const workflowResult = await getValidatedWorkflow(workflowId)
+      if (workflowResult.error || !workflowResult.workflow) {
+        return workflowResult
       }
-
-      if (!workflow.workspaceId) {
-        return {
-          error: {
-            message:
-              'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
-            status: 403,
-          },
-        }
-      }
+      const workflow = workflowResult.workflow
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,
@@ -83,25 +93,11 @@ export async function validateWorkflowAccess(
       return { workflow, auth }
     }
 
-    const workflow = await getWorkflowById(workflowId)
-    if (!workflow) {
-      return {
-        error: {
-          message: 'Workflow not found',
-          status: 404,
-        },
-      }
+    const workflowResult = await getValidatedWorkflow(workflowId)
+    if (workflowResult.error || !workflowResult.workflow) {
+      return workflowResult
     }
-
-    if (!workflow.workspaceId) {
-      return {
-        error: {
-          message:
-            'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
-          status: 403,
-        },
-      }
-    }
+    const workflow = workflowResult.workflow
 
     if (requireDeployment) {
       if (!workflow.isDeployed) {

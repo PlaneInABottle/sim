@@ -14,6 +14,7 @@ import {
   createSchedulesForDeploy,
   validateWorkflowSchedules,
 } from '@/lib/workflows/schedules'
+import { authorizeWorkflowByWorkspacePermission } from '@/lib/workflows/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 import type { BlockState } from '@/stores/workflows/workflow/types'
@@ -116,19 +117,23 @@ export async function PATCH(
     }
 
     const { name, description, isActive } = validation.data
-
-    if (isActive) {
-      const activationAccess = await validateWorkflowAccess(request, id, {
-        requireDeployment: false,
-        action: 'admin',
-      })
-      if (activationAccess.error) {
-        return createErrorResponse(activationAccess.error.message, activationAccess.error.status)
-      }
-    }
-
     const auth = access.auth
     const workflowData = access.workflow
+
+    if (isActive) {
+      if (!auth?.userId) {
+        return createErrorResponse('Unable to determine activating user', 400)
+      }
+
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: id,
+        userId: auth.userId,
+        action: 'admin',
+      })
+      if (!authorization.allowed) {
+        return createErrorResponse(authorization.message || 'Access denied', authorization.status)
+      }
+    }
 
     const versionNum = Number(version)
     if (!Number.isFinite(versionNum)) {

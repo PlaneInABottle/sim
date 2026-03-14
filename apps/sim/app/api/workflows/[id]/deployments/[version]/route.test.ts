@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
   mockActivateWorkflowVersion,
+  mockAuthorizeWorkflowByWorkspacePermission,
   mockCreateSchedulesForDeploy,
   mockDbFrom,
   mockDbLimit,
@@ -22,6 +23,7 @@ const {
   mockValidateWorkflowAccess,
 } = vi.hoisted(() => ({
   mockActivateWorkflowVersion: vi.fn(),
+  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockCreateSchedulesForDeploy: vi.fn(),
   mockDbFrom: vi.fn(),
   mockDbLimit: vi.fn(),
@@ -93,6 +95,11 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
   syncMcpToolsForWorkflow: (...args: unknown[]) => mockSyncMcpToolsForWorkflow(...args),
 }))
 
+vi.mock('@/lib/workflows/utils', () => ({
+  authorizeWorkflowByWorkspacePermission: (...args: unknown[]) =>
+    mockAuthorizeWorkflowByWorkspacePermission(...args),
+}))
+
 vi.mock('@/lib/audit/log', () => ({
   AuditAction: { WORKFLOW_DEPLOYMENT_ACTIVATED: 'WORKFLOW_DEPLOYMENT_ACTIVATED' },
   AuditResourceType: { WORKFLOW: 'WORKFLOW' },
@@ -127,6 +134,7 @@ describe('Workflow deployment version route', () => {
       success: true,
       deployedAt: '2024-01-17T12:00:00.000Z',
     })
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({ allowed: true, status: 200 })
   })
 
   it('uses write permission for metadata-only patch updates', async () => {
@@ -171,8 +179,10 @@ describe('Workflow deployment version route', () => {
       requireDeployment: false,
       action: 'write',
     })
-    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(2, req, 'wf-1', {
-      requireDeployment: false,
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledTimes(1)
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      userId: 'api-user',
       action: 'admin',
     })
     expect(mockSaveTriggerWebhooksForDeploy).toHaveBeenCalledWith(
@@ -206,14 +216,15 @@ describe('Workflow deployment version route', () => {
   })
 
   it('returns admin auth failure before activation side effects', async () => {
-    mockValidateWorkflowAccess
-      .mockResolvedValueOnce({
-        workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
-        auth: { success: true, userId: 'user-1', authType: 'session' },
-      })
-      .mockResolvedValueOnce({
-        error: { message: 'Admin permission required', status: 403 },
-      })
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'user-1', authType: 'session' },
+    })
+    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+      allowed: false,
+      status: 403,
+      message: 'Admin permission required',
+    })
 
     const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
       method: 'PATCH',
@@ -223,13 +234,14 @@ describe('Workflow deployment version route', () => {
     const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
     expect(response.status).toBe(403)
-    expect(mockValidateWorkflowAccess).toHaveBeenCalledTimes(2)
-    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(1, req, 'wf-1', {
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledTimes(1)
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'wf-1', {
       requireDeployment: false,
       action: 'write',
     })
-    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(2, req, 'wf-1', {
-      requireDeployment: false,
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      userId: 'user-1',
       action: 'admin',
     })
     expect(mockDbSelect).not.toHaveBeenCalled()
