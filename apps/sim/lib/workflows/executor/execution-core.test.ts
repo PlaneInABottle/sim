@@ -114,6 +114,8 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
     hasCompleted: hasCompletedMock,
     onBlockStart: onBlockStartPersistenceMock,
     onBlockComplete: vi.fn(),
+    setPostExecutionPromise: vi.fn(),
+    waitForPostExecution: vi.fn().mockResolvedValue(undefined),
   }
 
   const createSnapshot = () => ({
@@ -280,6 +282,8 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loggingSession: loggingSession as any,
     })
 
+    await loggingSession.setPostExecutionPromise.mock.calls[0][0]
+
     expect(result.status).toBe('completed')
     expect(callOrder).toEqual([
       'safeComplete:start',
@@ -356,6 +360,8 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       callbacks: {},
       loggingSession: loggingSession as any,
     })
+
+    await loggingSession.setPostExecutionPromise.mock.calls[0][0]
 
     expect(result.status).toBe('completed')
     expect(clearExecutionCancellationMock).toHaveBeenCalledWith('execution-1')
@@ -632,7 +638,10 @@ describe('executeWorkflowCore terminal finalization sequencing', () => {
       loggingSession: loggingSession as any,
     })
 
+    await loggingSession.setPostExecutionPromise.mock.calls[0][0]
+
     expect(result).toMatchObject({ status: 'completed', success: true })
+    expect(clearExecutionCancellationMock).toHaveBeenCalledWith('execution-1')
     expect(safeCompleteWithErrorMock).not.toHaveBeenCalled()
   })
 

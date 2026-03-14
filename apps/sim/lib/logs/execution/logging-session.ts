@@ -154,6 +154,7 @@ export class LoggingSession {
   }
   private pendingProgressWrites = new Set<Promise<void>>()
   private costFlushed = false
+  private postExecutionPromise: Promise<void> | null = null
 
   constructor(
     workflowId: string,
@@ -869,6 +870,20 @@ export class LoggingSession {
         await this.completionPromise
       } catch {
         /* already handled by safe* wrapper */
+      }
+    }
+  }
+
+  setPostExecutionPromise(promise: Promise<void>): void {
+    this.postExecutionPromise = promise
+  }
+
+  async waitForPostExecution(): Promise<void> {
+    if (this.postExecutionPromise) {
+      try {
+        await this.postExecutionPromise
+      } catch {
+        /* already handled inside the IIFE */
       }
     }
   }
