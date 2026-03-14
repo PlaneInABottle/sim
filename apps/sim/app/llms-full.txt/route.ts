@@ -6,7 +6,7 @@ import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export async function GET() {
   const baseUrl = getBaseUrl()
-  const websiteLink = isPublicLandingPageEnabled ? `- **Website**: ${baseUrl}` : ''
+  const websiteLink = isPublicLandingPageEnabled ? `- **Website**: ${baseUrl}\n` : ''
   const gettingStartedSignUpLine = isPublicLandingPageEnabled
     ? `1. **Sign Up**: Create a free account at ${baseUrl}`
     : '1. **Sign Up**: Create a free account'
@@ -14,6 +14,7 @@ export async function GET() {
     ...(isPublicLegalPagesEnabled ? [`- **Terms of Service**: ${baseUrl}/terms`] : []),
     ...(isPublicLegalPagesEnabled ? [`- **Privacy Policy**: ${baseUrl}/privacy`] : []),
   ].join('\n')
+  const legalSection = legalLinks ? `${legalLinks}\n` : ''
 
   const llmsFullContent = `# Sim - AI Agent Workflow Builder
 
@@ -156,8 +157,7 @@ ${gettingStartedSignUpLine}
 
 ## Links
 
-${websiteLink}
-- **Documentation**: https://docs.sim.ai
+${websiteLink}- **Documentation**: https://docs.sim.ai
 - **API Reference**: https://docs.sim.ai/api
 - **GitHub**: https://github.com/simstudioai/sim
 - **Discord**: https://discord.gg/Hr4UWYEcTT
@@ -173,8 +173,7 @@ ${websiteLink}
 
 ## Legal
 
-${legalLinks}
-- **Security**: ${baseUrl}/.well-known/security.txt
+${legalSection}- **Security**: ${baseUrl}/.well-known/security.txt
 `
 
   return new Response(llmsFullContent, {

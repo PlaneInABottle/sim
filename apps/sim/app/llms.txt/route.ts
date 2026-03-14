@@ -40,6 +40,8 @@ export async function GET() {
       : []),
     ...(legalLinks ? [legalLinks] : []),
   ].join('\n')
+  const corePagesSection = corePages ? `## Core Pages\n\n${corePages}\n\n` : ''
+  const optionalSection = optionalLinks ? `## Optional\n\n${optionalLinks}\n` : ''
 
   const llmsContent = `# Sim
 
@@ -47,11 +49,7 @@ export async function GET() {
 
 Sim provides a visual drag-and-drop interface for building and deploying AI agent workflows. Connect to 100+ integrations and ship production-ready AI automations.
 
-## Core Pages
-
-${corePages}
-
-## Documentation
+${corePagesSection}## Documentation
 
 - [Documentation](https://docs.sim.ai): Complete guides and API reference
 - [Quickstart](https://docs.sim.ai/quickstart): Get started in 5 minutes
@@ -88,9 +86,7 @@ ${corePages}
 - [Discord Community](https://discord.gg/Hr4UWYEcTT): Get help and connect with users
 - [X/Twitter](https://x.com/simdotai): Product updates and announcements
 
-## Optional
-
-${optionalLinks}
+${optionalSection}
 `
 
   return new Response(llmsContent, {
