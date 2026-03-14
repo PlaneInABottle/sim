@@ -9,11 +9,15 @@ const {
   mockCheckHybridAuth,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockPreprocessExecution,
+  mockGetJobQueue,
+  mockShouldExecuteInline,
   mockEnqueue,
 } = vi.hoisted(() => ({
   mockCheckHybridAuth: vi.fn(),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockPreprocessExecution: vi.fn(),
+  mockGetJobQueue: vi.fn(),
+  mockShouldExecuteInline: vi.fn(),
   mockEnqueue: vi.fn().mockResolvedValue('job-123'),
 }))
 
@@ -37,13 +41,8 @@ vi.mock('@/lib/execution/preprocessing', () => ({
 }))
 
 vi.mock('@/lib/core/async-jobs', () => ({
-  getJobQueue: vi.fn().mockResolvedValue({
-    enqueue: mockEnqueue,
-    startJob: vi.fn(),
-    completeJob: vi.fn(),
-    markJobFailed: vi.fn(),
-  }),
-  shouldExecuteInline: vi.fn().mockReturnValue(false),
+  getJobQueue: mockGetJobQueue,
+  shouldExecuteInline: mockShouldExecuteInline,
 }))
 
 vi.mock('@/lib/core/utils/request', () => ({
@@ -88,6 +87,15 @@ import { POST } from './route'
 describe('workflow execute async route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+
+    mockEnqueue.mockResolvedValue('job-123')
+    mockGetJobQueue.mockResolvedValue({
+      enqueue: mockEnqueue,
+      startJob: vi.fn(),
+      completeJob: vi.fn(),
+      markJobFailed: vi.fn(),
+    })
+    mockShouldExecuteInline.mockReturnValue(false)
 
     mockCheckHybridAuth.mockResolvedValue({
       success: true,
