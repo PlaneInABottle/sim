@@ -258,7 +258,7 @@ export default function SSOForm() {
           By signing in, you agree to our{' '}
           {termsLinkConfig ? (
             <Link
-              href={termsLinkConfig?.href ?? '/terms'}
+              href={termsLinkConfig.href}
               target='_blank'
               rel='noopener noreferrer'
               className='auth-link underline-offset-4 transition hover:underline'
@@ -269,7 +269,7 @@ export default function SSOForm() {
           {termsLinkConfig && privacyLinkConfig ? ' and ' : null}
           {privacyLinkConfig ? (
             <Link
-              href={privacyLinkConfig?.href ?? '/privacy'}
+              href={privacyLinkConfig.href}
               target='_blank'
               rel='noopener noreferrer'
               className='auth-link underline-offset-4 transition hover:underline'
