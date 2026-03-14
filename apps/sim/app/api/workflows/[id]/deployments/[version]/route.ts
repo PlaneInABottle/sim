@@ -143,10 +143,6 @@ export async function PATCH(
     // Handle activation
     if (isActive) {
       const actorUserId = auth?.userId
-      if (!actorUserId) {
-        logger.warn(`[${requestId}] Unable to resolve actor user for deployment activation: ${id}`)
-        return createErrorResponse('Unable to determine activating user', 400)
-      }
 
       const [versionRow] = await db
         .select({
@@ -197,7 +193,7 @@ export async function PATCH(
         request,
         workflowId: id,
         workflow: workflowData as Record<string, unknown>,
-        userId: actorUserId,
+        userId: actorUserId!,
         blocks,
         requestId,
         deploymentVersionId: versionRow.id,
@@ -225,7 +221,7 @@ export async function PATCH(
           await restorePreviousVersionWebhooks({
             request,
             workflow: workflowData as Record<string, unknown>,
-            userId: actorUserId,
+            userId: actorUserId!,
             previousVersionId,
             requestId,
           })
@@ -245,7 +241,7 @@ export async function PATCH(
           await restorePreviousVersionWebhooks({
             request,
             workflow: workflowData as Record<string, unknown>,
-            userId: actorUserId,
+            userId: actorUserId!,
             previousVersionId,
             requestId,
           })
@@ -321,7 +317,7 @@ export async function PATCH(
 
       recordAudit({
         workspaceId: workflowData?.workspaceId,
-        actorId: actorUserId,
+        actorId: actorUserId!,
         actorName,
         actorEmail,
         action: AuditAction.WORKFLOW_DEPLOYMENT_ACTIVATED,
