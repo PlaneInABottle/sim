@@ -88,6 +88,13 @@ describe('workflow execute async route', () => {
   beforeEach(() => {
     vi.clearAllMocks()
 
+    mockCheckHybridAuth.mockReset()
+    mockAuthorizeWorkflowByWorkspacePermission.mockReset()
+    mockPreprocessExecution.mockReset()
+    mockGetJobQueue.mockReset()
+    mockShouldExecuteInline.mockReset()
+    mockEnqueue.mockReset()
+
     mockEnqueue.mockResolvedValue('job-123')
     mockGetJobQueue.mockResolvedValue({
       enqueue: mockEnqueue,
