@@ -3,6 +3,7 @@ import { STREAM_STORAGE_KEY } from '@/lib/copilot/constants'
 import { asRecord } from '@/lib/copilot/orchestrator/sse/utils'
 import type { SSEEvent } from '@/lib/copilot/orchestrator/types'
 import {
+  abortAllInProgressTools,
   isBackgroundState,
   isRejectedState,
   isReviewState,
@@ -91,6 +92,7 @@ export function flushStreamingUpdates(set: StoreSet) {
         if (update) {
           return {
             ...msg,
+            requestId: update.requestId ?? msg.requestId,
             content: '',
             contentBlocks:
               update.contentBlocks.length > 0
@@ -128,6 +130,7 @@ export function updateStreamingMessage(set: StoreSet, context: ClientStreamingCo
             const newMessages = [...messages]
             newMessages[messages.length - 1] = {
               ...lastMessage,
+              requestId: lastMessageUpdate.requestId ?? lastMessage.requestId,
               content: '',
               contentBlocks:
                 lastMessageUpdate.contentBlocks.length > 0
@@ -142,6 +145,7 @@ export function updateStreamingMessage(set: StoreSet, context: ClientStreamingCo
               if (update) {
                 return {
                   ...msg,
+                  requestId: update.requestId ?? msg.requestId,
                   content: '',
                   contentBlocks:
                     update.contentBlocks.length > 0
@@ -428,6 +432,12 @@ export const sseHandlers: Record<string, SSEHandler> = {
       writeActiveStreamToStorage(updatedStream)
     }
   },
+  request_id: (data, context) => {
+    const requestId = typeof data.data === 'string' ? data.data : undefined
+    if (requestId) {
+      context.requestId = requestId
+    }
+  },
   title_updated: (_data, _context, get, set) => {
     const title = _data.title
     if (!title) return
@@ -567,7 +577,6 @@ export const sseHandlers: Record<string, SSEHandler> = {
           }
         }
 
-        // Deploy tools: update deployment status in workflow registry
         if (
           targetState === ClientToolCallState.success &&
           (current.name === 'deploy_api' ||
@@ -579,21 +588,30 @@ export const sseHandlers: Record<string, SSEHandler> = {
             const resultPayload = asRecord(
               data?.result || eventData.result || eventData.data || data?.data
             )
-            const input = asRecord(current.params)
-            const workflowId =
-              (resultPayload?.workflowId as string) ||
-              (input?.workflowId as string) ||
-              useWorkflowRegistry.getState().activeWorkflowId
-            const isDeployed = resultPayload?.isDeployed !== false
-            if (workflowId) {
-              useWorkflowRegistry
-                .getState()
-                .setDeploymentStatus(workflowId, isDeployed, isDeployed ? new Date() : undefined)
-              logger.info('[SSE] Updated deployment status from tool result', {
-                toolName: current.name,
-                workflowId,
-                isDeployed,
-              })
+            if (typeof resultPayload?.isDeployed === 'boolean') {
+              const input = asRecord(current.params)
+              const workflowId =
+                (resultPayload?.workflowId as string) ||
+                (input?.workflowId as string) ||
+                useWorkflowRegistry.getState().activeWorkflowId
+              const isDeployed = resultPayload.isDeployed as boolean
+              const serverDeployedAt = resultPayload.deployedAt
+                ? new Date(resultPayload.deployedAt as string)
+                : undefined
+              if (workflowId) {
+                useWorkflowRegistry
+                  .getState()
+                  .setDeploymentStatus(
+                    workflowId,
+                    isDeployed,
+                    isDeployed ? (serverDeployedAt ?? new Date()) : undefined
+                  )
+                logger.info('[SSE] Updated deployment status from tool result', {
+                  toolName: current.name,
+                  workflowId,
+                  isDeployed,
+                })
+              }
             }
           } catch (err) {
             logger.warn('[SSE] Failed to hydrate deployment status', {
@@ -948,7 +966,7 @@ export const sseHandlers: Record<string, SSEHandler> = {
     }))
     context.streamComplete = true
   },
-  stream_end: (_data, context, _get, set) => {
+  stream_end: (_data, context, get, set) => {
     if (context.pendingContent) {
       if (context.isInThinkingBlock && context.currentThinkingBlock) {
         appendThinkingContent(context, context.pendingContent)
@@ -959,6 +977,7 @@ export const sseHandlers: Record<string, SSEHandler> = {
     }
     finalizeThinkingBlock(context)
     updateStreamingMessage(set, context)
+    abortAllInProgressTools(set, get)
   },
   default: () => {},
 }

@@ -27,8 +27,8 @@ import {
   PopoverContent,
   PopoverItem,
   PopoverTrigger,
+  Skeleton,
 } from '@/components/emcn'
-import { Skeleton } from '@/components/ui/skeleton'
 import { VerifiedBadge } from '@/components/ui/verified-badge'
 import { useSession } from '@/lib/auth/auth-client'
 import { cn } from '@/lib/core/utils/cn'
@@ -148,7 +148,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
   const [currentUserOrgRoles, setCurrentUserOrgRoles] = useState<
     Array<{ organizationId: string; role: string }>
   >([])
-  const [isSuperUser, setIsSuperUser] = useState(false)
+  const isSuperUser = session?.user?.role === 'admin'
   const [isUsing, setIsUsing] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [isApproving, setIsApproving] = useState(false)
@@ -186,21 +186,6 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
       }
     }
 
-    const fetchSuperUserStatus = async () => {
-      if (!currentUserId) return
-
-      try {
-        const response = await fetch('/api/user/super-user')
-        if (response.ok) {
-          const data = await response.json()
-          setIsSuperUser(data.isSuperUser || false)
-        }
-      } catch (error) {
-        logger.error('Error fetching super user status:', error)
-      }
-    }
-
-    fetchSuperUserStatus()
     fetchUserOrganizations()
   }, [currentUserId])
 
@@ -733,7 +718,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                 <>
                   {!currentUserId ? (
                     <Button
-                      variant='tertiary'
+                      variant='primary'
                       onClick={() => {
                         const callbackUrl =
                           isWorkspaceContext && workspaceId
@@ -749,7 +734,7 @@ export default function TemplateDetails({ isWorkspaceContext = false }: Template
                     </Button>
                   ) : isWorkspaceContext ? (
                     <Button
-                      variant='tertiary'
+                      variant='primary'
                       onClick={handleUseTemplate}
                       disabled={isUsing}
                       className='!text-[#FFFFFF] h-[32px] rounded-[6px] px-[12px] text-[14px]'

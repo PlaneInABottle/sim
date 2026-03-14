@@ -98,7 +98,7 @@ export function FileViewer({
         file={file}
         workspaceId={workspaceId}
         canEdit={canEdit}
-        previewMode={previewMode ?? (showPreview ? 'split' : 'editor')}
+        previewMode={previewMode ?? (showPreview ? 'preview' : 'editor')}
         autoFocus={autoFocus}
         onDirtyChange={onDirtyChange}
         onSaveStatusChange={onSaveStatusChange}
@@ -215,16 +215,13 @@ function TextEditor({
     onSaveStatusChange?.(saveStatus)
   }, [saveStatus, onSaveStatusChange])
 
-  useEffect(() => {
-    if (saveRef) {
-      saveRef.current = saveImmediately
-    }
-    return () => {
-      if (saveRef) {
-        saveRef.current = null
-      }
-    }
-  }, [saveRef, saveImmediately])
+  if (saveRef) saveRef.current = saveImmediately
+  useEffect(
+    () => () => {
+      if (saveRef) saveRef.current = null
+    },
+    [saveRef]
+  )
 
   useEffect(() => {
     if (!isResizing) return

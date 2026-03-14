@@ -18,11 +18,11 @@ import {
   ModalTabsContent,
   ModalTabsList,
   ModalTabsTrigger,
+  Skeleton,
   TagInput,
   type TagItem,
 } from '@/components/emcn'
 import { SlackIcon } from '@/components/icons'
-import { Skeleton } from '@/components/ui'
 import { dollarsToCredits } from '@/lib/billing/credits/conversion'
 import { getTriggerOptions } from '@/lib/logs/get-trigger-options'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
@@ -580,7 +580,7 @@ export const NotificationSettings = memo(function NotificationSettings({
 
           <div className='flex flex-shrink-0 items-center gap-[8px]'>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={() => handleTest(subscription.id)}
               disabled={testNotification.isPending && testStatus?.id !== subscription.id}
             >
@@ -1235,7 +1235,7 @@ export const NotificationSettings = memo(function NotificationSettings({
                   </Button>
                 )}
                 <Button
-                  variant='tertiary'
+                  variant='primary'
                   onClick={handleSave}
                   disabled={createNotification.isPending || updateNotification.isPending}
                 >
@@ -1254,7 +1254,7 @@ export const NotificationSettings = memo(function NotificationSettings({
                   resetForm()
                   setShowForm(true)
                 }}
-                variant='tertiary'
+                variant='primary'
                 disabled={isLoading}
               >
                 <Plus className='mr-[6px] h-[13px] w-[13px]' />

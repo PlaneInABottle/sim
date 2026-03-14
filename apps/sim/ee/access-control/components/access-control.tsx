@@ -20,9 +20,10 @@ import {
   ModalTabsContent,
   ModalTabsList,
   ModalTabsTrigger,
+  Skeleton,
   Switch,
 } from '@/components/emcn'
-import { Input as BaseInput, Skeleton } from '@/components/ui'
+import { Input as BaseInput } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client'
 import type { PermissionGroupConfig } from '@/lib/permission-groups/types'
@@ -138,7 +139,7 @@ function AddMembersModal({
                     className='h-auto flex-1 border-0 bg-transparent p-0 font-base text-[14px] leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
                   />
                 </div>
-                <Button variant='tertiary' onClick={handleToggleAll}>
+                <Button variant='primary' onClick={handleToggleAll}>
                   {allFilteredSelected ? 'Deselect All' : 'Select All'}
                 </Button>
               </div>
@@ -203,7 +204,7 @@ function AddMembersModal({
             Cancel
           </Button>
           <Button
-            variant='tertiary'
+            variant='primary'
             onClick={onAddMembers}
             disabled={selectedMemberIds.size === 0 || isAdding}
           >
@@ -724,7 +725,7 @@ export function AccessControl() {
                 <span className='font-medium text-[14px] text-[var(--text-secondary)]'>
                   Members
                 </span>
-                <Button variant='tertiary' onClick={handleOpenAddMembersModal}>
+                <Button variant='primary' onClick={handleOpenAddMembersModal}>
                   <Plus className='mr-[6px] h-[13px] w-[13px]' />
                   Add
                 </Button>
@@ -842,7 +843,7 @@ export function AccessControl() {
                         />
                       </div>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         onClick={() => {
                           const allAllowed =
                             editingConfig?.allowedModelProviders === null ||
@@ -896,7 +897,7 @@ export function AccessControl() {
                         />
                       </div>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         onClick={() => {
                           const allAllowed =
                             editingConfig?.allowedIntegrations === null ||
@@ -957,7 +958,7 @@ export function AccessControl() {
                         />
                       </div>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         onClick={() => {
                           const allVisible =
                             !editingConfig?.hideKnowledgeBaseTab &&
@@ -1080,7 +1081,7 @@ export function AccessControl() {
                 Cancel
               </Button>
               <Button
-                variant='tertiary'
+                variant='primary'
                 onClick={handleSaveConfig}
                 disabled={updatePermissionGroup.isPending || !hasConfigChanges}
               >
@@ -1113,7 +1114,7 @@ export function AccessControl() {
                 Discard Changes
               </Button>
               <Button
-                variant='tertiary'
+                variant='primary'
                 onClick={() => {
                   setShowUnsavedChanges(false)
                   handleSaveConfig()
@@ -1155,7 +1156,7 @@ export function AccessControl() {
               className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
             />
           </div>
-          <Button variant='tertiary' onClick={() => setShowCreateModal(true)}>
+          <Button variant='primary' onClick={() => setShowCreateModal(true)}>
             <Plus className='mr-[6px] h-[13px] w-[13px]' />
             Create
           </Button>
@@ -1248,7 +1249,7 @@ export function AccessControl() {
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={handleCreatePermissionGroup}
               disabled={!newGroupName.trim() || createPermissionGroup.isPending}
             >

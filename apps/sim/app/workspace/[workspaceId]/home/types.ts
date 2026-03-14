@@ -33,6 +33,7 @@ export interface QueuedMessage {
  */
 export type SSEEventType =
   | 'chat_id'
+  | 'request_id'
   | 'title_updated'
   | 'content'
   | 'reasoning' // openai reasoning - render as thinking text
@@ -129,11 +130,18 @@ export type ToolPhase =
 
 export type ToolCallStatus = 'executing' | 'success' | 'error' | 'cancelled'
 
+export interface ToolCallResult {
+  success: boolean
+  output?: unknown
+  error?: string
+}
+
 export interface ToolCallData {
   id: string
   toolName: string
   displayTitle: string
   status: ToolCallStatus
+  result?: ToolCallResult
 }
 
 export interface ToolCallInfo {
@@ -155,6 +163,7 @@ export type ContentBlockType =
   | 'text'
   | 'tool_call'
   | 'subagent'
+  | 'subagent_end'
   | 'subagent_text'
   | 'options'
   | 'stopped'
@@ -162,6 +171,7 @@ export type ContentBlockType =
 export interface ContentBlock {
   type: ContentBlockType
   content?: string
+  subagent?: string
   toolCall?: ToolCallInfo
   options?: OptionItem[]
 }
@@ -190,6 +200,7 @@ export interface ChatMessage {
   contentBlocks?: ContentBlock[]
   attachments?: ChatMessageAttachment[]
   contexts?: ChatMessageContext[]
+  requestId?: string
 }
 
 export const SUBAGENT_LABELS: Record<SubagentName, string> = {

@@ -486,7 +486,7 @@ export function ScheduleModal({ open, onOpenChange, workspaceId, schedule }: Sch
                 onValueChange={(value) => setLifecycle(value as 'persistent' | 'until_complete')}
               >
                 <ButtonGroupItem value='persistent'>Recurring</ButtonGroupItem>
-                <ButtonGroupItem value='until_complete'>Until Complete</ButtonGroupItem>
+                <ButtonGroupItem value='until_complete'>Number of runs</ButtonGroupItem>
               </ButtonGroup>
             </div>
 
@@ -541,7 +541,7 @@ export function ScheduleModal({ open, onOpenChange, workspaceId, schedule }: Sch
             Cancel
           </Button>
           <Button
-            variant='tertiary'
+            variant='primary'
             onClick={handleSubmit}
             disabled={
               !isFormValid || createScheduleMutation.isPending || updateScheduleMutation.isPending

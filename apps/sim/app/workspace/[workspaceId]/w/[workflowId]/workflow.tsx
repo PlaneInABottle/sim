@@ -73,6 +73,7 @@ import { useWorkspaceEnvironment } from '@/hooks/queries/environment'
 import { useAutoConnect, useSnapToGridSize } from '@/hooks/queries/general-settings'
 import { useCanvasViewport } from '@/hooks/use-canvas-viewport'
 import { useCollaborativeWorkflow } from '@/hooks/use-collaborative-workflow'
+import { useOAuthReturnForWorkflow } from '@/hooks/use-oauth-return'
 import { useStreamCleanup } from '@/hooks/use-stream-cleanup'
 import { useCanvasModeStore } from '@/stores/canvas-mode'
 import { useChatStore } from '@/stores/chat/store'
@@ -207,6 +208,8 @@ const reactFlowStyles = [
   '[&_.react-flow__node-subflowNode.selected]:!shadow-none',
 ].join(' ')
 const reactFlowFitViewOptions = { padding: 0.6, maxZoom: 1.0 } as const
+const embeddedFitViewOptions = { padding: 0.15, maxZoom: 0.85, minZoom: 0.1 } as const
+const embeddedResizeFitViewOptions = { ...embeddedFitViewOptions, duration: 0 } as const
 const reactFlowProOptions = { hideAttribution: true } as const
 
 /**
@@ -242,7 +245,10 @@ const WorkflowContent = React.memo(
     const [potentialParentId, setPotentialParentId] = useState<string | null>(null)
     const [selectedEdges, setSelectedEdges] = useState<SelectedEdgesMap>(new Map())
     const [isErrorConnectionDrag, setIsErrorConnectionDrag] = useState(false)
+    const canvasContainerRef = useRef<HTMLDivElement>(null)
     const selectedIdsRef = useRef<string[] | null>(null)
+    const embeddedFitFrameRef = useRef<number | null>(null)
+    const hasCompletedInitialEmbeddedFitRef = useRef(false)
     const canvasMode = useCanvasModeStore((state) => state.mode)
     const isHandMode = embedded ? true : canvasMode === 'hand'
     const { handleCanvasMouseDown, selectionProps } = useShiftSelectionLock({ isHandMode })
@@ -258,7 +264,9 @@ const WorkflowContent = React.memo(
     const router = useRouter()
     const reactFlowInstance = useReactFlow()
     const { screenToFlowPosition, getNodes, setNodes, getIntersectingNodes } = reactFlowInstance
-    const { fitViewToBounds, getViewportCenter } = useCanvasViewport(reactFlowInstance)
+    const { fitViewToBounds, getViewportCenter } = useCanvasViewport(reactFlowInstance, {
+      embedded,
+    })
     const { emitCursorUpdate } = useSocket()
     useDynamicHandleRefresh()
 
@@ -267,68 +275,7 @@ const WorkflowContent = React.memo(
 
     const addNotification = useNotificationStore((state) => state.addNotification)
 
-    useEffect(() => {
-      const OAUTH_CONNECT_PENDING_KEY = 'sim.oauth-connect-pending'
-      const pending = window.sessionStorage.getItem(OAUTH_CONNECT_PENDING_KEY)
-      if (!pending) return
-      window.sessionStorage.removeItem(OAUTH_CONNECT_PENDING_KEY)
-
-      ;(async () => {
-        try {
-          const {
-            displayName,
-            providerId,
-            preCount,
-            workspaceId: wsId,
-            reconnect,
-          } = JSON.parse(pending) as {
-            displayName: string
-            providerId: string
-            preCount: number
-            workspaceId: string
-            reconnect?: boolean
-          }
-
-          if (reconnect) {
-            addNotification({
-              level: 'info',
-              message: `"${displayName}" reconnected successfully.`,
-            })
-            window.dispatchEvent(
-              new CustomEvent('oauth-credentials-updated', {
-                detail: { providerId, workspaceId: wsId },
-              })
-            )
-            return
-          }
-
-          const response = await fetch(
-            `/api/credentials?workspaceId=${encodeURIComponent(wsId)}&type=oauth`
-          )
-          const data = response.ok ? await response.json() : { credentials: [] }
-          const oauthCredentials = (data.credentials ?? []) as Array<{
-            displayName: string
-            providerId: string | null
-          }>
-
-          if (oauthCredentials.length > preCount) {
-            addNotification({
-              level: 'info',
-              message: `"${displayName}" credential connected successfully.`,
-            })
-          } else {
-            const existing = oauthCredentials.find((c) => c.providerId === providerId)
-            const existingName = existing?.displayName || displayName
-            addNotification({
-              level: 'info',
-              message: `This account is already connected as "${existingName}".`,
-            })
-          }
-        } catch {
-          // Ignore malformed sessionStorage data
-        }
-      })()
-    }, [])
+    useOAuthReturnForWorkflow(workflowIdParam)
 
     const {
       workflows,
@@ -389,9 +336,7 @@ const WorkflowContent = React.memo(
 
     const isAutoConnectEnabled = useAutoConnect()
     const autoConnectRef = useRef(isAutoConnectEnabled)
-    useEffect(() => {
-      autoConnectRef.current = isAutoConnectEnabled
-    }, [isAutoConnectEnabled])
+    autoConnectRef.current = isAutoConnectEnabled
 
     // Panel open states for context menu
     const isVariablesOpen = useVariablesStore((state) => state.isOpen)
@@ -431,6 +376,34 @@ const WorkflowContent = React.memo(
         lastSaved,
       ]
     )
+
+    const scheduleEmbeddedFit = useCallback(() => {
+      if (!embedded || !isWorkflowReady) return
+
+      if (embeddedFitFrameRef.current !== null) {
+        cancelAnimationFrame(embeddedFitFrameRef.current)
+      }
+
+      embeddedFitFrameRef.current = requestAnimationFrame(() => {
+        embeddedFitFrameRef.current = null
+
+        const container = canvasContainerRef.current
+        if (!container) return
+
+        const rect = container.getBoundingClientRect()
+        if (rect.width <= 0 || rect.height <= 0) return
+
+        const nodes = reactFlowInstance.getNodes()
+        if (nodes.length > 0) {
+          void reactFlowInstance.fitView(embeddedResizeFitViewOptions)
+        }
+
+        if (!hasCompletedInitialEmbeddedFitRef.current) {
+          hasCompletedInitialEmbeddedFitRef.current = true
+          setIsCanvasReady(true)
+        }
+      })
+    }, [embedded, isWorkflowReady, reactFlowInstance])
 
     const {
       getNodeDepth,
@@ -500,7 +473,9 @@ const WorkflowContent = React.memo(
       []
     )
 
-    const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null)
+    const { handleAutoLayout: autoLayoutWithFitView } = useAutoLayout(activeWorkflowId || null, {
+      embedded,
+    })
 
     const isWorkflowEmpty = useMemo(() => Object.keys(blocks).length === 0, [blocks])
 
@@ -3809,10 +3784,46 @@ const WorkflowContent = React.memo(
       activeWorkflowId,
     ])
 
+    useEffect(() => {
+      if (!embedded || !isWorkflowReady) {
+        return
+      }
+
+      const container = canvasContainerRef.current
+      if (!container) {
+        return
+      }
+
+      scheduleEmbeddedFit()
+
+      const resizeObserver = new ResizeObserver(() => {
+        scheduleEmbeddedFit()
+      })
+
+      resizeObserver.observe(container)
+
+      return () => {
+        resizeObserver.disconnect()
+
+        if (embeddedFitFrameRef.current !== null) {
+          cancelAnimationFrame(embeddedFitFrameRef.current)
+          embeddedFitFrameRef.current = null
+        }
+      }
+    }, [embedded, isWorkflowReady, scheduleEmbeddedFit])
+
+    useEffect(() => {
+      if (!embedded || !isWorkflowReady) {
+        return
+      }
+
+      scheduleEmbeddedFit()
+    }, [blocksStructureHash, embedded, isWorkflowReady, scheduleEmbeddedFit])
+
     return (
       <div className='flex h-full w-full overflow-hidden'>
         <div className='flex min-w-0 flex-1 flex-col'>
-          <div className='relative flex-1 overflow-hidden'>
+          <div ref={canvasContainerRef} className='relative flex-1 overflow-hidden'>
             {!isWorkflowReady && (
               <div className='absolute inset-0 z-[5] flex items-center justify-center bg-[var(--bg)]'>
                 <div
@@ -3850,12 +3861,16 @@ const WorkflowContent = React.memo(
                   onDrop={effectivePermissions.canEdit ? onDrop : undefined}
                   onDragOver={effectivePermissions.canEdit ? onDragOver : undefined}
                   onInit={(instance) => {
+                    if (embedded) {
+                      return
+                    }
+
                     requestAnimationFrame(() => {
                       instance.fitView(reactFlowFitViewOptions)
                       setIsCanvasReady(true)
                     })
                   }}
-                  fitViewOptions={reactFlowFitViewOptions}
+                  fitViewOptions={embedded ? embeddedFitViewOptions : reactFlowFitViewOptions}
                   minZoom={0.1}
                   maxZoom={1.3}
                   panOnScroll
@@ -3981,7 +3996,7 @@ const WorkflowContent = React.memo(
               </>
             )}
 
-            {!embedded && <Notifications />}
+            <Notifications embedded={embedded} />
 
             {!embedded && isWorkflowReady && isWorkflowEmpty && effectivePermissions.canEdit && (
               <CommandList />

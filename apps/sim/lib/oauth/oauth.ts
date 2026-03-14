@@ -836,6 +836,9 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
           'crm.lists.read',
           'crm.lists.write',
           'crm.objects.tickets.read',
+          'crm.objects.tickets.write',
+          'tickets',
+          'oauth',
         ],
       },
     },
@@ -866,7 +869,7 @@ export const OAUTH_PROVIDERS: Record<string, OAuthProviderConfig> = {
         providerId: 'salesforce',
         icon: SalesforceIcon,
         baseProviderIcon: SalesforceIcon,
-        scopes: ['api', 'refresh_token', 'openid', 'offline_access'],
+        scopes: ['api', 'refresh_token', 'openid'],
       },
     },
     defaultService: 'salesforce',
@@ -960,6 +963,11 @@ interface ProviderAuthConfig {
    * instead of in the request body. Used by Cal.com.
    */
   refreshTokenInAuthHeader?: boolean
+  /**
+   * If true, the token endpoint expects a JSON body with Content-Type: application/json
+   * instead of the default application/x-www-form-urlencoded. Used by Notion.
+   */
+  useJsonBody?: boolean
 }
 
 /**
@@ -1056,8 +1064,9 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
         tokenEndpoint: 'https://api.notion.com/v1/oauth/token',
         clientId,
         clientSecret,
-        useBasicAuth: false,
+        useBasicAuth: true,
         supportsRefreshTokenRotation: true,
+        useJsonBody: true,
       }
     }
     case 'microsoft':
@@ -1295,9 +1304,9 @@ function getProviderAuthConfig(provider: string): ProviderAuthConfig {
 function buildAuthRequest(
   config: ProviderAuthConfig,
   refreshToken: string
-): { headers: Record<string, string>; bodyParams: Record<string, string> } {
+): { headers: Record<string, string>; bodyParams: Record<string, string>; useJsonBody?: boolean } {
   const headers: Record<string, string> = {
-    'Content-Type': 'application/x-www-form-urlencoded',
+    'Content-Type': config.useJsonBody ? 'application/json' : 'application/x-www-form-urlencoded',
     ...config.additionalHeaders,
   }
 
@@ -1326,7 +1335,7 @@ function buildAuthRequest(
     }
   }
 
-  return { headers, bodyParams }
+  return { headers, bodyParams, useJsonBody: config.useJsonBody }
 }
 
 /**
@@ -1361,12 +1370,12 @@ export async function refreshOAuthToken(
 
     const config = getProviderAuthConfig(provider)
 
-    const { headers, bodyParams } = buildAuthRequest(config, refreshToken)
+    const { headers, bodyParams, useJsonBody } = buildAuthRequest(config, refreshToken)
 
     const response = await fetch(config.tokenEndpoint, {
       method: 'POST',
       headers,
-      body: new URLSearchParams(bodyParams).toString(),
+      body: useJsonBody ? JSON.stringify(bodyParams) : new URLSearchParams(bodyParams).toString(),
     })
 
     if (!response.ok) {

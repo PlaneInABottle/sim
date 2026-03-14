@@ -19,6 +19,7 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   SModalTabs,
   SModalTabsBody,
   SModalTabsContent,
@@ -27,7 +28,7 @@ import {
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
+import { Input } from '@/components/ui'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
 import { useApiKeys } from '@/hooks/queries/api-keys'
@@ -349,7 +350,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                       <Tooltip.Trigger asChild>
                         <div className='inline-flex'>
                           <Button
-                            variant='tertiary'
+                            variant='primary'
                             onClick={() => setShowAddWorkflow(true)}
                             disabled
                           >
@@ -364,7 +365,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                     </Tooltip.Root>
                   ) : (
                     <Button
-                      variant='tertiary'
+                      variant='primary'
                       onClick={() => setShowAddWorkflow(true)}
                       disabled={!canAddWorkflow}
                     >
@@ -480,7 +481,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
                         workflows via the MCP block.
                       </p>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         className='self-start'
                         disabled={addToWorkspaceMutation.isPending || addedToWorkspace}
                         onClick={async () => {
@@ -739,7 +740,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={async () => {
                 if (!toolToView) return
                 try {
@@ -859,7 +860,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={handleAddWorkflow}
               disabled={!selectedWorkflowId || addToolMutation.isPending}
             >
@@ -920,7 +921,7 @@ function ServerDetailView({ workspaceId, serverId, onBack }: ServerDetailViewPro
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={handleSaveServerEdit}
               disabled={
                 !editServerName.trim() ||
@@ -1059,7 +1060,7 @@ export function WorkflowMcpServers() {
               className='h-auto flex-1 border-0 bg-transparent p-0 font-base leading-none placeholder:text-[var(--text-tertiary)] focus-visible:ring-0 focus-visible:ring-offset-0'
             />
           </div>
-          <Button onClick={() => setShowAddModal(true)} disabled={isLoading} variant='tertiary'>
+          <Button onClick={() => setShowAddModal(true)} disabled={isLoading} variant='primary'>
             <Plus className='mr-[6px] h-[13px] w-[13px]' />
             Add
           </Button>
@@ -1203,7 +1204,7 @@ export function WorkflowMcpServers() {
             <Button
               onClick={handleCreateServer}
               disabled={!isFormValid || createServerMutation.isPending}
-              variant='tertiary'
+              variant='primary'
             >
               {createServerMutation.isPending ? 'Adding...' : 'Add Server'}
             </Button>

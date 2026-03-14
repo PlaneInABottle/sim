@@ -17,11 +17,12 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Textarea,
   Tooltip,
   Trash,
 } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
+import { Input } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   clearPendingCredentialCreateRequest,
@@ -315,6 +316,9 @@ export function CredentialsManager() {
 
   // --- Detail view state ---
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
+  const [prevSelectedCredentialId, setPrevSelectedCredentialId] = useState<
+    string | null | undefined
+  >(undefined)
   const [selectedDisplayNameDraft, setSelectedDisplayNameDraft] = useState('')
   const [selectedDescriptionDraft, setSelectedDescriptionDraft] = useState('')
   const [copyIdSuccess, setCopyIdSuccess] = useState(false)
@@ -345,6 +349,19 @@ export function CredentialsManager() {
     () => envCredentials.find((c) => c.id === selectedCredentialId) || null,
     [envCredentials, selectedCredentialId]
   )
+
+  if (selectedCredential?.id !== prevSelectedCredentialId) {
+    setPrevSelectedCredentialId(selectedCredential?.id ?? null)
+    if (!selectedCredential) {
+      setSelectedDescriptionDraft('')
+      setSelectedDisplayNameDraft('')
+      setDetailsError(null)
+    } else {
+      setDetailsError(null)
+      setSelectedDescriptionDraft(selectedCredential.description || '')
+      setSelectedDisplayNameDraft(selectedCredential.displayName)
+    }
+  }
 
   // --- Detail view hooks ---
   const { data: members = [], isPending: membersLoading } = useWorkspaceCredentialMembers(
@@ -457,12 +474,10 @@ export function CredentialsManager() {
     return personalInvalid || workspaceInvalid
   }, [envVars, newWorkspaceRows])
 
-  // --- Effects ---
-  useEffect(() => {
-    hasChangesRef.current = hasChanges
-    shouldBlockNavRef.current = hasChanges || isDetailsDirty
-  }, [hasChanges, isDetailsDirty])
+  hasChangesRef.current = hasChanges
+  shouldBlockNavRef.current = hasChanges || isDetailsDirty
 
+  // --- Effects ---
   useEffect(() => {
     if (hasSavedRef.current) return
 
@@ -547,19 +562,6 @@ export function CredentialsManager() {
       window.removeEventListener('popstate', handlePopState)
     }
   }, [])
-
-  // --- Detail view: sync drafts when credential changes ---
-  useEffect(() => {
-    if (!selectedCredential) {
-      setSelectedDescriptionDraft('')
-      setSelectedDisplayNameDraft('')
-      return
-    }
-
-    setDetailsError(null)
-    setSelectedDescriptionDraft(selectedCredential.description || '')
-    setSelectedDisplayNameDraft(selectedCredential.displayName)
-  }, [selectedCredential])
 
   // --- Pending credential create request ---
   const applyPendingCredentialCreateRequest = useCallback(
@@ -1311,7 +1313,7 @@ export function CredentialsManager() {
               </Button>
               {isSelectedAdmin && (
                 <Button
-                  variant='tertiary'
+                  variant='primary'
                   onClick={handleSaveDetails}
                   disabled={!isDetailsDirty || isSavingDetails}
                 >
@@ -1414,7 +1416,7 @@ export function CredentialsManager() {
               <Button
                 onClick={handleSave}
                 disabled={isLoading || !hasChanges || hasConflicts || hasInvalidKeys}
-                variant='tertiary'
+                variant='primary'
                 className={`${hasConflicts || hasInvalidKeys ? 'cursor-not-allowed opacity-50' : ''}`}
               >
                 Save

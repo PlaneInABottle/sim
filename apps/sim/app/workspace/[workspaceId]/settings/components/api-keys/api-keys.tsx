@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { Info, Plus, Search } from 'lucide-react'
 import { useParams } from 'next/navigation'
@@ -11,10 +11,11 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Switch,
   Tooltip,
 } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
+import { Input } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { formatDate } from '@/lib/core/utils/formatting'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -63,12 +64,18 @@ export function ApiKeys() {
   const [deleteKey, setDeleteKey] = useState<ApiKey | null>(null)
   const [showDeleteDialog, setShowDeleteDialog] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
-  const [shouldScrollToBottom, setShouldScrollToBottom] = useState(false)
 
   const defaultKeyType = allowPersonalApiKeys ? 'personal' : 'workspace'
   const createButtonDisabled = isLoading || (!allowPersonalApiKeys && !canManageWorkspaceKeys)
 
   const scrollContainerRef = useRef<HTMLDivElement>(null)
+
+  const scrollToBottom = useCallback(() => {
+    scrollContainerRef.current?.scrollTo({
+      top: scrollContainerRef.current.scrollHeight,
+      behavior: 'smooth',
+    })
+  }, [])
 
   const filteredWorkspaceKeys = useMemo(() => {
     if (!searchTerm.trim()) {
@@ -110,16 +117,6 @@ export function ApiKeys() {
     }
   }
 
-  useEffect(() => {
-    if (shouldScrollToBottom && scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTo({
-        top: scrollContainerRef.current.scrollHeight,
-        behavior: 'smooth',
-      })
-      setShouldScrollToBottom(false)
-    }
-  }, [shouldScrollToBottom])
-
   const formatLastUsed = (dateString?: string) => {
     if (!dateString) return 'Never'
     return formatDate(new Date(dateString))
@@ -149,7 +146,7 @@ export function ApiKeys() {
             e.currentTarget.blur()
             setIsCreateDialogOpen(true)
           }}
-          variant='tertiary'
+          variant='primary'
           disabled={createButtonDisabled}
         >
           <Plus className='mr-[6px] h-[13px] w-[13px]' />

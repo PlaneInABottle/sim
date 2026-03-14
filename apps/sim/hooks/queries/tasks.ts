@@ -9,12 +9,18 @@ export interface TaskMetadata {
   isUnread: boolean
 }
 
+export interface StreamSnapshot {
+  events: Array<{ eventId: number; streamId: string; event: Record<string, unknown> }>
+  status: string
+}
+
 export interface TaskChatHistory {
   id: string
   title: string | null
   messages: TaskStoredMessage[]
   activeStreamId: string | null
   resources: MothershipResource[]
+  streamSnapshot?: StreamSnapshot | null
 }
 
 export interface TaskStoredToolCall {
@@ -48,6 +54,7 @@ export interface TaskStoredMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
+  requestId?: string
   toolCalls?: TaskStoredToolCall[]
   contentBlocks?: TaskStoredContentBlock[]
   fileAttachments?: TaskStoredFileAttachment[]
@@ -135,6 +142,7 @@ async function fetchChatHistory(chatId: string, signal?: AbortSignal): Promise<T
     messages: Array.isArray(chat.messages) ? chat.messages : [],
     activeStreamId: chat.conversationId || null,
     resources: Array.isArray(chat.resources) ? chat.resources : [],
+    streamSnapshot: chat.streamSnapshot || null,
   }
 }
 

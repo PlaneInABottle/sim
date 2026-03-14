@@ -208,6 +208,49 @@ export async function uploadWorkspaceFile(
 }
 
 /**
+ * Track a file that was already uploaded to workspace S3 as a chat-scoped upload.
+ * Links the existing workspaceFiles metadata record (created by the storage service
+ * during upload) to the chat by setting chatId and context='mothership'.
+ * Falls back to inserting a new record if none exists for the key.
+ */
+export async function trackChatUpload(
+  workspaceId: string,
+  userId: string,
+  chatId: string,
+  s3Key: string,
+  fileName: string,
+  contentType: string,
+  size: number
+): Promise<void> {
+  const updated = await db
+    .update(workspaceFiles)
+    .set({ chatId, context: 'mothership' })
+    .where(and(eq(workspaceFiles.key, s3Key), eq(workspaceFiles.workspaceId, workspaceId), isNull(workspaceFiles.deletedAt)))
+    .returning({ id: workspaceFiles.id })
+
+  if (updated.length > 0) {
+    logger.info(`Linked existing file record to chat: ${fileName} for chat ${chatId}`)
+    return
+  }
+
+  const fileId = `wf_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
+
+  await db.insert(workspaceFiles).values({
+    id: fileId,
+    key: s3Key,
+    userId,
+    workspaceId,
+    context: 'mothership',
+    chatId,
+    originalName: fileName,
+    contentType,
+    size,
+  })
+
+  logger.info(`Tracked chat upload: ${fileName} for chat ${chatId}`)
+}
+
+/**
  * Check if a file with the same name already exists in workspace
  */
 export async function fileExistsInWorkspace(

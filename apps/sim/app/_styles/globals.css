@@ -17,6 +17,18 @@
   --terminal-height: 206px; /* TERMINAL_HEIGHT.DEFAULT */
 }
 
+.workspace-root {
+  letter-spacing: 0.02em;
+}
+
+.workspace-root code,
+.workspace-root kbd,
+.workspace-root samp,
+.workspace-root pre,
+.workspace-root .font-mono {
+  letter-spacing: normal;
+}
+
 .sidebar-container {
   width: var(--sidebar-width);
   transition: width 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
@@ -33,12 +45,40 @@
   opacity: 0;
 }
 
+html[data-sidebar-collapsed] .sidebar-container span,
+html[data-sidebar-collapsed] .sidebar-container .text-small {
+  opacity: 0;
+}
+
 .sidebar-container .sidebar-collapse-hide {
   transition: opacity 60ms ease;
 }
 
-.sidebar-container[data-collapsed] .sidebar-collapse-hide {
+.sidebar-container[data-collapsed] .sidebar-collapse-hide,
+html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-hide {
   opacity: 0;
+}
+
+html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-remove {
+  display: none;
+}
+
+html[data-sidebar-collapsed] .sidebar-container .sidebar-collapse-btn {
+  width: 0;
+  opacity: 0;
+}
+
+@keyframes sidebar-collapse-guard {
+  from {
+    pointer-events: none;
+  }
+  to {
+    pointer-events: auto;
+  }
+}
+
+.sidebar-container[data-collapsed] {
+  animation: sidebar-collapse-guard 250ms step-end;
 }
 
 .sidebar-container.is-resizing {
@@ -145,7 +185,7 @@
     --brand-400: #8e4cfb;
     --brand-secondary: #33b4ff;
     --brand-tertiary: #22c55e;
-    --brand-tertiary-2: #32bd7e;
+    --brand-tertiary-2: #33c482;
     --selection: #1a5cf6;
     --warning: #ea580c;
 
@@ -267,7 +307,7 @@
     --brand-400: #8e4cfb;
     --brand-secondary: #33b4ff;
     --brand-tertiary: #22c55e;
-    --brand-tertiary-2: #32bd7e;
+    --brand-tertiary-2: #33c482;
     --selection: #4b83f7;
     --warning: #ff6600;
 
@@ -548,42 +588,6 @@ input[type="search"]::-ms-clear {
 
   .bg-input-background {
     background-color: hsl(var(--input-background));
-  }
-
-  .auth-card {
-    background-color: var(--white) !important;
-    border-color: var(--border-muted) !important;
-  }
-
-  .dark .auth-card {
-    background-color: var(--surface-1) !important;
-    border-color: var(--border-muted) !important;
-  }
-
-  .auth-text-primary {
-    color: var(--text-inverse) !important;
-  }
-
-  .auth-text-secondary {
-    color: var(--text-secondary) !important;
-  }
-
-  .auth-text-muted {
-    color: var(--text-muted) !important;
-  }
-
-  .auth-divider {
-    border-color: var(--border-muted) !important;
-  }
-
-  .auth-card-shadow {
-    box-shadow:
-      0 10px 15px -3px rgba(0, 0, 0, 0.05),
-      0 4px 6px -2px rgba(0, 0, 0, 0.05) !important;
-  }
-
-  .auth-link {
-    color: var(--text-muted) !important;
   }
 
   .transition-ring {
