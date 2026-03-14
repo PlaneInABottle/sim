@@ -12,6 +12,10 @@ const {
   mockGetJobQueue,
   mockShouldExecuteInline,
   mockEnqueue,
+  mockLoggerInfo,
+  mockLoggerWarn,
+  mockLoggerError,
+  mockLoggerDebug,
 } = vi.hoisted(() => ({
   mockCheckHybridAuth: vi.fn(),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
@@ -19,6 +23,10 @@ const {
   mockGetJobQueue: vi.fn(),
   mockShouldExecuteInline: vi.fn(),
   mockEnqueue: vi.fn().mockResolvedValue('job-123'),
+  mockLoggerInfo: vi.fn(),
+  mockLoggerWarn: vi.fn(),
+  mockLoggerError: vi.fn(),
+  mockLoggerDebug: vi.fn(),
 }))
 
 vi.mock('@/lib/auth/hybrid', () => ({
@@ -70,10 +78,10 @@ vi.mock('@/background/workflow-execution', () => ({
 
 vi.mock('@sim/logger', () => ({
   createLogger: vi.fn().mockReturnValue({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
+    info: mockLoggerInfo,
+    warn: mockLoggerWarn,
+    error: mockLoggerError,
+    debug: mockLoggerDebug,
   }),
 }))
 
@@ -84,9 +92,26 @@ vi.mock('uuid', () => ({
 
 import { POST } from './route'
 
+async function readJsonBody(response: Response) {
+  const text = await response.text()
+
+  return {
+    text,
+    json: text ? JSON.parse(text) : null,
+  }
+}
+
+function expectCheckpointOrder(checkpoints: string[], expected: string[]) {
+  expect(checkpoints).toEqual(expected)
+}
+
 describe('workflow execute async route', () => {
+  const asyncCheckpoints: string[] = []
+
   beforeEach(() => {
     vi.clearAllMocks()
+
+    asyncCheckpoints.length = 0
 
     mockCheckHybridAuth.mockReset()
     mockAuthorizeWorkflowByWorkspacePermission.mockReset()
@@ -102,31 +127,58 @@ describe('workflow execute async route', () => {
       completeJob: vi.fn(),
       markJobFailed: vi.fn(),
     })
-    mockShouldExecuteInline.mockReturnValue(false)
-
-    mockCheckHybridAuth.mockResolvedValue({
-      success: true,
-      userId: 'session-user-1',
-      authType: 'session',
+    mockShouldExecuteInline.mockImplementation(() => {
+      asyncCheckpoints.push('shouldExecuteInline')
+      return false
     })
 
-    mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
-      allowed: true,
-      workflow: {
-        id: 'workflow-1',
-        userId: 'owner-1',
-        workspaceId: 'workspace-1',
-      },
+    mockCheckHybridAuth.mockImplementation(async () => {
+      asyncCheckpoints.push('authorization')
+      return {
+        success: true,
+        userId: 'session-user-1',
+        authType: 'session',
+      }
     })
 
-    mockPreprocessExecution.mockResolvedValue({
-      success: true,
-      actorUserId: 'actor-1',
-      workflowRecord: {
-        id: 'workflow-1',
-        userId: 'owner-1',
-        workspaceId: 'workspace-1',
-      },
+    mockAuthorizeWorkflowByWorkspacePermission.mockImplementation(async () => {
+      asyncCheckpoints.push('authorizeWorkflowByWorkspacePermission')
+      return {
+        allowed: true,
+        workflow: {
+          id: 'workflow-1',
+          userId: 'owner-1',
+          workspaceId: 'workspace-1',
+        },
+      }
+    })
+
+    mockPreprocessExecution.mockImplementation(async () => {
+      asyncCheckpoints.push('preprocessing')
+      return {
+        success: true,
+        actorUserId: 'actor-1',
+        workflowRecord: {
+          id: 'workflow-1',
+          userId: 'owner-1',
+          workspaceId: 'workspace-1',
+        },
+      }
+    })
+
+    mockGetJobQueue.mockImplementation(async () => {
+      asyncCheckpoints.push('getJobQueue')
+      return {
+        enqueue: mockEnqueue,
+        startJob: vi.fn(),
+        completeJob: vi.fn(),
+        markJobFailed: vi.fn(),
+      }
+    })
+
+    mockEnqueue.mockImplementation(async () => {
+      asyncCheckpoints.push('enqueue')
+      return 'job-123'
     })
   })
 
@@ -142,11 +194,23 @@ describe('workflow execute async route', () => {
     const params = Promise.resolve({ id: 'workflow-1' })
 
     const response = await POST(req as any, { params })
-    const body = await response.json()
+    const { json: body, text: bodyText } = await readJsonBody(response)
 
-    expect(response.status).toBe(202)
+    expect(
+      response.status,
+      `Expected async execute route to return 202, got ${response.status} with body: ${bodyText}`
+    ).toBe(202)
+    expectCheckpointOrder(asyncCheckpoints, [
+      'authorization',
+      'authorizeWorkflowByWorkspacePermission',
+      'preprocessing',
+      'getJobQueue',
+      'enqueue',
+      'shouldExecuteInline',
+    ])
     expect(body.executionId).toBe('execution-123')
     expect(body.jobId).toBe('job-123')
+    expect(mockLoggerError).not.toHaveBeenCalled()
     expect(mockEnqueue).toHaveBeenCalledWith(
       'workflow-execution',
       expect.objectContaining({
@@ -175,6 +239,44 @@ describe('workflow execute async route', () => {
           },
         },
       }
+    )
+  })
+
+  it('returns queue failure payload with checkpoint trail and logs the queue error', async () => {
+    const queueError = new Error('queue unavailable')
+    mockEnqueue.mockImplementationOnce(async () => {
+      asyncCheckpoints.push('enqueue')
+      throw queueError
+    })
+
+    const req = createMockRequest(
+      'POST',
+      { input: { hello: 'world' } },
+      {
+        'Content-Type': 'application/json',
+        'X-Execution-Mode': 'async',
+      }
+    )
+
+    const response = await POST(req as any, { params: Promise.resolve({ id: 'workflow-1' }) })
+    const { json: body, text: bodyText } = await readJsonBody(response)
+
+    expectCheckpointOrder(asyncCheckpoints, [
+      'authorization',
+      'authorizeWorkflowByWorkspacePermission',
+      'preprocessing',
+      'getJobQueue',
+      'enqueue',
+    ])
+    expect(
+      response.status,
+      `Expected async execute route to return 500, got ${response.status} with body: ${bodyText}`
+    ).toBe(500)
+    expect(body).toEqual({ error: 'Failed to queue async execution: queue unavailable' })
+    expect(mockShouldExecuteInline).not.toHaveBeenCalled()
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      '[req-12345678] Failed to queue async execution',
+      queueError
     )
   })
 })

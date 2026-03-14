@@ -35,26 +35,6 @@ export async function validateWorkflowAccess(
     const action = normalizedOptions.action ?? 'read'
     const allowInternalSecret = normalizedOptions.allowInternalSecret ?? false
 
-    const workflow = await getWorkflowById(workflowId)
-    if (!workflow) {
-      return {
-        error: {
-          message: 'Workflow not found',
-          status: 404,
-        },
-      }
-    }
-
-    if (!workflow.workspaceId) {
-      return {
-        error: {
-          message:
-            'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
-          status: 403,
-        },
-      }
-    }
-
     if (!requireDeployment) {
       const auth = await checkHybridAuth(request, { requireWorkflowId: false })
       if (!auth.success || !auth.userId) {
@@ -62,6 +42,26 @@ export async function validateWorkflowAccess(
           error: {
             message: auth.error || 'Unauthorized',
             status: 401,
+          },
+        }
+      }
+
+      const workflow = await getWorkflowById(workflowId)
+      if (!workflow) {
+        return {
+          error: {
+            message: 'Workflow not found',
+            status: 404,
+          },
+        }
+      }
+
+      if (!workflow.workspaceId) {
+        return {
+          error: {
+            message:
+              'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+            status: 403,
           },
         }
       }
@@ -81,6 +81,26 @@ export async function validateWorkflowAccess(
       }
 
       return { workflow, auth }
+    }
+
+    const workflow = await getWorkflowById(workflowId)
+    if (!workflow) {
+      return {
+        error: {
+          message: 'Workflow not found',
+          status: 404,
+        },
+      }
+    }
+
+    if (!workflow.workspaceId) {
+      return {
+        error: {
+          message:
+            'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+          status: 403,
+        },
+      }
     }
 
     if (requireDeployment) {
