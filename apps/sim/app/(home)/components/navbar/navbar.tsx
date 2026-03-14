@@ -1,6 +1,7 @@
 import Image from 'next/image'
 import Link from 'next/link'
 import { ChevronDown } from '@/components/emcn'
+import { isPublicCareersLinkEnabled } from '@/lib/core/config/feature-flags'
 import { GitHubStars } from '@/app/(home)/components/navbar/components/github-stars'
 
 interface NavLink {
@@ -10,12 +11,14 @@ interface NavLink {
   icon?: 'chevron'
 }
 
-const NAV_LINKS: NavLink[] = [
-  { label: 'Docs', href: 'https://docs.sim.ai', external: true },
-  { label: 'Pricing', href: '/pricing' },
-  { label: 'Careers', href: '/careers' },
-  { label: 'Enterprise', href: '/enterprise' },
-]
+function getNavLinks(): NavLink[] {
+  return [
+    { label: 'Docs', href: 'https://docs.sim.ai', external: true },
+    { label: 'Pricing', href: '/pricing' },
+    ...(isPublicCareersLinkEnabled ? [{ label: 'Careers', href: '/careers' }] : []),
+    { label: 'Enterprise', href: '/enterprise' },
+  ]
+}
 
 /** Logo and nav edge: horizontal padding (px) for left/right symmetry. */
 const LOGO_CELL = 'flex items-center px-[20px]'
@@ -24,6 +27,8 @@ const LOGO_CELL = 'flex items-center px-[20px]'
 const LINK_CELL = 'flex items-center px-[14px]'
 
 export default function Navbar() {
+  const navLinks = getNavLinks()
+
   return (
     <nav
       aria-label='Primary navigation'
@@ -48,7 +53,7 @@ export default function Navbar() {
 
       {/* Links */}
       <ul className='mt-[0.75px] flex'>
-        {NAV_LINKS.map(({ label, href, external, icon }) => (
+        {navLinks.map(({ label, href, external, icon }) => (
           <li key={label} className='flex'>
             {external ? (
               <a href={href} target='_blank' rel='noopener noreferrer' className={LINK_CELL}>
