@@ -367,6 +367,12 @@ export const env = createEnv({
     NEXT_PUBLIC_E2B_ENABLED:               z.string().optional(),
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED:  z.string().optional(),
     NEXT_PUBLIC_ENABLE_PLAYGROUND:         z.string().optional(),                  // Enable component playground at /playground
+    NEXT_PUBLIC_ENABLE_LANDING_PAGE:       z.string().optional(),                  // Enable the public landing page at /
+    NEXT_PUBLIC_ENABLE_STUDIO_PAGES:       z.string().optional(),                  // Enable public studio pages and studio discovery feeds
+    NEXT_PUBLIC_ENABLE_CHANGELOG_PAGE:     z.string().optional(),                  // Enable the public changelog page
+    NEXT_PUBLIC_ENABLE_LEGAL_PAGES:        z.string().optional(),                  // Enable the public legal pages at /terms and /privacy
+    NEXT_PUBLIC_ENABLE_TEMPLATES_PAGES:    z.string().optional(),                  // Enable public templates list/detail pages
+    NEXT_PUBLIC_ENABLE_CAREERS_LINK:       z.string().optional(),                  // Enable public careers links and /careers redirect
     NEXT_PUBLIC_DOCUMENTATION_URL:         z.string().url().optional(),            // Custom documentation URL
     NEXT_PUBLIC_TERMS_URL:                 z.string().url().optional(),            // Custom terms of service URL
     NEXT_PUBLIC_PRIVACY_URL:               z.string().url().optional(),            // Custom privacy policy URL
@@ -421,6 +427,12 @@ export const env = createEnv({
     NEXT_PUBLIC_E2B_ENABLED: process.env.NEXT_PUBLIC_E2B_ENABLED,
     NEXT_PUBLIC_COPILOT_TRAINING_ENABLED: process.env.NEXT_PUBLIC_COPILOT_TRAINING_ENABLED,
     NEXT_PUBLIC_ENABLE_PLAYGROUND: process.env.NEXT_PUBLIC_ENABLE_PLAYGROUND,
+    NEXT_PUBLIC_ENABLE_LANDING_PAGE: process.env.NEXT_PUBLIC_ENABLE_LANDING_PAGE,
+    NEXT_PUBLIC_ENABLE_STUDIO_PAGES: process.env.NEXT_PUBLIC_ENABLE_STUDIO_PAGES,
+    NEXT_PUBLIC_ENABLE_CHANGELOG_PAGE: process.env.NEXT_PUBLIC_ENABLE_CHANGELOG_PAGE,
+    NEXT_PUBLIC_ENABLE_LEGAL_PAGES: process.env.NEXT_PUBLIC_ENABLE_LEGAL_PAGES,
+    NEXT_PUBLIC_ENABLE_TEMPLATES_PAGES: process.env.NEXT_PUBLIC_ENABLE_TEMPLATES_PAGES,
+    NEXT_PUBLIC_ENABLE_CAREERS_LINK: process.env.NEXT_PUBLIC_ENABLE_CAREERS_LINK,
     NEXT_PUBLIC_POSTHOG_ENABLED: process.env.NEXT_PUBLIC_POSTHOG_ENABLED,
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NODE_ENV: process.env.NODE_ENV,

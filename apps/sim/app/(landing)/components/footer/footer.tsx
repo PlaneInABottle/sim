@@ -1,4 +1,11 @@
 import Link from 'next/link'
+import {
+  isPublicCareersLinkEnabled,
+  isPublicChangelogPageEnabled,
+  isPublicLandingPageEnabled,
+  isPublicLegalPagesEnabled,
+  isPublicStudioPagesEnabled,
+} from '@/lib/core/config/feature-flags'
 import { inter } from '@/app/_styles/fonts/inter/inter'
 import {
   ComplianceBadges,
@@ -43,12 +50,14 @@ export default function Footer({ fullWidth = false }: FooterProps) {
               >
                 Docs
               </Link>
-              <Link
-                href='#pricing'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Pricing
-              </Link>
+              {isPublicLandingPageEnabled && (
+                <Link
+                  href='#pricing'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Pricing
+                </Link>
+              )}
               <Link
                 href='https://form.typeform.com/to/jqCO12pF'
                 target='_blank'
@@ -57,18 +66,22 @@ export default function Footer({ fullWidth = false }: FooterProps) {
               >
                 Enterprise
               </Link>
-              <Link
-                href='/studio'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Sim Studio
-              </Link>
-              <Link
-                href='/changelog'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Changelog
-              </Link>
+              {isPublicStudioPagesEnabled && (
+                <Link
+                  href='/studio'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Sim Studio
+                </Link>
+              )}
+              {isPublicChangelogPageEnabled && (
+                <Link
+                  href='/changelog'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Changelog
+                </Link>
+              )}
               <Link
                 href='https://status.sim.ai'
                 target='_blank'
@@ -77,30 +90,36 @@ export default function Footer({ fullWidth = false }: FooterProps) {
               >
                 Status
               </Link>
-              <a
-                href='https://jobs.ashbyhq.com/sim'
-                target='_blank'
-                rel='noopener noreferrer'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Careers
-              </a>
-              <Link
-                href='/privacy'
-                target='_blank'
-                rel='noopener noreferrer'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Privacy Policy
-              </Link>
-              <Link
-                href='/terms'
-                target='_blank'
-                rel='noopener noreferrer'
-                className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
-              >
-                Terms of Service
-              </Link>
+              {isPublicCareersLinkEnabled && (
+                <a
+                  href='https://jobs.ashbyhq.com/sim'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Careers
+                </a>
+              )}
+              {isPublicLegalPagesEnabled && (
+                <Link
+                  href='/privacy'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Privacy Policy
+                </Link>
+              )}
+              {isPublicLegalPagesEnabled && (
+                <Link
+                  href='/terms'
+                  target='_blank'
+                  rel='noopener noreferrer'
+                  className='text-[14px] text-muted-foreground transition-colors hover:text-foreground'
+                >
+                  Terms of Service
+                </Link>
+              )}
             </div>
           </div>
 

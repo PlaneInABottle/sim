@@ -1,6 +1,12 @@
+import { notFound } from 'next/navigation'
+import { isPublicStudioPagesEnabled } from '@/lib/core/config/feature-flags'
 import { Footer, Nav } from '@/app/(landing)/components'
 
 export default function StudioLayout({ children }: { children: React.ReactNode }) {
+  if (!isPublicStudioPagesEnabled) {
+    notFound()
+  }
+
   const orgJsonLd = {
     '@context': 'https://schema.org',
     '@type': 'Organization',

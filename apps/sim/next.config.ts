@@ -1,11 +1,23 @@
 import type { NextConfig } from 'next'
-import { env, getEnv, isTruthy } from './lib/core/config/env'
+import { env, getEnv, isFalsy, isTruthy } from './lib/core/config/env'
 import { isDev } from './lib/core/config/feature-flags'
 import {
   getFormEmbedCSPPolicy,
   getMainCSPPolicy,
   getWorkflowExecutionCSPPolicy,
 } from './lib/core/security/csp'
+
+export function getCareersRedirect(value: string | boolean | number | undefined) {
+  if (isFalsy(value)) {
+    return null
+  }
+
+  return {
+    source: '/careers',
+    destination: 'https://jobs.ashbyhq.com/sim',
+    permanent: true,
+  } as const
+}
 
 const nextConfig: NextConfig = {
   devIndicators: false,
@@ -307,6 +319,7 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     const redirects = []
+    const careersRedirect = getCareersRedirect(env.NEXT_PUBLIC_ENABLE_CAREERS_LINK)
 
     // Social link redirects (used in emails to avoid spam filter issues)
     redirects.push(
@@ -329,13 +342,12 @@ const nextConfig: NextConfig = {
         source: '/team',
         destination: 'https://cal.com/emirkarabeg/sim-team',
         permanent: false,
-      },
-      {
-        source: '/careers',
-        destination: 'https://jobs.ashbyhq.com/sim',
-        permanent: true,
       }
     )
+
+    if (careersRedirect) {
+      redirects.push(careersRedirect)
+    }
 
     // Redirect /building and /blog to /studio (legacy URL support)
     redirects.push(

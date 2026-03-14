@@ -3,10 +3,54 @@ import { templateCreators, templates } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { eq } from 'drizzle-orm'
 import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
+import { isPublicTemplatesPagesEnabled } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import TemplateDetails from '@/app/templates/[id]/template'
 
 const logger = createLogger('TemplateMetadata')
+
+function getUnavailableTemplateMetadata(): Metadata {
+  return {
+    title: 'Template Not Found',
+    description: 'The requested template could not be found.',
+    robots: {
+      index: false,
+      follow: false,
+      googleBot: {
+        index: false,
+        follow: false,
+      },
+    },
+  }
+}
+
+async function getPublicTemplateMetadataRecord(id: string) {
+  const result = await db
+    .select({
+      template: templates,
+      creator: templateCreators,
+    })
+    .from(templates)
+    .leftJoin(templateCreators, eq(templates.creatorId, templateCreators.id))
+    .where(eq(templates.id, id))
+    .limit(1)
+
+  if (result.length === 0) {
+    return null
+  }
+
+  const [{ template, creator }] = result
+
+  if (!isPublicTemplatesPagesEnabled || template.status !== 'approved') {
+    return null
+  }
+
+  return {
+    template,
+    creator,
+  }
+}
 
 /**
  * Generate dynamic metadata for template pages.
@@ -20,24 +64,13 @@ export async function generateMetadata({
   const { id } = await params
 
   try {
-    const result = await db
-      .select({
-        template: templates,
-        creator: templateCreators,
-      })
-      .from(templates)
-      .leftJoin(templateCreators, eq(templates.creatorId, templateCreators.id))
-      .where(eq(templates.id, id))
-      .limit(1)
+    const metadataRecord = await getPublicTemplateMetadataRecord(id)
 
-    if (result.length === 0) {
-      return {
-        title: 'Template Not Found',
-        description: 'The requested template could not be found.',
-      }
+    if (!metadataRecord) {
+      return getUnavailableTemplateMetadata()
     }
 
-    const { template, creator } = result[0]
+    const { template, creator } = metadataRecord
     const baseUrl = getBaseUrl()
 
     const details = template.details as { tagline?: string; about?: string } | null
@@ -76,10 +109,7 @@ export async function generateMetadata({
     }
   } catch (error) {
     logger.error('Failed to generate template metadata:', error)
-    return {
-      title: 'Template',
-      description: 'AI workflow template on Sim',
-    }
+    return getUnavailableTemplateMetadata()
   }
 }
 
@@ -88,5 +118,9 @@ export async function generateMetadata({
  * Authenticated-user redirect is handled in templates/[id]/layout.tsx.
  */
 export default function TemplatePage() {
+  if (!isPublicTemplatesPagesEnabled) {
+    notFound()
+  }
+
   return <TemplateDetails />
 }

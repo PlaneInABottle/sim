@@ -1,4 +1,6 @@
 import type { Metadata } from 'next'
+import { notFound } from 'next/navigation'
+import { isPublicLandingPageEnabled } from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 import Landing from '@/app/(landing)/landing'
 
@@ -84,5 +86,9 @@ export const metadata: Metadata = {
 }
 
 export default function Page() {
+  if (!isPublicLandingPageEnabled) {
+    notFound()
+  }
+
   return <Landing />
 }

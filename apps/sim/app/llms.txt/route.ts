@@ -1,7 +1,45 @@
+import {
+  isPublicCareersLinkEnabled,
+  isPublicChangelogPageEnabled,
+  isPublicLandingPageEnabled,
+  isPublicLegalPagesEnabled,
+  isPublicStudioPagesEnabled,
+  isPublicTemplatesPagesEnabled,
+} from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export async function GET() {
   const baseUrl = getBaseUrl()
+  const corePages = [
+    ...(isPublicLandingPageEnabled
+      ? [`- [Homepage](${baseUrl}): Main landing page with product overview and features`]
+      : []),
+    ...(isPublicTemplatesPagesEnabled
+      ? [`- [Templates](${baseUrl}/templates): Pre-built workflow templates to get started quickly`]
+      : []),
+    ...(isPublicChangelogPageEnabled
+      ? [`- [Changelog](${baseUrl}/changelog): Product updates and release notes`]
+      : []),
+    ...(isPublicStudioPagesEnabled
+      ? [
+          `- [Sim Studio Blog](${baseUrl}/studio): Announcements, insights, and guides for AI workflows`,
+        ]
+      : []),
+  ].join('\n')
+  const legalLinks = [
+    ...(isPublicLegalPagesEnabled
+      ? [
+          `- [Terms of Service](${baseUrl}/terms): Legal terms`,
+          `- [Privacy Policy](${baseUrl}/privacy): Data handling practices`,
+        ]
+      : []),
+  ].join('\n')
+  const optionalLinks = [
+    ...(isPublicCareersLinkEnabled
+      ? ['- [Careers](https://jobs.ashbyhq.com/sim): Join the Sim team']
+      : []),
+    ...(legalLinks ? [legalLinks] : []),
+  ].join('\n')
 
   const llmsContent = `# Sim
 
@@ -11,10 +49,7 @@ Sim provides a visual drag-and-drop interface for building and deploying AI agen
 
 ## Core Pages
 
-- [Homepage](${baseUrl}): Main landing page with product overview and features
-- [Templates](${baseUrl}/templates): Pre-built workflow templates to get started quickly
-- [Changelog](${baseUrl}/changelog): Product updates and release notes
-- [Sim Studio Blog](${baseUrl}/studio): Announcements, insights, and guides for AI workflows
+${corePages}
 
 ## Documentation
 
@@ -55,9 +90,7 @@ Sim provides a visual drag-and-drop interface for building and deploying AI agen
 
 ## Optional
 
-- [Careers](https://jobs.ashbyhq.com/sim): Join the Sim team
-- [Terms of Service](${baseUrl}/terms): Legal terms
-- [Privacy Policy](${baseUrl}/privacy): Data handling practices
+${optionalLinks}
 `
 
   return new Response(llmsContent, {

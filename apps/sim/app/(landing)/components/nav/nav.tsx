@@ -7,7 +7,11 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { GithubIcon } from '@/components/icons'
-import { isHosted } from '@/lib/core/config/feature-flags'
+import {
+  isHosted,
+  isPublicCareersLinkEnabled,
+  isPublicLandingPageEnabled,
+} from '@/lib/core/config/feature-flags'
 import { soehne } from '@/app/_styles/fonts/soehne/soehne'
 import { getFormattedGitHubStars } from '@/app/(landing)/actions/github'
 import { useBrandConfig } from '@/ee/whitelabeling'
@@ -58,6 +62,37 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
     window.open('https://form.typeform.com/to/jqCO12pF', '_blank', 'noopener,noreferrer')
   }, [])
 
+  const homeContent = (
+    <>
+      <span itemProp='name' className='sr-only'>
+        {brand.name} Home
+      </span>
+      {brand.logoUrl ? (
+        <Image
+          src={brand.logoUrl}
+          alt={`${brand.name} Logo`}
+          width={49.78314}
+          height={24.276}
+          className='h-[24.276px] w-auto object-contain'
+          priority
+          loading='eager'
+          quality={100}
+          unoptimized
+        />
+      ) : (
+        <Image
+          src='/logo/b&w/text/b&w.svg'
+          alt='Sim - Workflows for LLMs'
+          width={49.78314}
+          height={24.276}
+          priority
+          loading='eager'
+          quality={100}
+        />
+      )}
+    </>
+  )
+
   const NavLinks = () => (
     <>
       <li>
@@ -71,15 +106,17 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
           Docs
         </Link>
       </li>
-      <li>
-        <Link
-          href='/?from=nav#pricing'
-          className='text-[16px] text-muted-foreground transition-colors hover:text-foreground'
-          scroll={true}
-        >
-          Pricing
-        </Link>
-      </li>
+      {isPublicLandingPageEnabled && (
+        <li>
+          <Link
+            href='/?from=nav#pricing'
+            className='text-[16px] text-muted-foreground transition-colors hover:text-foreground'
+            scroll={true}
+          >
+            Pricing
+          </Link>
+        </li>
+      )}
       <li>
         <button
           onClick={handleEnterpriseClick}
@@ -90,16 +127,18 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
           Enterprise
         </button>
       </li>
-      <li>
-        <a
-          href='https://jobs.ashbyhq.com/sim'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='text-[16px] text-muted-foreground transition-colors hover:text-foreground'
-        >
-          Careers
-        </a>
-      </li>
+      {isPublicCareersLinkEnabled && (
+        <li>
+          <a
+            href='https://jobs.ashbyhq.com/sim'
+            target='_blank'
+            rel='noopener noreferrer'
+            className='text-[16px] text-muted-foreground transition-colors hover:text-foreground'
+          >
+            Careers
+          </a>
+        </li>
+      )}
       <li>
         <a
           href='https://github.com/simstudioai/sim'
@@ -125,34 +164,15 @@ export default function Nav({ hideAuthButtons = false, variant = 'landing' }: Na
       itemType='https://schema.org/SiteNavigationElement'
     >
       <div className='flex items-center gap-[34px]'>
-        <Link href='/?from=nav' aria-label={`${brand.name} home`} itemProp='url'>
-          <span itemProp='name' className='sr-only'>
-            {brand.name} Home
-          </span>
-          {brand.logoUrl ? (
-            <Image
-              src={brand.logoUrl}
-              alt={`${brand.name} Logo`}
-              width={49.78314}
-              height={24.276}
-              className='h-[24.276px] w-auto object-contain'
-              priority
-              loading='eager'
-              quality={100}
-              unoptimized
-            />
-          ) : (
-            <Image
-              src='/logo/b&w/text/b&w.svg'
-              alt='Sim - Workflows for LLMs'
-              width={49.78314}
-              height={24.276}
-              priority
-              loading='eager'
-              quality={100}
-            />
-          )}
-        </Link>
+        {isPublicLandingPageEnabled ? (
+          <Link href='/?from=nav' aria-label={`${brand.name} home`} itemProp='url'>
+            {homeContent}
+          </Link>
+        ) : (
+          <div aria-label={`${brand.name} home`} itemProp='name'>
+            {homeContent}
+          </div>
+        )}
         {/* Desktop Navigation Links - only show on landing and if hosted */}
         {variant === 'landing' && isHosted && (
           <ul className='hidden items-center justify-center gap-[20px] pt-[4px] md:flex'>

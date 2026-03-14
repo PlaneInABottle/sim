@@ -1,7 +1,19 @@
+import {
+  isPublicLandingPageEnabled,
+  isPublicLegalPagesEnabled,
+} from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export async function GET() {
   const baseUrl = getBaseUrl()
+  const websiteLink = isPublicLandingPageEnabled ? `- **Website**: ${baseUrl}` : ''
+  const gettingStartedSignUpLine = isPublicLandingPageEnabled
+    ? `1. **Sign Up**: Create a free account at ${baseUrl}`
+    : '1. **Sign Up**: Create a free account'
+  const legalLinks = [
+    ...(isPublicLegalPagesEnabled ? [`- **Terms of Service**: ${baseUrl}/terms`] : []),
+    ...(isPublicLegalPagesEnabled ? [`- **Privacy Policy**: ${baseUrl}/privacy`] : []),
+  ].join('\n')
 
   const llmsFullContent = `# Sim - AI Agent Workflow Builder
 
@@ -135,7 +147,7 @@ Built-in support for:
 
 ## Getting Started
 
-1. **Sign Up**: Create a free account at ${baseUrl}
+${gettingStartedSignUpLine}
 2. **Create Workspace**: Set up your first workspace
 3. **Build Workflow**: Drag blocks onto canvas and connect them
 4. **Configure Blocks**: Set up LLM providers, tools, and integrations
@@ -144,7 +156,7 @@ Built-in support for:
 
 ## Links
 
-- **Website**: ${baseUrl}
+${websiteLink}
 - **Documentation**: https://docs.sim.ai
 - **API Reference**: https://docs.sim.ai/api
 - **GitHub**: https://github.com/simstudioai/sim
@@ -161,8 +173,7 @@ Built-in support for:
 
 ## Legal
 
-- **Terms of Service**: ${baseUrl}/terms
-- **Privacy Policy**: ${baseUrl}/privacy
+${legalLinks}
 - **Security**: ${baseUrl}/.well-known/security.txt
 `
 

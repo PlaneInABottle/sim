@@ -1,17 +1,20 @@
-'use client'
-
-import { useEffect } from 'react'
 import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
 import { getEnv } from '@/lib/core/config/env'
+import { isPublicLegalPagesEnabled } from '@/lib/core/config/feature-flags'
 import { LegalLayout } from '@/app/(landing)/components'
 
 export default function TermsOfService() {
-  useEffect(() => {
-    const termsUrl = getEnv('NEXT_PUBLIC_TERMS_URL')
-    if (termsUrl?.startsWith('http')) {
-      window.location.href = termsUrl
-    }
-  }, [])
+  if (!isPublicLegalPagesEnabled) {
+    notFound()
+  }
+
+  const termsUrl = getEnv('NEXT_PUBLIC_TERMS_URL')
+
+  if (termsUrl?.startsWith('http')) {
+    redirect(termsUrl)
+  }
+
   return (
     <LegalLayout title='Terms of Service'>
       <section>

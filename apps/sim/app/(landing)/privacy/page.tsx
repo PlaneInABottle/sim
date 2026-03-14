@@ -1,17 +1,20 @@
-'use client'
-
-import { useEffect } from 'react'
 import Link from 'next/link'
+import { notFound, redirect } from 'next/navigation'
 import { getEnv } from '@/lib/core/config/env'
+import { isPublicLegalPagesEnabled } from '@/lib/core/config/feature-flags'
 import { LegalLayout } from '@/app/(landing)/components'
 
 export default function PrivacyPolicy() {
-  useEffect(() => {
-    const privacyUrl = getEnv('NEXT_PUBLIC_PRIVACY_URL')
-    if (privacyUrl?.startsWith('http')) {
-      window.location.href = privacyUrl
-    }
-  }, [])
+  if (!isPublicLegalPagesEnabled) {
+    notFound()
+  }
+
+  const privacyUrl = getEnv('NEXT_PUBLIC_PRIVACY_URL')
+
+  if (privacyUrl?.startsWith('http')) {
+    redirect(privacyUrl)
+  }
+
   return (
     <LegalLayout title='Privacy Policy'>
       <section>

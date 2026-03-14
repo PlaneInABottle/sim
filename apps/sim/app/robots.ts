@@ -1,4 +1,10 @@
 import type { MetadataRoute } from 'next'
+import {
+  isPublicChangelogPageEnabled,
+  isPublicLegalPagesEnabled,
+  isPublicStudioPagesEnabled,
+  isPublicTemplatesPagesEnabled,
+} from '@/lib/core/config/feature-flags'
 import { getBaseUrl } from '@/lib/core/utils/urls'
 
 export default function robots(): MetadataRoute.Robots {
@@ -15,6 +21,10 @@ export default function robots(): MetadataRoute.Robots {
     '/w/',
     '/_next/',
     '/private/',
+    ...(!isPublicStudioPagesEnabled ? ['/studio', '/studio/'] : []),
+    ...(!isPublicChangelogPageEnabled ? ['/changelog'] : []),
+    ...(!isPublicLegalPagesEnabled ? ['/terms', '/privacy'] : []),
+    ...(!isPublicTemplatesPagesEnabled ? ['/templates', '/templates/'] : []),
   ]
 
   return {

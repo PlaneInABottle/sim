@@ -21,9 +21,11 @@ export const isTest = env.NODE_ENV === 'test'
 /**
  * Is this the hosted version of the application
  */
-export const isHosted =
-  getEnv('NEXT_PUBLIC_APP_URL') === 'https://www.sim.ai' ||
-  getEnv('NEXT_PUBLIC_APP_URL') === 'https://www.staging.sim.ai'
+export function isHostedAppUrl(value: string | undefined): boolean {
+  return value === 'https://www.sim.ai' || value === 'https://www.staging.sim.ai'
+}
+
+export const isHosted = isHostedAppUrl(getEnv('NEXT_PUBLIC_APP_URL'))
 
 /**
  * Is billing enforcement enabled
@@ -116,6 +118,97 @@ export const isInvitationsDisabled = isTruthy(env.DISABLE_INVITATIONS)
  * When true, the public API toggle is hidden and public API access is blocked
  */
 export const isPublicApiDisabled = isTruthy(env.DISABLE_PUBLIC_API)
+
+/**
+ * Returns true unless the provided public flag is explicitly false.
+ */
+export function isPublicPageEnabled(value: string | boolean | number | undefined): boolean {
+  return !isFalsy(value)
+}
+
+/**
+ * Is the public landing page enabled.
+ */
+export const isPublicLandingPageEnabled = isPublicPageEnabled(env.NEXT_PUBLIC_ENABLE_LANDING_PAGE)
+
+/**
+ * Are public studio pages and feeds enabled.
+ */
+export const isPublicStudioPagesEnabled = isPublicPageEnabled(env.NEXT_PUBLIC_ENABLE_STUDIO_PAGES)
+
+/**
+ * Is the public changelog page enabled.
+ */
+export const isPublicChangelogPageEnabled = isPublicPageEnabled(
+  env.NEXT_PUBLIC_ENABLE_CHANGELOG_PAGE
+)
+
+/**
+ * Are public legal pages enabled.
+ */
+export const isPublicLegalPagesEnabled = isPublicPageEnabled(env.NEXT_PUBLIC_ENABLE_LEGAL_PAGES)
+
+/**
+ * Are public templates pages enabled.
+ */
+export const isPublicTemplatesPagesEnabled = isPublicPageEnabled(
+  env.NEXT_PUBLIC_ENABLE_TEMPLATES_PAGES
+)
+
+/**
+ * Is the public careers link enabled.
+ */
+export const isPublicCareersLinkEnabled = isPublicPageEnabled(env.NEXT_PUBLIC_ENABLE_CAREERS_LINK)
+
+interface PublicLegalLinkConfig {
+  href: string
+  isExternal: boolean
+}
+
+/**
+ * Resolves the auth-surface legal link destination.
+ */
+export function getAuthLegalLinkConfig({
+  isLegalPagesEnabled,
+  internalHref,
+  externalHref,
+}: {
+  isLegalPagesEnabled: boolean
+  internalHref: string
+  externalHref?: string
+}): PublicLegalLinkConfig | null {
+  if (isLegalPagesEnabled) {
+    return { href: internalHref, isExternal: false }
+  }
+
+  if (externalHref) {
+    return { href: externalHref, isExternal: true }
+  }
+
+  return null
+}
+
+/**
+ * Returns the auth-surface terms link destination or null when it should be hidden.
+ */
+export function getAuthTermsLinkConfig(): PublicLegalLinkConfig | null {
+  return getAuthLegalLinkConfig({
+    isLegalPagesEnabled: isPublicLegalPagesEnabled,
+    internalHref: '/terms',
+    externalHref: getEnv('NEXT_PUBLIC_TERMS_URL'),
+  })
+}
+
+/**
+ * Returns the auth-surface privacy link destination or null when it should be hidden.
+ */
+export function getAuthPrivacyLinkConfig(): PublicLegalLinkConfig | null {
+  return getAuthLegalLinkConfig({
+    isLegalPagesEnabled: isPublicLegalPagesEnabled,
+    internalHref: '/privacy',
+    externalHref: getEnv('NEXT_PUBLIC_PRIVACY_URL'),
+  })
+}
 
 /**
  * Is React Grab enabled for UI element debugging

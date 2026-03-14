@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server'
 import { getAllPostMeta } from '@/lib/blog/registry'
+import { isPublicStudioPagesEnabled } from '@/lib/core/config/feature-flags'
 
 export const revalidate = 3600
 
 export async function GET() {
+  if (!isPublicStudioPagesEnabled) {
+    return new NextResponse('Not Found', { status: 404 })
+  }
+
   const posts = await getAllPostMeta()
   const base = 'https://sim.ai'
   const xml = `<?xml version="1.0" encoding="UTF-8"?>

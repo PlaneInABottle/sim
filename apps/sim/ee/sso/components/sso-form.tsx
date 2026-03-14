@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { client } from '@/lib/auth/auth-client'
 import { env, isFalsy } from '@/lib/core/config/env'
+import { getAuthPrivacyLinkConfig, getAuthTermsLinkConfig } from '@/lib/core/config/feature-flags'
 import { cn } from '@/lib/core/utils/cn'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import { inter } from '@/app/_styles/fonts/inter/inter'
@@ -60,6 +61,8 @@ export default function SSOForm() {
   const [showEmailValidationError, setShowEmailValidationError] = useState(false)
   const buttonClass = useBrandedButtonClass()
   const [callbackUrl, setCallbackUrl] = useState('/workspace')
+  const termsLinkConfig = getAuthTermsLinkConfig()
+  const privacyLinkConfig = getAuthPrivacyLinkConfig()
 
   useEffect(() => {
     if (searchParams) {
@@ -248,28 +251,34 @@ export default function SSOForm() {
         </div>
       )}
 
-      <div
-        className={`${inter.className} auth-text-muted absolute right-0 bottom-0 left-0 px-8 pb-8 text-center font-[340] text-[13px] leading-relaxed sm:px-8 md:px-[44px]`}
-      >
-        By signing in, you agree to our{' '}
-        <Link
-          href='/terms'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='auth-link underline-offset-4 transition hover:underline'
+      {(termsLinkConfig || privacyLinkConfig) && (
+        <div
+          className={`${inter.className} auth-text-muted absolute right-0 bottom-0 left-0 px-8 pb-8 text-center font-[340] text-[13px] leading-relaxed sm:px-8 md:px-[44px]`}
         >
-          Terms of Service
-        </Link>{' '}
-        and{' '}
-        <Link
-          href='/privacy'
-          target='_blank'
-          rel='noopener noreferrer'
-          className='auth-link underline-offset-4 transition hover:underline'
-        >
-          Privacy Policy
-        </Link>
-      </div>
+          By signing in, you agree to our{' '}
+          {termsLinkConfig ? (
+            <Link
+              href={termsLinkConfig.href}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='auth-link underline-offset-4 transition hover:underline'
+            >
+              Terms of Service
+            </Link>
+          ) : null}
+          {termsLinkConfig && privacyLinkConfig ? ' and ' : null}
+          {privacyLinkConfig ? (
+            <Link
+              href={privacyLinkConfig.href}
+              target='_blank'
+              rel='noopener noreferrer'
+              className='auth-link underline-offset-4 transition hover:underline'
+            >
+              Privacy Policy
+            </Link>
+          ) : null}
+        </div>
+      )}
     </>
   )
 }

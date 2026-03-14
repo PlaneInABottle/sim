@@ -1,8 +1,9 @@
 import { db } from '@sim/db'
 import { permissions, templateCreators, templates, workspace } from '@sim/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
-import { redirect } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
+import { isPublicTemplatesPagesEnabled } from '@/lib/core/config/feature-flags'
 import type { Template } from '@/app/templates/templates'
 import Templates from '@/app/templates/templates'
 
@@ -12,6 +13,10 @@ import Templates from '@/app/templates/templates'
  * Allows unauthenticated users to view templates for SEO and discovery.
  */
 export default async function TemplatesPage() {
+  if (!isPublicTemplatesPagesEnabled) {
+    notFound()
+  }
+
   const session = await getSession()
 
   // Authenticated users: redirect to workspace-scoped templates
