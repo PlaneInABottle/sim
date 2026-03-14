@@ -100,6 +100,14 @@ export async function PATCH(
   const { id, version } = await params
 
   try {
+    const access = await validateWorkflowAccess(request, id, {
+      requireDeployment: false,
+      action: 'write',
+    })
+    if (access.error) {
+      return createErrorResponse(access.error.message, access.error.status)
+    }
+
     const body = await request.json()
     const validation = patchBodySchema.safeParse(body)
 
@@ -109,14 +117,14 @@ export async function PATCH(
 
     const { name, description, isActive } = validation.data
 
-    // Activation requires admin permission, other updates require write
-    const requiredPermission = isActive ? 'admin' : 'write'
-    const access = await validateWorkflowAccess(request, id, {
-      requireDeployment: false,
-      action: requiredPermission,
-    })
-    if (access.error) {
-      return createErrorResponse(access.error.message, access.error.status)
+    if (isActive) {
+      const activationAccess = await validateWorkflowAccess(request, id, {
+        requireDeployment: false,
+        action: 'admin',
+      })
+      if (activationAccess.error) {
+        return createErrorResponse(activationAccess.error.message, activationAccess.error.status)
+      }
     }
 
     const auth = access.auth

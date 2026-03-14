@@ -129,6 +129,30 @@ describe('Workflow deployment version route', () => {
     })
   })
 
+  it('uses write permission for metadata-only patch updates', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'user-1', authType: 'session' },
+    })
+    mockDbReturning.mockResolvedValue([{ id: 'dep-3', name: 'Renamed', description: 'Updated' }])
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Renamed', description: 'Updated' }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(200)
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledTimes(1)
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'wf-1', {
+      requireDeployment: false,
+      action: 'write',
+    })
+    expect(mockDbUpdate).toHaveBeenCalledTimes(1)
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
+  })
+
   it('allows API-key auth for activation using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
@@ -143,7 +167,11 @@ describe('Workflow deployment version route', () => {
     const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
     expect(response.status).toBe(200)
-    expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'wf-1', {
+    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(1, req, 'wf-1', {
+      requireDeployment: false,
+      action: 'write',
+    })
+    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(2, req, 'wf-1', {
       requireDeployment: false,
       action: 'admin',
     })
@@ -157,5 +185,56 @@ describe('Workflow deployment version route', () => {
         actorEmail: undefined,
       })
     )
+  })
+
+  it('returns write auth failure before parsing or updating metadata', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      error: { message: 'Write permission required', status: 403 },
+    })
+
+    const jsonSpy = vi.fn().mockResolvedValue({ name: 'Renamed' })
+    const req = {
+      json: jsonSpy,
+    } as unknown as NextRequest
+
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(403)
+    expect(jsonSpy).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
+  })
+
+  it('returns admin auth failure before activation side effects', async () => {
+    mockValidateWorkflowAccess
+      .mockResolvedValueOnce({
+        workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+        auth: { success: true, userId: 'user-1', authType: 'session' },
+      })
+      .mockResolvedValueOnce({
+        error: { message: 'Admin permission required', status: 403 },
+      })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ isActive: true }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(403)
+    expect(mockValidateWorkflowAccess).toHaveBeenCalledTimes(2)
+    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(1, req, 'wf-1', {
+      requireDeployment: false,
+      action: 'write',
+    })
+    expect(mockValidateWorkflowAccess).toHaveBeenNthCalledWith(2, req, 'wf-1', {
+      requireDeployment: false,
+      action: 'admin',
+    })
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockSaveTriggerWebhooksForDeploy).not.toHaveBeenCalled()
+    expect(mockCreateSchedulesForDeploy).not.toHaveBeenCalled()
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
   })
 })
