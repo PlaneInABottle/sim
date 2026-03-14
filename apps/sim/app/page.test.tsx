@@ -22,7 +22,7 @@ vi.mock('@/lib/core/config/feature-flags', () => ({
   },
 }))
 
-vi.mock('@/app/(landing)/landing', () => ({
+vi.mock('@/app/(home)/landing', () => ({
   default: () => <div>Landing content</div>,
 }))
 

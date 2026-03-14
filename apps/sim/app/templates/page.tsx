@@ -1,11 +1,18 @@
 import { db } from '@sim/db'
 import { permissions, templateCreators, templates, workspace } from '@sim/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
+import type { Metadata } from 'next'
 import { notFound, redirect } from 'next/navigation'
 import { getSession } from '@/lib/auth'
 import { isPublicTemplatesPagesEnabled } from '@/lib/core/config/feature-flags'
 import type { Template } from '@/app/templates/templates'
 import Templates from '@/app/templates/templates'
+
+export const metadata: Metadata = {
+  title: 'Templates',
+  description:
+    'Browse pre-built workflow templates to get started quickly with AI agents, automations, and integrations.',
+}
 
 /**
  * Public templates list page.

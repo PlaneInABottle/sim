@@ -45,9 +45,9 @@ export async function GET() {
 
   const llmsContent = `# Sim
 
-> Sim is an open-source AI agent workflow builder. 70,000+ developers at startups to Fortune 500 companies deploy agentic workflows on the Sim platform. SOC2 and HIPAA compliant.
+> Sim is the open-source platform to build AI agents and run your agentic workforce. Connect 1,000+ integrations and LLMs to deploy and orchestrate agentic workflows.
 
-Sim provides a visual drag-and-drop interface for building and deploying AI agent workflows. Connect to 100+ integrations and ship production-ready AI automations.
+Sim lets teams create agents, workflows, knowledge bases, tables, and docs. Over 100,000 builders use Sim — from startups to Fortune 500 companies. SOC2 and HIPAA compliant.
 
 ${corePagesSection}## Documentation
 
@@ -62,28 +62,31 @@ ${corePagesSection}## Documentation
 - **Block**: Individual step (LLM call, tool call, HTTP request, code execution)
 - **Trigger**: Event or schedule that initiates workflow execution
 - **Execution**: A single run of a workflow with logs and outputs
+- **Knowledge Base**: Vector-indexed document store for retrieval-augmented generation
 
 ## Capabilities
 
-- Visual workflow builder with drag-and-drop canvas
-- Multi-model LLM orchestration (OpenAI, Anthropic, Google, Mistral, xAI)
-- Retrieval-augmented generation (RAG) with vector databases
-- 100+ integrations (Slack, Gmail, Notion, Airtable, databases)
+- AI agent creation and deployment
+- Agentic workflow orchestration
+- 1,000+ integrations (Slack, Gmail, Notion, Airtable, databases, and more)
+- Multi-model LLM orchestration (OpenAI, Anthropic, Google, Mistral, xAI, Perplexity)
+- Knowledge base creation with retrieval-augmented generation (RAG)
+- Table creation and management
+- Document creation and processing
 - Scheduled and webhook-triggered executions
-- Real-time collaboration and version control
 
 ## Use Cases
 
-- AI agent workflow automation
-- RAG pipelines and document processing
-- Chatbot and copilot workflows for SaaS
-- Email and customer support automation
+- AI agent deployment and orchestration
+- Knowledge bases and RAG pipelines
+- Document creation and processing
+- Customer support automation
 - Internal operations (sales, marketing, legal, finance)
 
 ## Links
 
 - [GitHub Repository](https://github.com/simstudioai/sim): Open-source codebase
-- [Discord Community](https://discord.gg/Hr4UWYEcTT): Get help and connect with users
+- [Discord Community](https://discord.gg/Hr4UWYEcTT): Get help and connect with 100,000+ builders
 - [X/Twitter](https://x.com/simdotai): Product updates and announcements
 
 ${optionalSection}
