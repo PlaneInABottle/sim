@@ -406,9 +406,6 @@ describe('Workflow By ID API Route', () => {
           where: vi.fn().mockResolvedValue([{ id: 'workflow-123' }, { id: 'workflow-456' }]),
         }),
       })
-      mockDbDelete.mockReturnValue({
-        where: vi.fn().mockResolvedValue([{ id: 'workflow-123' }]),
-      })
       setupGlobalFetchMock({ ok: true })
 
       const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
