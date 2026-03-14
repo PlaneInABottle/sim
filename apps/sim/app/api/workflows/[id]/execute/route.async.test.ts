@@ -6,6 +6,7 @@ import { createMockRequest } from '@sim/testing'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  mockAuthType,
   mockCheckHybridAuth,
   mockAuthorizeWorkflowByWorkspacePermission,
   mockPreprocessExecution,
@@ -17,6 +18,11 @@ const {
   mockLoggerError,
   mockLoggerDebug,
 } = vi.hoisted(() => ({
+  mockAuthType: {
+    SESSION: 'session',
+    API_KEY: 'api_key',
+    INTERNAL_JWT: 'internal_jwt',
+  },
   mockCheckHybridAuth: vi.fn(),
   mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
   mockPreprocessExecution: vi.fn(),
@@ -30,11 +36,7 @@ const {
 }))
 
 vi.mock('@/lib/auth/hybrid', () => ({
-  AuthType: {
-    SESSION: 'session',
-    API_KEY: 'api_key',
-    INTERNAL_JWT: 'internal_jwt',
-  },
+  AuthType: mockAuthType,
   checkHybridAuth: mockCheckHybridAuth,
 }))
 
@@ -137,7 +139,7 @@ describe('workflow execute async route', () => {
       return {
         success: true,
         userId: 'session-user-1',
-        authType: 'session',
+        authType: mockAuthType.SESSION,
       }
     })
 
