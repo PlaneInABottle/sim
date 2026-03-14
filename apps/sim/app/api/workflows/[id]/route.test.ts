@@ -112,6 +112,7 @@ describe('Workflow By ID API Route', () => {
 
   afterEach(() => {
     vi.clearAllMocks()
+    vi.unstubAllGlobals()
   })
 
   describe('GET /api/workflows/[id]', () => {
@@ -143,7 +144,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Workflow not found')
     })
 
-    it.concurrent('should allow access when user has admin workspace permission', async () => {
+    it('should allow access when user has admin workspace permission', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
         userId: 'user-123',
@@ -181,7 +182,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.id).toBe('workflow-123')
     })
 
-    it.concurrent('should allow access when user has workspace permissions', async () => {
+    it('should allow access when user has workspace permissions', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
         userId: 'other-user',
@@ -248,7 +249,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to read this workflow')
     })
 
-    it.concurrent('should use normalized tables when available', async () => {
+    it('should use normalized tables when available', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
         userId: 'user-123',
@@ -464,7 +465,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Cannot delete the only workflow in the workspace')
     })
 
-    it.concurrent('should deny deletion for non-admin users', async () => {
+    it('should deny deletion for non-admin users', async () => {
       mockValidateWorkflowAccess.mockResolvedValue({
         error: {
           message: 'Unauthorized: Access denied to admin this workflow',
@@ -608,7 +609,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Unauthorized: Access denied to write this workflow')
     })
 
-    it.concurrent('should validate request data', async () => {
+    it('should validate request data', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
         userId: 'user-123',
@@ -876,7 +877,7 @@ describe('Workflow By ID API Route', () => {
   })
 
   describe('Error handling', () => {
-    it.concurrent('should handle database errors gracefully', async () => {
+    it('should handle database errors gracefully', async () => {
       mockGetSession({ user: { id: 'user-123' } })
 
       mockGetWorkflowById.mockRejectedValue(new Error('Database connection timeout'))
