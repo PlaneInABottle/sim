@@ -36,15 +36,15 @@ Favor evidence from Render CLI output, direct SSH, and production Postgres over 
 - Format:
   - service: `ssh <service-id>@ssh.<region>.render.com`
   - instance: `ssh <service-id>-<instance-slug>@ssh.<region>.render.com`
-- Use a custom key only when the target instance accepts it and you have a local secret path configured. Keep local secrets in gitignored files such as `.env.render`.
+- Use a custom key only when the target instance accepts it and you have a local secret path configured. Keep local secrets in gitignored files such as `.env.local`.
 - If direct SSH also fails, do not loop blindly: fall back to request logs, service metadata, and database evidence.
 
 ## Production Postgres
 
 - Connect with the checked-in guidance mirrored in the db-migrations production
   runbook:
-  - `source apps/sim/.env && psql "$PROD_DATABASE_URL"`
-- `apps/sim/.env` contains `PROD_DATABASE_URL` for the Render Postgres database in this repo.
+  - `source .env.local && psql "$PROD_DATABASE_URL"`
+- `.env.local` at the repository root contains `PROD_DATABASE_URL` for the Render Postgres database in this repo.
 - Use SQL to answer operational questions when logs are incomplete.
 
 ## Execution Tables To Check

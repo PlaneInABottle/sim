@@ -35,7 +35,6 @@ dump.rdb
 
 # env files
 .env
-.env.render
 *.env
 .env.local
 .env.development
