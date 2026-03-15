@@ -5,7 +5,7 @@ import {
   authenticateApiKeyFromHeader,
   updateApiKeyLastUsed,
 } from '@/lib/api-key/service'
-import { type AuthResult, checkHybridAuth } from '@/lib/auth/hybrid'
+import { type AuthResult, AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
 import { authorizeWorkflowByWorkspacePermission, getWorkflowById } from '@/lib/workflows/utils'
 
@@ -77,7 +77,7 @@ export async function validateWorkflowAccess(
       const workflow = workflowResult.workflow
 
       if (
-        auth.authType === 'api_key' &&
+        auth.authType === AuthType.API_KEY &&
         auth.apiKeyType === 'workspace' &&
         auth.workspaceId !== workflow.workspaceId
       ) {
