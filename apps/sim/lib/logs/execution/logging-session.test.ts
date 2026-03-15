@@ -487,4 +487,82 @@ describe('LoggingSession completion retries', () => {
     expect(tieBreakerClause.strings.join(' ')).toContain(') = ')
     expect(tieBreakerClause.strings.join(' ')).toContain('))::int < ')
   })
+
+  it('allows same-timestamp started marker writes when stored executionOrder is missing', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', {
+      startedAt: '2025-01-01T00:00:00.000Z',
+      executionOrder: 2,
+    })
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const tieBreakerSql = tieBreakerClause.strings.join(' ')
+
+    expect(tieBreakerSql).toContain(') = ')
+    expect(tieBreakerSql).toContain('IS NULL')
+    expect(tieBreakerSql).toContain('))::int < ')
+    expect(tieBreakerClause.values).toContain(2)
+  })
+
+  it('allows same-timestamp completed marker writes when stored executionOrder is missing', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      executionOrder: 3,
+      output: { value: true },
+    })
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const tieBreakerSql = tieBreakerClause.strings.join(' ')
+
+    expect(tieBreakerSql).toContain(') = ')
+    expect(tieBreakerSql).toContain('IS NULL')
+    expect(tieBreakerSql).toContain('))::int < ')
+    expect(tieBreakerClause.values).toContain(3)
+  })
+
+  it('omits executionOrder tie-breaker SQL when started marker executionOrder is absent', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockStart('block-1', 'Fetch', 'api', '2025-01-01T00:00:00.000Z')
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const tieBreakerSql = tieBreakerClause.strings.join(' ')
+
+    expect(tieBreakerClause.values).toEqual([
+      'lastStartedBlock',
+      'startedAt',
+      '2025-01-01T00:00:00.000Z',
+    ])
+    expect(tieBreakerSql).not.toContain('IS NOT NULL')
+    expect(tieBreakerSql).not.toContain("'executionOrder'")
+    expect(tieBreakerSql).not.toContain('))::int < ')
+  })
+
+  it('omits executionOrder tie-breaker SQL when completed marker executionOrder is absent', async () => {
+    const session = new LoggingSession('workflow-1', 'execution-1', 'api', 'req-1')
+
+    await session.onBlockComplete('block-2', 'Transform', 'function', {
+      endedAt: '2025-01-01T00:00:01.000Z',
+      output: { value: true },
+    })
+
+    const statement = dbMocks.execute.mock.calls[0]?.[0]
+    const tieBreakerClause = statement.values[2]
+    const tieBreakerSql = tieBreakerClause.strings.join(' ')
+
+    expect(tieBreakerClause.values).toEqual([
+      'lastCompletedBlock',
+      'endedAt',
+      '2025-01-01T00:00:01.000Z',
+    ])
+    expect(tieBreakerSql).not.toContain('IS NOT NULL')
+    expect(tieBreakerSql).not.toContain("'executionOrder'")
+    expect(tieBreakerSql).not.toContain('))::int < ')
+  })
 })

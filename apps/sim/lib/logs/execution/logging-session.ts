@@ -142,7 +142,20 @@ function buildMarkerTieBreakerWhereClause(params: {
   markerExecutionOrder?: number
   markerType: 'lastStartedBlock' | 'lastCompletedBlock'
 }) {
-  const markerExecutionOrder = params.markerExecutionOrder ?? null
+  if (params.markerExecutionOrder == null) {
+    return sql`
+      (
+        COALESCE(
+          jsonb_extract_path_text(
+            COALESCE(execution_data, '{}'::jsonb),
+            ${params.markerType},
+            ${params.timestampPath}
+          ),
+          ''
+        ) < ${params.markerTimestamp}
+      )
+    `
+  }
 
   return sql`
     (
@@ -163,17 +176,18 @@ function buildMarkerTieBreakerWhereClause(params: {
           ),
           ''
         ) = ${params.markerTimestamp}
-        AND ${markerExecutionOrder} IS NOT NULL
-        AND jsonb_extract_path_text(
-          COALESCE(execution_data, '{}'::jsonb),
-          ${params.markerType},
-          'executionOrder'
-        ) IS NOT NULL
-        AND (jsonb_extract_path_text(
-          COALESCE(execution_data, '{}'::jsonb),
-          ${params.markerType},
-          'executionOrder'
-        ))::int < ${markerExecutionOrder}
+        AND (
+          jsonb_extract_path_text(
+            COALESCE(execution_data, '{}'::jsonb),
+            ${params.markerType},
+            'executionOrder'
+          ) IS NULL
+          OR (jsonb_extract_path_text(
+            COALESCE(execution_data, '{}'::jsonb),
+            ${params.markerType},
+            'executionOrder'
+          ))::int < ${params.markerExecutionOrder}
+        )
       )
     )
   `
