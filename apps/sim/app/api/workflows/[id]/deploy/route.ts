@@ -34,22 +34,43 @@ const logger = createLogger('WorkflowDeployAPI')
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
+type WorkflowAccessResult = Awaited<ReturnType<typeof validateWorkflowAccess>>
+type WorkflowPermissionsResult = Awaited<ReturnType<typeof validateWorkflowPermissions>>
+
+type LifecycleAdminAccessResult = {
+  error: WorkflowAccessResult['error'] | WorkflowPermissionsResult['error']
+  auth: WorkflowAccessResult['auth'] | null
+  session: WorkflowPermissionsResult['session']
+  workflow: WorkflowAccessResult['workflow'] | WorkflowPermissionsResult['workflow']
+}
+
 async function validateLifecycleAdminAccess(
   request: NextRequest,
   workflowId: string,
   requestId: string
-) {
+): Promise<LifecycleAdminAccessResult> {
   const hybridAccess = await validateWorkflowAccess(request, workflowId, {
     requireDeployment: false,
     action: 'admin',
   })
 
   if (hybridAccess.error) {
-    return hybridAccess
+    return {
+      error: hybridAccess.error,
+      auth: hybridAccess.auth ?? null,
+      session: null,
+      workflow: hybridAccess.workflow ?? null,
+    }
   }
 
   if (hybridAccess.auth?.authType === 'session') {
-    return await validateWorkflowPermissions(workflowId, requestId, 'admin')
+    const permission = await validateWorkflowPermissions(workflowId, requestId, 'admin')
+    return {
+      error: permission.error,
+      auth: null,
+      session: permission.session,
+      workflow: permission.workflow,
+    }
   }
 
   return {

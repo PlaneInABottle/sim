@@ -9,12 +9,12 @@ import {
 import { createLogger } from '@sim/logger'
 import { and, eq, isNull, min } from 'drizzle-orm'
 import { remapConditionBlockIds, remapConditionEdgeHandle } from '@/lib/workflows/condition-ids'
+import { remapVariableReferences } from '@/lib/workflows/persistence/utils'
 import {
   authorizeWorkflowByWorkspacePermission,
   deduplicateWorkflowName,
 } from '@/lib/workflows/utils'
 import { getUserEntityPermissions } from '@/lib/workspaces/permissions/utils'
-import { remapVariableReferences } from '@/lib/workflows/persistence/utils'
 import type { Variable } from '@/stores/panel/variables/types'
 import type { LoopConfig, ParallelConfig } from '@/stores/workflows/workflow/types'
 
@@ -284,7 +284,7 @@ export async function duplicateWorkflow(
         }
 
         // Remap variableId references in subBlocks so they point to the new variable IDs
-        const updatedSubBlocks =
+        let updatedSubBlocks =
           variableIdMapping.size > 0 && block.subBlocks && typeof block.subBlocks === 'object'
             ? remapVariableReferences(block.subBlocks as Record<string, any>, variableIdMapping)
             : block.subBlocks
