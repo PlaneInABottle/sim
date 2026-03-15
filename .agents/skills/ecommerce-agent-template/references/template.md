@@ -360,7 +360,7 @@ Some things are better handled by people. Here's when to pass the baton:
 **Pricing & Sales:**
 - Custom or bulk pricing → `{{PRICING_HANDOFF_LABEL}}`
 - Discount requests → `{{PRICING_HANDOFF_LABEL}}`
-- Ready to buy → `{{PRICING_HANDOFF_LABEL}}`
+- Ready to buy → `{{SALES_HANDOFF_LABEL}}`
 
 **Problems:**
 - Complaints → `{{COMPLAINT_HANDOFF_LABEL}}`

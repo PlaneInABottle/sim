@@ -125,12 +125,14 @@ All `{{PLACEHOLDER}}` values used in `references/template.md`. Organized by sect
 |-------------|-------------|---------------|
 | `{{SPECIAL_CASE_TRIGGERS}}` | Multi-line: special-case trigger rules | Customer mentions "Albert genau" → Immediate handoff → `["fiyat"]`. **Note:** Special-case triggers must map to an existing handoff label (see `{{HANDOFF_LABELS}}`); do not invent labels (e.g., no made-up labels like `["albert-genau"]`). |
 | `{{PRICING_HANDOFF_LABEL}}` | Label for pricing handoffs | `["fiyat"]` |
-| `{{COMPLAINT_HANDOFF_LABEL}}` | Label for complaints | `["sikayet"]` |
+| `{{SALES_HANDOFF_LABEL}}` | Label for sales handoffs | `["satış"]` |
+| `{{COMPLAINT_HANDOFF_LABEL}}` | Label for complaints | `["şikayet"]` |
 | `{{RETURNS_HANDOFF_LABEL}}` | Label for returns | `["iade"]` |
 | `{{SHIPPING_HANDOFF_LABEL}}` | Label for shipping | `["kargo"]` |
-| `{{WRONG_PRODUCT_HANDOFF_LABEL}}` | Label for wrong product | `["yanlis-urun"]` |
-| `{{TECHNICAL_HANDOFF_LABEL}}` | Label for technical Qs | `["urun_bilgisi"]` |
-| `{{HANDOFF_LABELS}}` | Multi-line: complete label block | `["fiyat"]` — Pricing, `["iade"]` — Returns, etc. |
+| `{{WRONG_PRODUCT_HANDOFF_LABEL}}` | Label for wrong product | `["yanlış-ürün"]` |
+| `{{TECHNICAL_HANDOFF_LABEL}}` | Label for product info / technical Qs | `["ürün-bilgisi"]` |
+| `{{MEDIA_HANDOFF_LABEL}}` | Label for media handoffs | `["medya"]` |
+| `{{HANDOFF_LABELS}}` | Multi-line: complete label block | `["fiyat"]`, `["iade"]`, `["kargo"]`, `["şikayet"]`, `["yanlış-ürün"]`, `["ürün-bilgisi"]`, `["medya"]`, `["satış"]` |
 | `{{SHIPPING_STUCK_MESSAGE}}` | Stuck shipment message | "Siparişiniz [status]... İlerleme yok gibi görünüyor—ekibimize haber verim." |
 | `{{COLD_HANDOFF_EXAMPLE}}` | Bad handoff example | "Sizi destek ekibimize aktarıyorum." |
 | `{{WARM_HANDOFF_EXAMPLE}}` | Good handoff example | "Anlıyorum. Bu konuda en doğru bilgiyi verecek biriyle bağlıyorum—birazdan dönüş yapacaklar. 🙏" |
