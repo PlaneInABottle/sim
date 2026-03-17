@@ -34,18 +34,23 @@ Use a minimal current-surface path with:
 ### Phase 1: Tool Output Validation
 
 1. Confirm the draft test path reaches trigger → agent → response without unrelated side effects
-2. Execute the draft workflow with test input:
+2. Run the cheap structural preflight first:
    ```
-   run_workflow({
+   validate_workflow({ workflowId: "<WORKFLOW_ID>" })
+   ```
+3. Execute the draft workflow with test input:
+   ```
+   execute_workflow({
       workflowId: "<WORKFLOW_ID>",
-      workflow_input: { mainCategory: "test-category" }
-    })
+      input: { mainCategory: "test-category" },
+      useDraftState: true
+     })
    ```
-3. Check execution logs:
+4. Check execution logs:
    - ✓ Tool executed without errors
    - ✓ Output matches expected schema
    - ✓ Token count reasonable (compare to baseline)
-4. Verify token savings (if tool is for optimization):
+5. Verify token savings (if tool is for optimization):
    ```
    cost_with_tool < cost_without_tool * 0.65  // e.g., 40% savings
    ```

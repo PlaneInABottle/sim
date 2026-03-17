@@ -1,8 +1,8 @@
 # Troubleshooting Reference
 
 Detailed troubleshooting guide for workflow MCP operations. Exact tool names may
-drift; prefer the current `run_*`, `sim_test`, and `sim_debug` surface exposed by
-the app repo over older legacy names.
+drift; prefer the current `validate_workflow`, `execute_workflow`, `run_*`, and
+execution-log surface exposed by the app repo over older wrapper or legacy names.
 
 ---
 
@@ -42,13 +42,10 @@ the app repo over older legacy names.
 
 ## Debug Workflow Pattern
 
-### Step 1: Reproduce the failure
+### Step 1: Run the cheap structural preflight
 
 ```
-sim_test({
-  workflowId: "wf_abc",
-  request: "Run the failing scenario on the draft workflow and summarize the failing path."
-})
+validate_workflow({ workflowId: "wf_abc" })
 ```
 
 If the workflow is a risky live webhook with real-customer side effects, do not
@@ -56,24 +53,46 @@ start here by default. Inspect historical execution logs first, then replay the
 relevant branch with `run_block` / `run_from_block` and a prior `executionId`
 when possible.
 
-### Step 2: Inspect the specific failure
+### Step 2: Reproduce the failure
 
 ```
-sim_debug({ workflowId: "wf_abc", error: "<exact error text from the failed run>" })
-→ Use the diagnosis plus the failing path summary to identify the broken block
+execute_workflow({
+  workflowId: "wf_abc",
+  input: { ... },
+  triggerType: "api",
+  useDraftState: true
+})
 ```
 
-### Step 3: Fix the block configuration
+If `validate_workflow` passes, remember that it is still only a structural/minimal-handle preflight; runtime failures still require execution and log inspection.
+
+### Step 3: Inspect the specific failure
+
+```
+get_execution_logs({
+  workspaceId: "ws_abc",
+  workflowId: "wf_abc",
+  details: "full",
+  includeTraceSpans: true,
+  includeFinalOutput: true
+})
+→ find the failing execution/log ID
+
+get_execution_log_detail({ logId: "log_abc" })
+→ use trace spans, final output, and error data to identify the broken block
+```
+
+### Step 4: Fix the block configuration
 
 ```
 Apply the fix through the current workflow-editing surface (`sim_build` or
 `sim_plan` → `sim_edit`), then confirm the draft state before re-running.
 ```
 
-### Step 4: Re-run to verify
+### Step 5: Re-run to verify
 
 ```
-run_workflow({ workflowId: "wf_abc", workflow_input: { ... } })
+execute_workflow({ workflowId: "wf_abc", input: { ... }, useDraftState: true })
 ```
 
 If routing or transform logic is the test target, stop before side-effecting
@@ -85,20 +104,24 @@ send / write / handoff blocks and treat that as sufficient verification.
 
 ```
 Step 1: Execute the workflow
-run_workflow({
+execute_workflow({
   workflowId: "wf_new",
-  workflow_input: { message: "Test payload" }
+  input: { message: "Test payload" },
+  useDraftState: true
 })
 → returns execution result
 
-Step 2: Ask for a verification summary
-sim_test({
+Step 2: Inspect runtime logs
+get_execution_logs({
+  workspaceId: "ws_id",
   workflowId: "wf_new",
-  request: "Run the same payload on the draft workflow and summarize the block path, outputs, and any errors."
+  details: "full",
+  includeTraceSpans: true,
+  includeFinalOutput: true
 })
-→ returns a verification summary for the run
+→ returns matching executions with trace data
 
 Step 3: Debug a specific failure if needed
-sim_debug({ workflowId: "wf_new", error: "<error text>" })
-→ returns root-cause analysis and likely fixes
+get_execution_log_detail({ logId: "log_id_from_step_2" })
+→ returns root-cause evidence, trace spans, and final output
 ```

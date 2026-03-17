@@ -1,6 +1,6 @@
 ---
 name: sim-workflows
-description: Use when building or modifying Sim workflows via the current Sim MCP workflow tools. Best for workflow creation, sim_build / sim_plan / sim_edit changes, execution/testing flows, deployment, and block/output conventions. Load the references here for block semantics and patterns, but verify exact tool names against the current MCP definitions when the surface changes.
+description: Use when building or modifying Sim workflows via the current Sim MCP workflow tools. Best for workflow creation, execution/testing flows, deployment, and block/output conventions. Older local wrappers such as sim_build / sim_plan / sim_edit may still appear in adjacent repos; treat them as wrappers or legacy notes, not the current sim-mcp tool surface. Load the references here for block semantics and patterns, but verify exact tool names against the current MCP definitions when the surface changes.
 ---
 
 # AI-Native Workflow Management
@@ -25,11 +25,12 @@ Create → Build → Configure → Execute → Monitor → Debug → Iterate
 | Phase | Tools | Purpose |
 |-------|-------|---------|
 | **Create** | `create_workflow` | Create an empty workflow shell |
-| **Build** | `sim_build` or `sim_plan` → `sim_edit` | Make workflow changes through the current editing surface |
-| **Execute / Test** | `sim_test`, `run_workflow`, `run_workflow_until_block`, `run_block`, `run_from_block` | Verify full or partial behavior without deploying |
+| **Build** | Local wrapper flows such as `sim_build` or `sim_plan` → `sim_edit` *(wrapper/legacy when present)* | Make workflow changes through repo-specific wrapper flows when available |
+| **Validate** | `validate_workflow` | Cheap structural preflight after workflow edits and before execution |
+| **Execute / Test** | `execute_workflow`, `run_workflow_until_block`, `run_block`, `run_from_block` | Verify full or partial behavior without deploying |
 | **Inspect** | `list_workspaces`, `list_workflows`, `get_workflow`, `get_deployed_workflow_state` | Discover workflows and compare draft vs deployed state |
-| **Deploy** | `sim_deploy`, `generate_api_key` | Expose a workflow externally after draft verification |
-| **Debug** | `sim_debug` | Diagnose failures or unexpected behavior |
+| **Deploy** | `deploy_workflow` | Expose a workflow externally after draft verification |
+| **Debug** | `get_execution_logs`, `get_execution_log_detail` | Diagnose runtime failures or unexpected behavior |
 
 ---
 
@@ -45,11 +46,13 @@ Create → Build → Configure → Execute → Monitor → Debug → Iterate
 
 ### Execute & Verify
 
-- **`sim_test`**`({ workflowId, request })` — preferred verification wrapper after builds
-- **`run_workflow`**`({ workflowId, workflow_input?, useDeployedState? })` — full run
-- **`run_workflow_until_block`**`({ workflowId, stopAfterBlockId, workflow_input? })` — stop after a target block
-- **`run_block`**`({ workflowId, blockId, executionId? })` — isolate a single block after at least one prior run
-- **`run_from_block`**`({ workflowId, startBlockId, executionId? })` — resume from a chosen block using cached upstream outputs
+- **`validate_workflow`**`({ workflowId })` — default structural preflight after block/edge/variable edits; catches malformed state, broken edges, connectivity/reachability issues, unused variables, and locally provable handle issues. It is **not** runtime proof.
+- **`execute_workflow`**`({ workflowId, input?, triggerType?, useDraftState? })` — full run using the current sim-mcp execution surface
+- **`run_workflow_until_block`**`({ workflowId, stopAfterBlockId, input?, triggerType?, useDraftState? })` — stop after a target block
+- **`run_block`**`({ workflowId, blockId, executionId?, input?, triggerType?, useDraftState? })` — isolate a single block after at least one prior run
+- **`run_from_block`**`({ workflowId, startBlockId, executionId?, input?, triggerType?, useDraftState? })` — resume from a chosen block using cached upstream outputs
+
+Recent validator behavior note: `validate_workflow` now correctly ignores implicit branch handles such as `source` / `error` / `target` and dynamic condition/router/switch handles, while still surfacing real structural issues.
 
 For risky live webhook workflows with real-customer side effects, use this order:
 static inspection → historical execution log review → `run_block` / `run_from_block`
@@ -57,10 +60,11 @@ with a historical `executionId` → live draft execution only when explicitly sa
 
 ### Inspect, Deploy, Debug
 
-- **`list_workspaces`**`()`, **`list_workflows`**`({ workspaceId?, folderId? })`, **`get_workflow`**`({ workflowId })`
+- **`list_workflows`**`({ workspaceId?, limit?, offset? })`, **`get_workflow`**`({ workflowId, verbose? })`, **`get_block`**`({ workflowId, blockId })`
 - **`get_deployed_workflow_state`**`({ workflowId })` — compare draft vs deployed state
-- **`sim_deploy`**`({ workflowId, request })` · **`generate_api_key`**`({ name, workspaceId? })`
-- **`sim_debug`**`({ workflowId, error })` — use when a run fails and you need diagnosis
+- **`deploy_workflow`**`({ workflowId })`
+- **`get_execution_logs`**`({ workspaceId, workflowId?, executionId?, details?, includeTraceSpans?, includeFinalOutput? })` — primary runtime debugging surface
+- **`get_execution_log_detail`**`({ logId })` — inspect one failed or suspicious execution in depth
 
 ### Using MCP Tools Correctly
 
@@ -153,14 +157,16 @@ sim_build({
   request: "Create a start → agent → response workflow that processes the incoming payload and returns JSON."
 })
 
-// 3. Test the draft workflow
-sim_test({
-  workflowId: "wf_new",
-  request: "Run one draft test with input {\"message\":\"Test\"} and verify the response path."
-})
+// 3. Run the cheap structural preflight
+validate_workflow({ workflowId: "wf_new" })
 
-// 4. If you need the raw run result
-run_workflow({ workflowId: "wf_new", workflow_input: { message: "Test" } })
+// 4. Execute the draft workflow
+execute_workflow({
+  workflowId: "wf_new",
+  input: { message: "Test" },
+  triggerType: "api",
+  useDraftState: true
+})
 ```
 
 > [Conditional branching pattern](references/block-types.md#condition-branching-deep-dive) · [Debug failures](references/troubleshooting.md#debug-workflow-pattern)
@@ -170,8 +176,9 @@ run_workflow({ workflowId: "wf_new", workflow_input: { message: "Test" } })
 ## Debugging
 
 1. **Inspect draft state:** `get_workflow({ workflowId })`
-2. **Run verification:** `sim_test({ workflowId, request: "test the failing path and summarize the trace" })`
-3. **Escalate diagnosis:** `sim_debug({ workflowId, error: "<exact error text>" })`
+2. **Run structural preflight:** `validate_workflow({ workflowId })`
+3. **Execute or replay:** `execute_workflow(...)` or `run_block(...)` / `run_from_block(...)`
+4. **Inspect runtime details:** `get_execution_logs(...)` → `get_execution_log_detail({ logId })`
 
 > [Full debug guide](references/troubleshooting.md) · [Error diagnosis table](references/troubleshooting.md#error-diagnosis-table)
 
@@ -197,11 +204,11 @@ run_workflow({ workflowId: "wf_new", workflow_input: { message: "Test" } })
 
 **Minimum viable workflow:**
 ```
-create_workflow → sim_build → sim_test → run_workflow (optional raw execution) → sim_deploy (only if external access is needed)
+create_workflow → make draft edits (wrapper or fine-grained tools) → validate_workflow → execute_workflow → deploy_workflow (only if external access is needed)
 ```
 
 **Tag syntax:** `<BlockName.field>` (block output) · `<variable.name>` (workflow var) · `{{ENV_VAR}}` (env)
 
-**Draft-first rule:** prefer `sim_test` / `run_workflow` on draft state before deploying, except risky live webhook workflows where historical snapshot verification is safer than re-entering the webhook.
+**Draft-first rule:** prefer `validate_workflow` then `execute_workflow` on draft state before deploying, except risky live webhook workflows where historical snapshot verification is safer than re-entering the webhook.
 
 **Block positioning:** Trigger x=100, Processing x=400-700, Response x=900+, Branch spacing y±150

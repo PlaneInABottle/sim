@@ -18,11 +18,11 @@ Complements the core 6-phase protocol in `testing-protocol.md`.
 
 ### Test Execution Fails
 
-If a draft test run (`sim_test` / `run_workflow`) returns an error:
+If a draft test run (`execute_workflow`, `run_block`, or `run_from_block`) returns an error:
 
 1. Record the failing request, payload, and exact error text
 2. Reproduce once with the same draft path so the failure is deterministic
-3. Diagnose with `sim_debug` or the current verification surface
+3. Diagnose with `get_execution_logs` / `get_execution_log_detail` or the current verification surface
 4. Retry once only if the issue is clearly payload- or input-shape-related
 5. Mark the scenario as `error` if it still fails after one evidence-based retry
 
@@ -31,7 +31,7 @@ If a draft test run (`sim_test` / `run_workflow`) returns an error:
 The current default testing flow does **not** require block toggles, block
 snapshots, or restore loops. The notes below are only for older sessions that
 already used `toggle_block_enabled` and snapshot tables before the workflow
-surface moved to the current `sim_test` / `run_*` pattern.
+surface moved to the current `validate_workflow` / `execute_workflow` / `run_*` pattern.
 
 If a historical `toggle_block_enabled` step fails:
 
@@ -54,7 +54,7 @@ If some historically toggled blocks can't be restored:
 If the agent session is interrupted mid-test:
 
 1. On next session, first re-run the failing draft scenario with the current
-   `sim_test` / `run_workflow` surface to confirm whether manual recovery is
+   `validate_workflow` / `execute_workflow` surface to confirm whether manual recovery is
    still needed
 2. Only if the interrupted run was using the older block-snapshot workflow,
    check for un-completed test runs:

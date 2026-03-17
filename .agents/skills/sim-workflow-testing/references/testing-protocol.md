@@ -9,10 +9,10 @@ loops belong only to older fallback runs that already used toggles.
 
 ```text
 Phase 1: PREPARE   → identify workflow, choose scenario, confirm current surface
-Phase 2: CONFIGURE → craft the lightest safe draft-run setup
+Phase 2: CONFIGURE → craft the lightest safe draft-run setup and run `validate_workflow`
 Phase 3: EXECUTE   → run the chosen verification mode or replay the chosen historical snapshot
 Phase 4: VERIFY    → inspect trace spans, outputs, and errors
-Phase 5: DEBUG     → use `sim_debug`; only then consider a legacy fallback
+Phase 5: DEBUG     → use execution logs/detail; only then consider a legacy fallback
 Phase 6: RECORD    → save pass/fail notes and next actions
 ```
 
@@ -30,6 +30,7 @@ Phase 6: RECORD    → save pass/fail notes and next actions
 Select the lightest setup that can prove the behavior:
 
 - **Static inspection** — inspect workflow structure, block configs, condition handles, and known risky branches without executing.
+- **Structural preflight** — run `validate_workflow` after structural edits and before execution; treat it as a cheap preflight, not runtime proof.
 - **Historical snapshot replay** — inspect historical execution logs, then use `run_block` / `run_from_block` with a prior `executionId` when you need isolated verification without re-entering the webhook.
 - **Default current path** — keep the draft workflow as-is and prove behavior with one crafted payload.
 - **CONDITION_ONLY** — legacy low-level fallback profile; keep only trigger + condition blocks enabled.
@@ -56,6 +57,17 @@ Use:
 - one crafted payload
 - identifiers and message fields matched to the scenario
 - draft state unless you intentionally need deployed behavior
+
+Default current execution path:
+
+```
+execute_workflow({
+  workflowId: "wf_abc",
+  input: { ... },
+  triggerType: "api",
+  useDraftState: true
+})
+```
 
 If you use `run_block` / `run_from_block`, record the historical `executionId` and
 the resume block you chose.
@@ -91,8 +103,8 @@ the failing block and the exact error text before making more changes.
 
 ## Phase 5: DEBUG
 
-If the run fails, diagnose first with `sim_debug`, execution logs, and trace
-spans.
+If the run fails, diagnose first with `get_execution_logs`,
+`get_execution_log_detail`, and trace spans.
 
 1. Capture the failing block, exact error text, and payload.
 2. Reproduce once on the same current draft path if the failure is ambiguous.

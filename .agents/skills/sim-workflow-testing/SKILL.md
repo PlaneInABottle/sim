@@ -28,7 +28,8 @@ live in separate thin wrapper skills.
 PREPARE → CONFIGURE → EXECUTE → VERIFY → DEBUG → RECORD
 ```
 
-Use this flow first with the current `sim_test` / `run_workflow` surface. Drop
+Use this flow first with `validate_workflow` + `execute_workflow`, then inspect
+runtime evidence with `get_execution_logs` / `get_execution_log_detail`. Drop
 into block-state isolation only when a workflow-specific note explicitly treats
 it as a legacy or low-level fallback.
 
@@ -48,7 +49,8 @@ legacy fallback toggle variant only when a workflow-specific note says so.
 ## Quick Start
 
 1. Start with the safest option that can answer the question.
-2. Follow the full execution sequence in [`references/testing-protocol.md`](references/testing-protocol.md).
+2. Treat `validate_workflow` as the default cheap structural preflight after workflow edits and before execution.
+3. Follow the full execution sequence in [`references/testing-protocol.md`](references/testing-protocol.md).
 3. Build payloads from [`references/payload-templates.md`](references/payload-templates.md).
 4. Validate traces and outputs with [`references/verification-rules.md`](references/verification-rules.md).
 5. Record results before moving to the next scenario; only use restore guidance if you intentionally used legacy block-state toggles.

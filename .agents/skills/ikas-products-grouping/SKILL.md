@@ -151,8 +151,9 @@ Output:
 ## Implementation: Three Phases
 
 See `references/testing-workflow.md` for the JS-first validation sequence plus the
-current draft-test workflow. Any older fine-grained workflow-editing commands in
-that reference are explicitly marked historical only.
+current `validate_workflow` → `execute_workflow` draft-test workflow. Any older
+fine-grained workflow-editing commands in that reference are explicitly marked
+historical only.
 
 ### Phase 1: Local JS Test
 
@@ -170,8 +171,8 @@ Create `test-products.js` with:
    `sim-workflows`
 2. Keep the draft verification path minimal: `start_trigger` → `agent` (with the
    new tool) → `response`
-3. Test the draft workflow with `sim_test` or `run_workflow`
-4. Use `sim_debug` only if the draft run fails
+3. Run `validate_workflow` first, then test the draft workflow with `execute_workflow`
+4. If the draft run fails, inspect `get_execution_logs` / `get_execution_log_detail`
 
 ### Phase 3: Full Integration
 

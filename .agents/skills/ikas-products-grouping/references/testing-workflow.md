@@ -255,10 +255,10 @@ Token Savings: 67%
 ## Phase 2: Draft Tool Test in Sim Studio
 
 Prefer the current draft-test surface from `../../sim-workflows/SKILL.md`: build or
-update the workflow, then verify it with `sim_test` / `run_workflow`. The older
-fine-grained flow (`upsert_custom_tools`, block toggles, `execute_workflow`,
-`get_execution_logs`) is historical only and should not be treated as the default
-workflow surface unless you are maintaining an older session that still exposes it.
+update the workflow, then verify it with `validate_workflow` → `execute_workflow`
+and runtime log inspection. Older fine-grained or wrapper-specific notes should be
+treated as historical only unless you are maintaining an older session that still
+depends on them.
 
 ### 2.1 Attach or Update the Tool via the Current Workflow Surface
 
@@ -298,15 +298,19 @@ const toolConfig = {
 
 1. Use a minimal draft path for verification: `start_trigger` → `agent` → `response`
 2. Ensure the agent uses the new tool
-3. Run a draft verification with `sim_test` or `run_workflow`
-4. If the run fails, diagnose with `sim_debug`
+3. Run `validate_workflow({ workflowId })` as the cheap structural preflight
+4. Run a draft verification with `execute_workflow({ workflowId, input, useDraftState: true })`
+5. If the run fails, diagnose with `get_execution_logs` / `get_execution_log_detail`
 
 ### 2.3 Check Results
 
 ```typescript
-sim_test({
+validate_workflow({ workflowId })
+
+execute_workflow({
   workflowId,
-  request: "Run one draft test for mainCategory='sineklikler' and summarize the tool call, output shape, and any failures."
+  input: { mainCategory: "sineklikler" },
+  useDraftState: true
 })
 
 // Look for:

@@ -8,8 +8,9 @@ exposed unchanged.
 > **Do not treat this file as the current parameter authority.** Commands such as
 > `update_subblock`, `toggle_block_enabled`, `execute_workflow`,
 > `get_execution_logs`, and `get_block` are retained here so older notes can be
-> interpreted, but the default live workflow surface is the current `sim_*` /
-> `run_*` flow documented in [SKILL.md](../SKILL.md).
+> interpreted, but the default live workflow surface is the current sim-mcp
+> workflow surface documented in [SKILL.md](../SKILL.md), especially
+> `validate_workflow` → `execute_workflow` → execution-log inspection.
 
 ---
 
@@ -251,6 +252,39 @@ Works with both `loop` and `parallel` container types.
 ---
 
 ## Execution
+
+### `validate_workflow`
+
+Run the cheap structural/minimal-handle preflight before execution.
+
+```
+validate_workflow({ workflowId: "wf_abc" })
+```
+
+What it checks:
+- malformed workflow state
+- broken edges
+- connectivity / reachability issues
+- unused variables
+- locally provable handle issues
+
+What it does **not** prove:
+- runtime success
+- block semantic correctness
+- external API behavior
+- log-free execution correctness
+
+Recent verified behavior: the validator ignores implicit branch handles such as
+`source` / `error` / `target` and dynamic condition/router/switch handles, while
+still surfacing real structural issues.
+
+### Default validation sequence
+
+```
+validate_workflow({ workflowId: "wf_abc" })
+execute_workflow({ workflowId: "wf_abc", input: { ... }, useDraftState: true })
+get_execution_logs({ workspaceId: "ws_id", workflowId: "wf_abc", details: "full", includeTraceSpans: true })
+```
 
 ### `execute_workflow`
 

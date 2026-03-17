@@ -234,7 +234,8 @@ Before **committing or deploying** a workflow, verify:
 - [ ] **All nested references have guards** — Use `?.` operator for any optional/nullable field
 - [ ] **Webhook payload shapes are handled** — Use fallback chains for field alternatives
 - [ ] **Condition syntax is valid JS** — Ensure conditions are executable before tag resolution
-- [ ] **Execute with test payload first** — Run the draft workflow before deploying; review the verification trace / block path summary
+- [ ] **Run `validate_workflow` before execution** — Catch broken edges, connectivity/reachability issues, unused variables, and locally provable handle problems early
+- [ ] **Execute with test payload first** — Run the draft workflow with `execute_workflow` before deploying; review execution logs and trace spans
 - [ ] **Verify trace shows expected fields** — Inspect actual block outputs before wiring downstream references
 
 ---
@@ -246,7 +247,8 @@ When you see: `"result.customer.id" doesn't exist on block "FormatCustomerRespon
 1. **Inspect the draft workflow:** start with `get_workflow({ workflowId })` and
    compare the block display names and wiring used by the failing tag
 2. **Check output schema:** What fields does the block actually declare? (for function blocks: always `{result, stdout}`)
-3. **Run a test:** `run_workflow({ workflowId, workflow_input: testPayload })` or `sim_test(...)` against the draft workflow
-4. **Inspect trace:** use the current verification/debug surface to inspect what each block actually outputs
-5. **Compare:** Does the tag reference match what the block actually produces?
-6. **Fix:** Adjust tag to match actual output; add guards for nullable fields
+3. **Run structural preflight:** `validate_workflow({ workflowId })`
+4. **Run a test:** `execute_workflow({ workflowId, input: testPayload, useDraftState: true })` against the draft workflow
+5. **Inspect trace:** use `get_execution_logs(...)` / `get_execution_log_detail(...)` to inspect what each block actually outputs
+6. **Compare:** Does the tag reference match what the block actually produces?
+7. **Fix:** Adjust tag to match actual output; add guards for nullable fields
