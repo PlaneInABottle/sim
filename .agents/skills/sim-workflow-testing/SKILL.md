@@ -18,8 +18,9 @@ description: >-
 # Sim Workflow Testing Framework
 
 Use this skill as the generic default current surface for Sim workflow
-verification. It covers the current draft-run testing method; company-specific
-suites should live in separate thin wrapper skills.
+verification. It covers the current draft-run testing method plus the safer
+fallback order for risky live webhook workflows; company-specific suites should
+live in separate thin wrapper skills.
 
 ## Core Flow
 
@@ -46,15 +47,14 @@ legacy fallback toggle variant only when a workflow-specific note says so.
 
 ## Quick Start
 
-1. Start with one crafted draft-run scenario on the current execution surface.
+1. Start with the safest option that can answer the question.
 2. Follow the full execution sequence in [`references/testing-protocol.md`](references/testing-protocol.md).
 3. Build payloads from [`references/payload-templates.md`](references/payload-templates.md).
 4. Validate traces and outputs with [`references/verification-rules.md`](references/verification-rules.md).
 5. Record results before moving to the next scenario; only use restore guidance if you intentionally used legacy block-state toggles.
 
-For a workflow-specific suite and repo-local checked-in snapshot/reference
-wrapper, load
-[`../kamatas-workflow-testing/SKILL.md`](../kamatas-workflow-testing/SKILL.md) when applicable.
+Use workflow-local references when a repo keeps checked-in scenario suites or
+snapshot notes for one specific workflow.
 
 ## Target Inventory
 
@@ -70,10 +70,13 @@ full index. Load only the files required for the current test run.
 
 ## Safety Rules
 
-1. Prefer draft-state verification (`sim_test` or the current draft run tools) before any block-state edits.
-2. If you intentionally use legacy block toggles, snapshot and restore them even on failure.
-3. Test one scenario at a time and confirm trace spans before continuing.
-4. Treat live integrations as side-effecting unless you have a proven mock path.
+1. For risky live webhook workflows tied to real customers, do not default to live draft webhook execution.
+2. Use this fallback order: static inspection → historical execution logs → `run_block` / `run_from_block` on a historical execution snapshot → live draft execution only when explicitly safe.
+3. If you intentionally use legacy block toggles, snapshot and restore them even on failure.
+4. Disable only the earliest block that enters the risky branch; do not fan out broad disable lists unless a workflow-specific note proves they are necessary.
+5. Stop verification before side-effecting send / write / handoff blocks when routing or transforms are the target.
+6. Test one scenario at a time and confirm trace spans before continuing.
+7. Treat live integrations as side-effecting unless you have a proven mock path.
 
 ## Related Resources
 

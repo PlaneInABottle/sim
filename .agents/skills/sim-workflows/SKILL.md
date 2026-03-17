@@ -51,6 +51,10 @@ Create → Build → Configure → Execute → Monitor → Debug → Iterate
 - **`run_block`**`({ workflowId, blockId, executionId? })` — isolate a single block after at least one prior run
 - **`run_from_block`**`({ workflowId, startBlockId, executionId? })` — resume from a chosen block using cached upstream outputs
 
+For risky live webhook workflows with real-customer side effects, use this order:
+static inspection → historical execution log review → `run_block` / `run_from_block`
+with a historical `executionId` → live draft execution only when explicitly safe.
+
 ### Inspect, Deploy, Debug
 
 - **`list_workspaces`**`()`, **`list_workflows`**`({ workspaceId?, folderId? })`, **`get_workflow`**`({ workflowId })`
@@ -198,6 +202,6 @@ create_workflow → sim_build → sim_test → run_workflow (optional raw execut
 
 **Tag syntax:** `<BlockName.field>` (block output) · `<variable.name>` (workflow var) · `{{ENV_VAR}}` (env)
 
-**Draft-first rule:** prefer `sim_test` / `run_workflow` on draft state before deploying
+**Draft-first rule:** prefer `sim_test` / `run_workflow` on draft state before deploying, except risky live webhook workflows where historical snapshot verification is safer than re-entering the webhook.
 
 **Block positioning:** Trigger x=100, Processing x=400-700, Response x=900+, Branch spacing y±150

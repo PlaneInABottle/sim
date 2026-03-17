@@ -23,6 +23,7 @@ For each workflow under test:
 3. Build a block map with block display name, block ID, type, and enabled state.
 4. Record all condition handles you will assert against.
 5. Mark the earliest block in each path so profile-specific disable lists stay minimal.
+6. Mark side-effecting branch-entry blocks separately from downstream send / write / handoff blocks.
 
 Use a workflow-local note or SQL table for this inventory when the workflow has
 many branches or side-effecting integrations.
@@ -41,15 +42,19 @@ Also record:
 
 - important source handles for each condition block
 - any loop/parallel container boundaries
+- the first block that enters each risky branch
 - side-effecting blocks that should be disabled in `PATH_ISOLATION`
 - final send / external API blocks that should stay off in `FULL_INTEGRATION`
 
 ## Path Mapping Rules
 
 - Disable the **earliest** block in a branch when you want to suppress the whole downstream path.
+- For risky workflows, disable only the **first** block that enters the risky branch unless a narrower verified exception exists.
 - If a block has **multiple upstream inputs**, disabling one upstream path is not enough.
 - Keep `CONDITION_ONLY`, `PATH_ISOLATION`, and `FULL_INTEGRATION` as the shared profile names.
 - Store display names exactly as the workflow shows them; case and spacing matter in trace assertions.
+- Snapshot original enabled state before any toggle and restore exactly after the run.
+- If routing or transform logic is the target, stop before side-effecting send / write / handoff blocks instead of disabling deep downstream chains.
 
 ## SQL Tracking Schema
 

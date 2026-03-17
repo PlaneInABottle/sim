@@ -36,6 +36,7 @@ the app repo over older legacy names.
 7. **Response block in structured mode** — set `dataMode` to `"json"` for tag-based responses
 8. **Using `inputData` or `params` for block data in function blocks** — `params` is always `{}` for regular function blocks; use tag syntax `<BlockName.field>` instead
 9. **Referencing function output as `.output`** — the correct field is `.result` (e.g., `<MyFunc.result>`)
+10. **Replaying a risky live webhook by default** — inspect the workflow, inspect historical logs, and prefer `run_block` / `run_from_block` with a historical execution snapshot before a fresh live draft execution
 
 ---
 
@@ -49,6 +50,11 @@ sim_test({
   request: "Run the failing scenario on the draft workflow and summarize the failing path."
 })
 ```
+
+If the workflow is a risky live webhook with real-customer side effects, do not
+start here by default. Inspect historical execution logs first, then replay the
+relevant branch with `run_block` / `run_from_block` and a prior `executionId`
+when possible.
 
 ### Step 2: Inspect the specific failure
 
@@ -69,6 +75,9 @@ Apply the fix through the current workflow-editing surface (`sim_build` or
 ```
 run_workflow({ workflowId: "wf_abc", workflow_input: { ... } })
 ```
+
+If routing or transform logic is the test target, stop before side-effecting
+send / write / handoff blocks and treat that as sufficient verification.
 
 ---
 
