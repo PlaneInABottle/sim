@@ -93,6 +93,23 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         )
         return NextResponse.json({ error: 'Access denied' }, { status: 403 })
       }
+
+      if (error.message === 'Write or admin access required for target workspace') {
+        logger.warn(
+          `[${requestId}] User ${userId} lacks write access to target workspace`
+        )
+        return NextResponse.json({ error: 'Write or admin access required' }, { status: 403 })
+      }
+
+      if (error.message.includes('not attached to a workspace')) {
+        logger.warn(`[${requestId}] Workflow not attached to a workspace`)
+        return NextResponse.json({ error: error.message }, { status: 400 })
+      }
+
+      if (error.message === 'Workspace ID is required') {
+        logger.warn(`[${requestId}] Missing workspace ID in duplication request`)
+        return NextResponse.json({ error: 'Workspace ID is required' }, { status: 400 })
+      }
     }
 
     if (error instanceof z.ZodError) {
