@@ -46,9 +46,18 @@ vi.mock('@/lib/core/utils/request', () => ({
   generateRequestId: () => 'req-123',
 }))
 
-vi.mock('@/lib/core/config/env', () => ({
-  env: { INTERNAL_API_SECRET: 'internal-secret', SOCKET_SERVER_URL: 'http://localhost:3002' },
-}))
+vi.mock('@/lib/core/config/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/core/config/env')>()
+
+  return {
+    ...actual,
+    env: {
+      ...actual.env,
+      INTERNAL_API_SECRET: 'internal-secret',
+      SOCKET_SERVER_URL: 'http://localhost:3002',
+    },
+  }
+})
 
 vi.mock('@sim/db', () => ({
   db: {

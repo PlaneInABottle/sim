@@ -93,6 +93,7 @@ export async function validateWorkflowAccess(
         workflowId,
         userId: auth.userId,
         action,
+        workflow,
       })
       if (!authorization.allowed) {
         return {

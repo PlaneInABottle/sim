@@ -38,9 +38,14 @@ vi.mock('@/lib/auth/hybrid', () => ({
   checkHybridAuth: (...args: unknown[]) => mockCheckHybridAuth(...args),
 }))
 
-vi.mock('@/lib/core/config/env', () => ({
-  env: {},
-}))
+vi.mock('@/lib/core/config/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/core/config/env')>()
+
+  return {
+    ...actual,
+    env: actual.env,
+  }
+})
 
 vi.mock('@/lib/workflows/utils', () => ({
   authorizeWorkflowByWorkspacePermission: (...args: unknown[]) =>
@@ -158,6 +163,7 @@ describe('validateWorkflowAccess', () => {
       workflowId: WORKFLOW_ID,
       userId: 'user-1',
       action: 'admin',
+      workflow: createWorkflow(),
     })
   })
 
@@ -209,6 +215,7 @@ describe('validateWorkflowAccess', () => {
       workflowId: WORKFLOW_ID,
       userId: 'user-1',
       action: 'read',
+      workflow,
     })
   })
 
@@ -225,6 +232,12 @@ describe('validateWorkflowAccess', () => {
     })
 
     expect(result).toEqual({ workflow, auth })
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: WORKFLOW_ID,
+      userId: 'user-1',
+      action: 'read',
+      workflow,
+    })
   })
 
   it('returns 404 for deployed access when workflow is missing', async () => {

@@ -29,7 +29,10 @@ vi.mock('@/lib/workflows/active-context', () => ({
   getActiveWorkflowContext: mockGetActiveWorkflowContext,
 }))
 
-import { validateWorkflowPermissions } from '@/lib/workflows/utils'
+import {
+  authorizeWorkflowByWorkspacePermission,
+  validateWorkflowPermissions,
+} from '@/lib/workflows/utils'
 
 const mockDb = databaseMock.db
 
@@ -307,5 +310,56 @@ describe('validateWorkflowPermissions', () => {
 
       expectWorkflowAccessGranted(result)
     })
+  })
+})
+
+describe('authorizeWorkflowByWorkspacePermission', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('reuses a provided workflow without loading active workflow context', async () => {
+    const mockLimit = vi.fn().mockResolvedValue([{ permissionType: 'admin' }])
+    const mockWhere = vi.fn(() => ({ limit: mockLimit }))
+    const mockFrom = vi.fn(() => ({ where: mockWhere }))
+    vi.mocked(mockDb.select).mockReturnValue({ from: mockFrom } as any)
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: mockWorkflow.id,
+      userId: 'user-1',
+      action: 'admin',
+      workflow: mockWorkflow,
+    })
+
+    expect(result).toEqual({
+      allowed: true,
+      status: 200,
+      workflow: mockWorkflow,
+      workspacePermission: 'admin',
+    })
+    expect(mockGetActiveWorkflowContext).not.toHaveBeenCalled()
+  })
+
+  it('preserves denial behavior when a provided workflow has no matching permission', async () => {
+    const mockLimit = vi.fn().mockResolvedValue([])
+    const mockWhere = vi.fn(() => ({ limit: mockLimit }))
+    const mockFrom = vi.fn(() => ({ where: mockWhere }))
+    vi.mocked(mockDb.select).mockReturnValue({ from: mockFrom } as any)
+
+    const result = await authorizeWorkflowByWorkspacePermission({
+      workflowId: mockWorkflow.id,
+      userId: 'user-1',
+      action: 'write',
+      workflow: mockWorkflow,
+    })
+
+    expect(result).toEqual({
+      allowed: false,
+      status: 403,
+      message: 'Unauthorized: Access denied to write this workflow',
+      workflow: mockWorkflow,
+      workspacePermission: null,
+    })
+    expect(mockGetActiveWorkflowContext).not.toHaveBeenCalled()
   })
 })

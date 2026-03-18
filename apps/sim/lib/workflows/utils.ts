@@ -337,11 +337,12 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
   workflowId: string
   userId: string
   action?: 'read' | 'write' | 'admin'
+  workflow?: WorkflowRecord
 }): Promise<WorkflowWorkspaceAuthorizationResult> {
-  const { workflowId, userId, action = 'read' } = params
+  const { workflowId, userId, action = 'read', workflow: preloadedWorkflow } = params
 
-  const activeContext = await getActiveWorkflowContext(workflowId)
-  if (!activeContext) {
+  const workflow = preloadedWorkflow ?? (await getActiveWorkflowContext(workflowId))?.workflow
+  if (!workflow) {
     return {
       allowed: false,
       status: 404,
@@ -350,8 +351,6 @@ export async function authorizeWorkflowByWorkspacePermission(params: {
       workspacePermission: null,
     }
   }
-
-  const workflow = activeContext.workflow
 
   if (!workflow.workspaceId) {
     return {
