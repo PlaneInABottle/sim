@@ -33,7 +33,9 @@ function paramsToSubBlocks(
   return subBlocks
 }
 
-function getRegistrySchema(block: SerializedBlock): OutputSchema | undefined {
+export function getBlockSchema(
+  block: SerializedBlock
+): OutputSchema | undefined {
   const blockType = block.metadata?.id
   if (!blockType) return undefined
 
@@ -51,10 +53,6 @@ function getRegistrySchema(block: SerializedBlock): OutputSchema | undefined {
     return undefined
   }
   return outputs
-}
-
-export function getBlockSchema(block: SerializedBlock): OutputSchema | undefined {
-  return getRegistrySchema(block)
 }
 
 export function collectBlockData(

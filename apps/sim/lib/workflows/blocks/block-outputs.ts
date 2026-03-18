@@ -365,11 +365,6 @@ export function getEffectiveBlockOutputs(
   const preferToolOutputs = options?.preferToolOutputs ?? !triggerMode
   const includeHidden = options?.includeHidden ?? false
 
-  if (blockType === 'agent') {
-    const responseFormatOutputs = getResponseFormatOutputs(subBlocks, 'agent')
-    if (responseFormatOutputs) return responseFormatOutputs
-  }
-
   let baseOutputs: OutputDefinition
   if (triggerMode) {
     baseOutputs = getBlockOutputs(blockType, subBlocks, true, { includeHidden })
@@ -384,6 +379,13 @@ export function getEffectiveBlockOutputs(
         : getBlockOutputs(blockType, subBlocks, false, { includeHidden })
   } else {
     baseOutputs = getBlockOutputs(blockType, subBlocks, false, { includeHidden })
+  }
+
+  if (blockType === 'agent') {
+    const responseFormatOutputs = getResponseFormatOutputs(subBlocks, 'agent')
+    if (responseFormatOutputs) {
+      return { ...baseOutputs, ...responseFormatOutputs }
+    }
   }
 
   if (blockType === 'evaluator') {
