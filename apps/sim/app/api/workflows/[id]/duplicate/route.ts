@@ -95,9 +95,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
       }
 
       if (error.message === 'Write or admin access required for target workspace') {
-        logger.warn(
-          `[${requestId}] User ${userId} lacks write access to target workspace`
-        )
+        logger.warn(`[${requestId}] User ${userId} lacks write access to target workspace`)
         return NextResponse.json({ error: 'Write or admin access required' }, { status: 403 })
       }
 
