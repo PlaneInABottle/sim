@@ -78,6 +78,8 @@ import { useSearchModalStore } from '@/stores/modals/search/store'
 import { useSidebarStore } from '@/stores/sidebar/store'
 
 const logger = createLogger('Sidebar')
+const KOZMOPATH_BRAND_NAME = 'Kozmopath'
+const KOZMOPATH_LOGO_SRC = '/kozmopath.png'
 
 function SidebarItemSkeleton() {
   return (
@@ -249,6 +251,8 @@ export const SIDEBAR_SCROLL_EVENT = 'sidebar-scroll-to-item'
  */
 export const Sidebar = memo(function Sidebar() {
   const brand = getBrandConfig()
+  const brandIconSrc =
+    brand.logoUrl || (brand.name === KOZMOPATH_BRAND_NAME ? KOZMOPATH_LOGO_SRC : undefined)
   const params = useParams()
   const workspaceId = params.workspaceId as string
   const workflowId = params.workflowId as string | undefined
@@ -984,9 +988,9 @@ export const Sidebar = memo(function Sidebar() {
                     className='group flex h-[30px] w-[30px] items-center justify-center rounded-[8px] hover:bg-[var(--surface-active)]'
                     aria-label='Expand sidebar'
                   >
-                    {brand.logoUrl ? (
+                    {brandIconSrc ? (
                       <Image
-                        src={brand.logoUrl}
+                        src={brandIconSrc}
                         alt={brand.name}
                         width={16}
                         height={16}
@@ -1003,9 +1007,9 @@ export const Sidebar = memo(function Sidebar() {
                     href={`/workspace/${workspaceId}/home`}
                     className='flex h-[30px] w-[30px] items-center justify-center rounded-[8px] hover:bg-[var(--surface-active)]'
                   >
-                    {brand.logoUrl ? (
+                    {brandIconSrc ? (
                       <Image
-                        src={brand.logoUrl}
+                        src={brandIconSrc}
                         alt={brand.name}
                         width={16}
                         height={16}

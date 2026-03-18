@@ -32,6 +32,10 @@ const NAV_LINKS: NavLink[] = [
 
 const LOGO_CELL = 'flex items-center pl-[20px] lg:pl-[80px] pr-[20px]'
 const LINK_CELL = 'flex items-center px-[14px]'
+const KOZMOPATH_BRAND_NAME = 'Kozmopath'
+const KOZMOPATH_LOGO_SRC = '/logo/reverse/text/logo.svg'
+const KOZMOPATH_LOGO_WIDTH = 132
+const KOZMOPATH_LOGO_HEIGHT = 24
 
 interface NavbarProps {
   logoOnly?: boolean
@@ -40,6 +44,10 @@ interface NavbarProps {
 
 export default function Navbar({ logoOnly = false, blogPosts = [] }: NavbarProps) {
   const brand = getBrandConfig()
+  const logoSrc =
+    brand.logoUrl ||
+    (brand.name === KOZMOPATH_BRAND_NAME ? KOZMOPATH_LOGO_SRC : '/logo/sim-landing.svg')
+  const isKozmopathFallbackLogo = !brand.logoUrl && brand.name === KOZMOPATH_BRAND_NAME
   const [activeDropdown, setActiveDropdown] = useState<DropdownId>(null)
   const [hoveredLink, setHoveredLink] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -96,26 +104,20 @@ export default function Navbar({ logoOnly = false, blogPosts = [] }: NavbarProps
         <span itemProp='name' className='sr-only'>
           {brand.name}
         </span>
-        {brand.logoUrl ? (
+        {logoSrc ? (
           <Image
-            src={brand.logoUrl}
+            src={logoSrc}
             alt={`${brand.name} Logo`}
-            width={71}
-            height={22}
-            className='h-[22px] w-auto object-contain'
+            width={isKozmopathFallbackLogo ? KOZMOPATH_LOGO_WIDTH : 71}
+            height={isKozmopathFallbackLogo ? KOZMOPATH_LOGO_HEIGHT : 22}
+            className={cn(
+              'w-auto object-contain',
+              isKozmopathFallbackLogo ? 'h-[24px]' : 'h-[22px]'
+            )}
             priority
             unoptimized
           />
-        ) : (
-          <Image
-            src='/logo/sim-landing.svg'
-            alt='Sim'
-            width={71}
-            height={22}
-            className='h-[22px] w-auto'
-            priority
-          />
-        )}
+        ) : null}
       </Link>
 
       {!logoOnly && (
