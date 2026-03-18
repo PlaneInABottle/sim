@@ -4,6 +4,7 @@ import { memo } from 'react'
 import { motion } from 'framer-motion'
 import { Database } from 'lucide-react'
 import { Handle, type NodeProps, Position } from 'reactflow'
+import { Blimp } from '@/components/emcn'
 import {
   AgentIcon,
   AnthropicIcon,
@@ -13,6 +14,7 @@ import {
   GmailIcon,
   GoogleCalendarIcon,
   GoogleSheetsIcon,
+  HubspotIcon,
   JiraIcon,
   LinearIcon,
   LinkedInIcon,
@@ -21,6 +23,7 @@ import {
   OpenAIIcon,
   RedditIcon,
   ReductoIcon,
+  SalesforceIcon,
   ScheduleIcon,
   SlackIcon,
   StartIcon,
@@ -56,13 +59,16 @@ const BLOCK_ICONS: Record<string, React.ComponentType<{ className?: string }>> =
   google_calendar: GoogleCalendarIcon,
   gmail: GmailIcon,
   google_sheets: GoogleSheetsIcon,
+  hubspot: HubspotIcon,
   linear: LinearIcon,
   firecrawl: FirecrawlIcon,
   reddit: RedditIcon,
   notion: NotionIcon,
   reducto: ReductoIcon,
+  salesforce: SalesforceIcon,
   textract: TextractIcon,
   linkedin: LinkedInIcon,
+  mothership: Blimp,
 }
 
 /** Model prefix → provider icon for the "Model" row in agent blocks. */

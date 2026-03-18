@@ -8,10 +8,15 @@ import {
   reportManualRunToolStop,
 } from '@/lib/copilot/client-sse/run-tool-execution'
 import { MOTHERSHIP_CHAT_API_PATH } from '@/lib/copilot/constants'
+import {
+  extractResourcesFromToolResult,
+  isResourceToolName,
+} from '@/lib/copilot/resource-extraction'
 import { VFS_DIR_TO_RESOURCE } from '@/lib/copilot/resource-types'
 import { isWorkflowToolName } from '@/lib/copilot/workflow-tools'
 import { getNextWorkflowColor } from '@/lib/workflows/colors'
 import { invalidateResourceQueries } from '@/app/workspace/[workspaceId]/home/components/mothership-view/components/resource-registry'
+import { deploymentKeys } from '@/hooks/queries/deployments'
 import {
   type TaskChatHistory,
   type TaskStoredContentBlock,
@@ -22,6 +27,7 @@ import {
   useChatHistory,
 } from '@/hooks/queries/tasks'
 import { getTopInsertionSortOrder } from '@/hooks/queries/utils/top-insertion-sort-order'
+import { workflowKeys } from '@/hooks/queries/workflows'
 import { useExecutionStream } from '@/hooks/use-execution-stream'
 import { useExecutionStore } from '@/stores/execution/store'
 import { useFolderStore } from '@/stores/folders/store'
@@ -45,6 +51,7 @@ import type {
 export interface UseChatReturn {
   messages: ChatMessage[]
   isSending: boolean
+  isReconnecting: boolean
   error: string | null
   resolvedChatId: string | undefined
   sendMessage: (
@@ -72,6 +79,8 @@ const STATE_TO_STATUS: Record<string, ToolCallStatus> = {
   rejected: 'error',
   skipped: 'success',
 } as const
+
+const DEPLOY_TOOL_NAMES = new Set(['deploy_api', 'deploy_chat', 'deploy_mcp', 'redeploy'])
 
 function mapStoredBlock(block: TaskStoredContentBlock): ContentBlock {
   const mapped: ContentBlock = {
@@ -123,7 +132,7 @@ function toDisplayAttachment(f: TaskStoredFileAttachment): ChatMessageAttachment
     media_type: f.media_type,
     size: f.size,
     previewUrl: f.media_type.startsWith('image/')
-      ? `/api/files/serve/${encodeURIComponent(f.key)}?context=copilot`
+      ? `/api/files/serve/${encodeURIComponent(f.key)}?context=mothership`
       : undefined,
   }
 }
@@ -250,6 +259,7 @@ export function useChat(
   const queryClient = useQueryClient()
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [isSending, setIsSending] = useState(false)
+  const [isReconnecting, setIsReconnecting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [resolvedChatId, setResolvedChatId] = useState<string | undefined>(initialChatId)
   const [resources, setResources] = useState<MothershipResource[]>([])
@@ -268,6 +278,14 @@ export function useChat(
   }, [messageQueue])
 
   const sendMessageRef = useRef<UseChatReturn['sendMessage']>(async () => {})
+  const processSSEStreamRef = useRef<
+    (
+      reader: ReadableStreamDefaultReader<Uint8Array>,
+      assistantId: string,
+      expectedGen?: number
+    ) => Promise<void>
+  >(async () => {})
+  const finalizeRef = useRef<(options?: { error?: boolean }) => void>(() => {})
 
   const abortControllerRef = useRef<AbortController | null>(null)
   const chatIdRef = useRef<string | undefined>(initialChatId)
@@ -329,6 +347,7 @@ export function useChat(
     setMessages([])
     setError(null)
     setIsSending(false)
+    setIsReconnecting(false)
     setResources([])
     setActiveResourceId(null)
     setMessageQueue([])
@@ -346,6 +365,7 @@ export function useChat(
     setMessages([])
     setError(null)
     setIsSending(false)
+    setIsReconnecting(false)
     setResources([])
     setActiveResourceId(null)
     setMessageQueue([])
@@ -353,8 +373,18 @@ export function useChat(
 
   useEffect(() => {
     if (!chatHistory || appliedChatIdRef.current === chatHistory.id) return
+
+    const activeStreamId = chatHistory.activeStreamId
+    const snapshot = chatHistory.streamSnapshot
+
+    if (activeStreamId && !snapshot && !sendingRef.current) {
+      queryClient.invalidateQueries({ queryKey: taskKeys.detail(chatHistory.id) })
+      return
+    }
+
     appliedChatIdRef.current = chatHistory.id
-    setMessages(chatHistory.messages.map(mapStoredMessage))
+    const mappedMessages = chatHistory.messages.map(mapStoredMessage)
+    setMessages(mappedMessages)
 
     if (chatHistory.resources.length > 0) {
       setResources(chatHistory.resources)
@@ -365,7 +395,91 @@ export function useChat(
         ensureWorkflowInRegistry(resource.id, resource.title, workspaceId)
       }
     }
-  }, [chatHistory, workspaceId])
+
+    if (activeStreamId && !sendingRef.current) {
+      abortControllerRef.current?.abort()
+      const gen = ++streamGenRef.current
+      const abortController = new AbortController()
+      abortControllerRef.current = abortController
+      streamIdRef.current = activeStreamId
+      sendingRef.current = true
+      setIsReconnecting(true)
+
+      const assistantId = crypto.randomUUID()
+
+      const reconnect = async () => {
+        try {
+          const encoder = new TextEncoder()
+
+          const batchEvents = snapshot?.events ?? []
+          const streamStatus = snapshot?.status ?? ''
+
+          if (batchEvents.length === 0 && streamStatus === 'unknown') {
+            const cid = chatIdRef.current
+            if (cid) {
+              fetch('/api/mothership/chat/stop', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chatId: cid, streamId: activeStreamId, content: '' }),
+              }).catch(() => {})
+            }
+            return
+          }
+
+          setIsSending(true)
+          setIsReconnecting(false)
+
+          const lastEventId =
+            batchEvents.length > 0 ? batchEvents[batchEvents.length - 1].eventId : 0
+          const isStreamDone = streamStatus === 'complete' || streamStatus === 'error'
+
+          const combinedStream = new ReadableStream<Uint8Array>({
+            async start(controller) {
+              if (batchEvents.length > 0) {
+                const sseText = batchEvents
+                  .map((e) => `data: ${JSON.stringify(e.event)}\n`)
+                  .join('\n')
+                controller.enqueue(encoder.encode(`${sseText}\n`))
+              }
+
+              if (!isStreamDone) {
+                try {
+                  const sseRes = await fetch(
+                    `/api/copilot/chat/stream?streamId=${activeStreamId}&from=${lastEventId}`,
+                    { signal: abortController.signal }
+                  )
+                  if (sseRes.ok && sseRes.body) {
+                    const reader = sseRes.body.getReader()
+                    while (true) {
+                      const { done, value } = await reader.read()
+                      if (done) break
+                      controller.enqueue(value)
+                    }
+                  }
+                } catch (err) {
+                  if (!(err instanceof Error && err.name === 'AbortError')) {
+                    logger.warn('SSE tail failed during reconnect', err)
+                  }
+                }
+              }
+
+              controller.close()
+            },
+          })
+
+          await processSSEStreamRef.current(combinedStream.getReader(), assistantId, gen)
+        } catch (err) {
+          if (err instanceof Error && err.name === 'AbortError') return
+        } finally {
+          setIsReconnecting(false)
+          if (streamGenRef.current === gen) {
+            finalizeRef.current()
+          }
+        }
+      }
+      reconnect()
+    }
+  }, [chatHistory, workspaceId, queryClient])
 
   useEffect(() => {
     if (resources.length === 0) {
@@ -381,7 +495,11 @@ export function useChat(
   }, [activeResourceId, resources])
 
   const processSSEStream = useCallback(
-    async (reader: ReadableStreamDefaultReader<Uint8Array>, assistantId: string) => {
+    async (
+      reader: ReadableStreamDefaultReader<Uint8Array>,
+      assistantId: string,
+      expectedGen?: number
+    ) => {
       const decoder = new TextDecoder()
       let buffer = ''
       const blocks: ContentBlock[] = []
@@ -397,22 +515,33 @@ export function useChat(
 
       const ensureTextBlock = (): ContentBlock => {
         const last = blocks[blocks.length - 1]
-        if (last?.type === 'text') return last
+        if (last?.type === 'text' && last.subagent === activeSubagent) return last
         const b: ContentBlock = { type: 'text', content: '' }
         blocks.push(b)
         return b
       }
 
+      const isStale = () => expectedGen !== undefined && streamGenRef.current !== expectedGen
+
       const flush = () => {
+        if (isStale()) return
         streamingBlocksRef.current = [...blocks]
-        setMessages((prev) =>
-          prev.map((m) =>
-            m.id === assistantId ? { ...m, content: runningText, contentBlocks: [...blocks] } : m
-          )
-        )
+        const snapshot = { content: runningText, contentBlocks: [...blocks] }
+        setMessages((prev) => {
+          if (expectedGen !== undefined && streamGenRef.current !== expectedGen) return prev
+          const idx = prev.findIndex((m) => m.id === assistantId)
+          if (idx >= 0) {
+            return prev.map((m) => (m.id === assistantId ? { ...m, ...snapshot } : m))
+          }
+          return [...prev, { id: assistantId, role: 'assistant' as const, ...snapshot }]
+        })
       }
 
       while (true) {
+        if (isStale()) {
+          reader.cancel().catch(() => {})
+          break
+        }
         const { done, value } = await reader.read()
         if (done) break
 
@@ -432,7 +561,6 @@ export function useChat(
           }
 
           logger.debug('SSE event received', parsed)
-
           switch (parsed.type) {
             case 'chat_id': {
               if (parsed.chatId) {
@@ -481,6 +609,7 @@ export function useChat(
                 const tb = ensureTextBlock()
                 const normalizedChunk = needsBoundaryNewline ? `\n${chunk}` : chunk
                 tb.content = (tb.content ?? '') + normalizedChunk
+                if (activeSubagent) tb.subagent = activeSubagent
                 runningText += normalizedChunk
                 lastContentSource = contentSource
                 streamingContentRef.current = runningText
@@ -514,7 +643,7 @@ export function useChat(
                     calledBy: activeSubagent,
                   },
                 })
-                if (name === 'read') {
+                if (name === 'read' || isResourceToolName(name)) {
                   const args = (data?.arguments ?? data?.input) as
                     | Record<string, unknown>
                     | undefined
@@ -540,6 +669,22 @@ export function useChat(
               ) {
                 clientExecutionStarted.add(id)
                 const args = data?.arguments ?? data?.input ?? {}
+                const targetWorkflowId =
+                  typeof (args as Record<string, unknown>).workflowId === 'string'
+                    ? ((args as Record<string, unknown>).workflowId as string)
+                    : useWorkflowRegistry.getState().activeWorkflowId
+                if (targetWorkflowId) {
+                  const meta = useWorkflowRegistry.getState().workflows[targetWorkflowId]
+                  const wasAdded = addResource({
+                    type: 'workflow',
+                    id: targetWorkflowId,
+                    title: meta?.name ?? 'Workflow',
+                  })
+                  if (!wasAdded && activeResourceIdRef.current !== targetWorkflowId) {
+                    setActiveResourceId(targetWorkflowId)
+                  }
+                  onResourceEventRef.current?.()
+                }
                 executeRunToolOnClient(id, name, args as Record<string, unknown>)
               }
               break
@@ -582,9 +727,46 @@ export function useChat(
                     readArgs?.path as string | undefined,
                     tc.result.output
                   )
-                  if (resource) {
-                    addResource(resource)
+                  if (resource && addResource(resource)) {
                     onResourceEventRef.current?.()
+                  }
+                }
+
+                if (DEPLOY_TOOL_NAMES.has(tc.name) && tc.status === 'success') {
+                  const output = tc.result?.output as Record<string, unknown> | undefined
+                  const deployedWorkflowId = (output?.workflowId as string) ?? undefined
+                  if (deployedWorkflowId && typeof output?.isDeployed === 'boolean') {
+                    const isDeployed = output.isDeployed as boolean
+                    const serverDeployedAt = output.deployedAt
+                      ? new Date(output.deployedAt as string)
+                      : undefined
+                    useWorkflowRegistry
+                      .getState()
+                      .setDeploymentStatus(
+                        deployedWorkflowId,
+                        isDeployed,
+                        isDeployed ? (serverDeployedAt ?? new Date()) : undefined
+                      )
+                    queryClient.invalidateQueries({
+                      queryKey: deploymentKeys.info(deployedWorkflowId),
+                    })
+                    queryClient.invalidateQueries({
+                      queryKey: deploymentKeys.versions(deployedWorkflowId),
+                    })
+                    queryClient.invalidateQueries({
+                      queryKey: workflowKeys.list(workspaceId),
+                    })
+                  }
+                }
+
+                if (tc.status === 'success' && isResourceToolName(tc.name)) {
+                  const resources = extractResourcesFromToolResult(
+                    tc.name,
+                    toolArgsMap.get(id) as Record<string, unknown> | undefined,
+                    tc.result?.output
+                  )
+                  for (const resource of resources) {
+                    invalidateResourceQueries(queryClient, workspaceId, resource.type, resource.id)
                   }
                 }
               }
@@ -594,12 +776,21 @@ export function useChat(
             case 'resource_added': {
               const resource = parsed.resource
               if (resource?.type && resource?.id) {
-                addResource(resource)
+                const wasAdded = addResource(resource)
                 invalidateResourceQueries(queryClient, workspaceId, resource.type, resource.id)
 
+                if (!wasAdded && activeResourceIdRef.current !== resource.id) {
+                  setActiveResourceId(resource.id)
+                }
                 onResourceEventRef.current?.()
+
                 if (resource.type === 'workflow') {
-                  if (ensureWorkflowInRegistry(resource.id, resource.title, workspaceId)) {
+                  const wasRegistered = ensureWorkflowInRegistry(
+                    resource.id,
+                    resource.title,
+                    workspaceId
+                  )
+                  if (wasAdded && wasRegistered) {
                     useWorkflowRegistry.getState().setActiveWorkflow(resource.id)
                   } else {
                     useWorkflowRegistry.getState().loadWorkflowState(resource.id)
@@ -643,6 +834,7 @@ export function useChat(
             }
             case 'subagent_end': {
               activeSubagent = undefined
+              blocks.push({ type: 'subagent_end' })
               flush()
               break
             }
@@ -662,6 +854,9 @@ export function useChat(
     },
     [workspaceId, queryClient, addResource, removeResource]
   )
+  useLayoutEffect(() => {
+    processSSEStreamRef.current = processSSEStream
+  })
 
   const persistPartialResponse = useCallback(async () => {
     const chatId = chatIdRef.current
@@ -750,50 +945,9 @@ export function useChat(
     },
     [invalidateChatQueries]
   )
-
-  useEffect(() => {
-    const activeStreamId = chatHistory?.activeStreamId
-    if (!activeStreamId || !appliedChatIdRef.current || sendingRef.current) return
-
-    const gen = ++streamGenRef.current
-    const abortController = new AbortController()
-    abortControllerRef.current = abortController
-    sendingRef.current = true
-    setIsSending(true)
-
-    const assistantId = crypto.randomUUID()
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: assistantId,
-        role: 'assistant' as const,
-        content: '',
-        contentBlocks: [],
-      },
-    ])
-
-    const reconnect = async () => {
-      try {
-        const response = await fetch(`/api/copilot/chat/stream?streamId=${activeStreamId}&from=0`, {
-          signal: abortController.signal,
-        })
-        if (!response.ok || !response.body) return
-        await processSSEStream(response.body.getReader(), assistantId)
-      } catch (err) {
-        if (err instanceof Error && err.name === 'AbortError') return
-      } finally {
-        if (streamGenRef.current === gen) {
-          finalize()
-        }
-      }
-    }
-    reconnect()
-
-    return () => {
-      abortController.abort()
-      appliedChatIdRef.current = undefined
-    }
-  }, [chatHistory?.activeStreamId, processSSEStream, finalize])
+  useLayoutEffect(() => {
+    finalizeRef.current = finalize
+  })
 
   const sendMessage = useCallback(
     async (message: string, fileAttachments?: FileAttachmentForApi[], contexts?: ChatContext[]) => {
@@ -840,15 +994,15 @@ export function useChat(
           content: message,
           ...(storedAttachments && { fileAttachments: storedAttachments }),
         }
-        queryClient.setQueryData<TaskChatHistory>(taskKeys.detail(chatIdRef.current), (old) =>
-          old
+        queryClient.setQueryData<TaskChatHistory>(taskKeys.detail(chatIdRef.current), (old) => {
+          return old
             ? {
                 ...old,
                 messages: [...old.messages, cachedUserMsg],
                 activeStreamId: userMessageId,
               }
             : undefined
-        )
+        })
       }
 
       const userAttachments = storedAttachments?.map(toDisplayAttachment)
@@ -880,12 +1034,15 @@ export function useChat(
       try {
         const currentActiveId = activeResourceIdRef.current
         const currentResources = resourcesRef.current
-        const activeRes = currentActiveId
-          ? currentResources.find((r) => r.id === currentActiveId)
-          : undefined
-        const resourceAttachments = activeRes
-          ? [{ type: activeRes.type, id: activeRes.id }]
-          : undefined
+        const resourceAttachments =
+          currentResources.length > 0
+            ? currentResources.map((r) => ({
+                type: r.type,
+                id: r.id,
+                title: r.title,
+                active: r.id === currentActiveId,
+              }))
+            : undefined
 
         const response = await fetch(MOTHERSHIP_CHAT_API_PATH, {
           method: 'POST',
@@ -911,7 +1068,7 @@ export function useChat(
 
         if (!response.body) throw new Error('No response body')
 
-        await processSSEStream(response.body.getReader(), assistantId)
+        await processSSEStream(response.body.getReader(), assistantId, gen)
       } catch (err) {
         if (err instanceof Error && err.name === 'AbortError') return
         setError(err instanceof Error ? err.message : 'Failed to send message')
@@ -931,10 +1088,22 @@ export function useChat(
   })
 
   const stopGeneration = useCallback(async () => {
+    if (sendingRef.current && !chatIdRef.current) {
+      const start = Date.now()
+      while (!chatIdRef.current && sendingRef.current && Date.now() - start < 3000) {
+        await new Promise((r) => setTimeout(r, 50))
+      }
+      if (!chatIdRef.current) return
+    }
+
     if (sendingRef.current) {
       await persistPartialResponse()
     }
-    const sid = streamIdRef.current
+    const sid =
+      streamIdRef.current ||
+      queryClient.getQueryData<TaskChatHistory>(taskKeys.detail(chatIdRef.current))
+        ?.activeStreamId ||
+      undefined
     streamGenRef.current++
     abortControllerRef.current?.abort()
     abortControllerRef.current = null
@@ -1038,12 +1207,9 @@ export function useChat(
 
   useEffect(() => {
     return () => {
-      streamGenRef.current++
-      // Only drop the browser→Sim read; the Sim→Go stream stays open
-      // so the backend can finish persisting. Explicit abort is only
-      // triggered by the stop button via /api/copilot/chat/abort.
       abortControllerRef.current?.abort()
       abortControllerRef.current = null
+      streamGenRef.current++
       sendingRef.current = false
     }
   }, [])
@@ -1051,6 +1217,7 @@ export function useChat(
   return {
     messages,
     isSending,
+    isReconnecting,
     error,
     resolvedChatId,
     sendMessage,

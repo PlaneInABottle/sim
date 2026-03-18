@@ -20,6 +20,7 @@ import {
   Tooltip,
 } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
+import { consumeOAuthReturnContext, writeOAuthReturnContext } from '@/lib/credentials/client-state'
 import {
   getCanonicalScopesForProvider,
   getProviderIdFromServiceId,
@@ -288,8 +289,25 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
       return
     }
 
+    writeOAuthReturnContext({
+      origin: 'kb-connectors',
+      knowledgeBaseId,
+      displayName,
+      providerId: connectorProviderId,
+      preCount: credentials.length,
+      workspaceId,
+      requestedAt: Date.now(),
+    })
+
     setShowOAuthModal(true)
-  }, [connectorConfig, connectorProviderId, workspaceId, session?.user?.name])
+  }, [
+    connectorConfig,
+    connectorProviderId,
+    workspaceId,
+    session?.user?.name,
+    knowledgeBaseId,
+    credentials.length,
+  ])
 
   const filteredEntries = useMemo(() => {
     const term = searchTerm.toLowerCase().trim()
@@ -558,7 +576,7 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
               <Button variant='default' onClick={() => onOpenChange(false)} disabled={isCreating}>
                 Cancel
               </Button>
-              <Button variant='tertiary' onClick={handleSubmit} disabled={!canSubmit || isCreating}>
+              <Button variant='primary' onClick={handleSubmit} disabled={!canSubmit || isCreating}>
                 {isCreating ? (
                   <>
                     <Loader2 className='mr-1.5 h-3.5 w-3.5 animate-spin' />
@@ -575,11 +593,14 @@ export function AddConnectorModal({ open, onOpenChange, knowledgeBaseId }: AddCo
       {connectorConfig && connectorConfig.auth.mode === 'oauth' && connectorProviderId && (
         <OAuthRequiredModal
           isOpen={showOAuthModal}
-          onClose={() => setShowOAuthModal(false)}
+          onClose={() => {
+            consumeOAuthReturnContext()
+            setShowOAuthModal(false)
+          }}
           provider={connectorProviderId}
           toolName={connectorConfig.name}
           requiredScopes={getCanonicalScopesForProvider(connectorProviderId)}
-          newScopes={connectorConfig.auth.requiredScopes || []}
+          newScopes={[]}
           serviceId={connectorConfig.auth.provider}
         />
       )}

@@ -7,7 +7,11 @@ import { z } from 'zod'
 import { getSession } from '@/lib/auth'
 import { resolveOrCreateChat } from '@/lib/copilot/chat-lifecycle'
 import { buildCopilotRequestPayload } from '@/lib/copilot/chat-payload'
-import { createSSEStream, SSE_RESPONSE_HEADERS } from '@/lib/copilot/chat-streaming'
+import {
+  createSSEStream,
+  SSE_RESPONSE_HEADERS,
+  waitForPendingChatStream,
+} from '@/lib/copilot/chat-streaming'
 import type { OrchestratorResult } from '@/lib/copilot/orchestrator/types'
 import { processContextsServer, resolveActiveResourceContext } from '@/lib/copilot/process-contents'
 import { createRequestTracker, createUnauthorizedResponse } from '@/lib/copilot/request-helpers'
@@ -31,6 +35,8 @@ const FileAttachmentSchema = z.object({
 const ResourceAttachmentSchema = z.object({
   type: z.enum(['workflow', 'table', 'file', 'knowledgebase']),
   id: z.string().min(1),
+  title: z.string().optional(),
+  active: z.boolean().optional(),
 })
 
 const MothershipMessageSchema = z.object({
@@ -124,9 +130,19 @@ export async function POST(req: NextRequest) {
 
     if (Array.isArray(resourceAttachments) && resourceAttachments.length > 0) {
       const results = await Promise.allSettled(
-        resourceAttachments.map((r) =>
-          resolveActiveResourceContext(r.type, r.id, workspaceId, authenticatedUserId)
-        )
+        resourceAttachments.map(async (r) => {
+          const ctx = await resolveActiveResourceContext(
+            r.type,
+            r.id,
+            workspaceId,
+            authenticatedUserId
+          )
+          if (!ctx) return null
+          return {
+            ...ctx,
+            tag: r.active ? '@active_tab' : '@open_tab',
+          }
+        })
       )
       for (const result of results) {
         if (result.status === 'fulfilled' && result.value) {
@@ -232,6 +248,10 @@ export async function POST(req: NextRequest) {
       { selectedModel: '' }
     )
 
+    if (actualChatId) {
+      await waitForPendingChatStream(actualChatId)
+    }
+
     const stream = createSSEStream({
       requestPayload,
       userId: authenticatedUserId,
@@ -249,7 +269,8 @@ export async function POST(req: NextRequest) {
         chatId: actualChatId,
         goRoute: '/api/mothership',
         autoExecuteTools: true,
-        interactive: false,
+        interactive: true,
+        promptForToolApproval: false,
         onComplete: async (result: OrchestratorResult) => {
           if (!actualChatId) return
 

@@ -28,7 +28,6 @@ import { useBrandConfig } from '@/ee/whitelabeling'
 import { useGeneralSettings, useUpdateGeneralSetting } from '@/hooks/queries/general-settings'
 import {
   useResetPassword,
-  useSuperUserStatus,
   useUpdateUserProfile,
   useUserProfile,
 } from '@/hooks/queries/user-profile'
@@ -65,9 +64,6 @@ export function General() {
 
   const isTrainingEnabled = isTruthy(getEnv('NEXT_PUBLIC_COPILOT_TRAINING_ENABLED'))
   const isAuthDisabled = session?.user?.id === ANONYMOUS_USER_ID
-
-  const { data: superUserData } = useSuperUserStatus(session?.user?.id)
-  const isSuperUser = superUserData?.isSuperUser ?? false
 
   const [name, setName] = useState(profile?.name || '')
   const [isEditingName, setIsEditingName] = useState(false)
@@ -224,12 +220,6 @@ export function General() {
   const handleErrorNotificationsChange = async (checked: boolean) => {
     if (checked !== settings?.errorNotificationsEnabled && !updateSetting.isPending) {
       await updateSetting.mutateAsync({ key: 'errorNotificationsEnabled', value: checked })
-    }
-  }
-
-  const handleSuperUserModeToggle = async (checked: boolean) => {
-    if (checked !== settings?.superUserModeEnabled && !updateSetting.isPending) {
-      await updateSetting.mutateAsync({ key: 'superUserModeEnabled', value: checked })
     }
   }
 
@@ -458,17 +448,6 @@ export function General() {
         </div>
       )}
 
-      {isSuperUser && (
-        <div className='flex items-center justify-between'>
-          <Label htmlFor='super-user-mode'>Super admin mode</Label>
-          <Switch
-            id='super-user-mode'
-            checked={settings?.superUserModeEnabled ?? true}
-            onCheckedChange={handleSuperUserModeToggle}
-          />
-        </div>
-      )}
-
       <div className='mt-auto flex items-center gap-[8px]'>
         {!isAuthDisabled && (
           <>
@@ -515,7 +494,7 @@ export function General() {
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={handleResetPasswordConfirm}
               disabled={resetPassword.isPending || resetPassword.isSuccess}
             >

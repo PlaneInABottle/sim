@@ -3,8 +3,7 @@
 import { useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { Check, ChevronDown, Clipboard, Eye, EyeOff } from 'lucide-react'
-import { Button, Combobox, Input, Switch, Textarea } from '@/components/emcn'
-import { Skeleton } from '@/components/ui'
+import { Button, Combobox, Input, Skeleton, Switch, Textarea } from '@/components/emcn'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client/utils'
 import { isBillingEnabled } from '@/lib/core/config/feature-flags'
@@ -446,7 +445,7 @@ export function SSO() {
 
         {/* Footer */}
         <div className='mt-auto flex items-center justify-end'>
-          <Button onClick={handleEdit} variant='tertiary'>
+          <Button onClick={handleEdit} variant='primary'>
             Edit
           </Button>
         </div>
@@ -879,7 +878,7 @@ export function SSO() {
         {error && <p className='mr-auto text-[13px] text-[var(--text-error)]'>{error}</p>}
         <Button
           type='submit'
-          variant='tertiary'
+          variant='primary'
           disabled={configureSSOMutation.isPending || hasAnyErrors(errors) || !isFormValid()}
         >
           {configureSSOMutation.isPending

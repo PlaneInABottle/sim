@@ -21,12 +21,6 @@ import type {
 import { executeToolAndReport, waitForToolCompletion, waitForToolDecision } from './tool-execution'
 
 const logger = createLogger('CopilotSseHandlers')
-const CLIENT_WORKFLOW_TOOLS = new Set([
-  'run_workflow',
-  'run_workflow_until_block',
-  'run_block',
-  'run_from_block',
-])
 
 /**
  * Extract the `ui` object from a Go SSE event. The Go backend enriches
@@ -302,7 +296,7 @@ export const sseHandlers: Record<string, SSEHandler> = {
       return
     }
 
-    if (!isToolAvailableOnSimSide(toolName)) {
+    if (!isToolAvailableOnSimSide(toolName) && !clientExecutable) {
       return
     }
 
@@ -320,24 +314,13 @@ export const sseHandlers: Record<string, SSEHandler> = {
     }
 
     if (options.interactive === false) {
-      if (clientExecutable && CLIENT_WORKFLOW_TOOLS.has(toolName)) {
-        toolCall.status = 'executing'
-        const completion = await waitForToolCompletion(
-          toolCallId,
-          options.timeout || STREAM_TIMEOUT_MS,
-          options.abortSignal
-        )
-        handleClientCompletion(toolCall, toolCallId, completion)
-        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
-        return
-      }
       if (options.autoExecuteTools !== false) {
         fireToolExecution()
       }
       return
     }
 
-    if (requiresConfirmation) {
+    if (requiresConfirmation && options.promptForToolApproval) {
       const decision = await waitForToolDecision(
         toolCallId,
         options.timeout || STREAM_TIMEOUT_MS,
@@ -413,16 +396,21 @@ export const sseHandlers: Record<string, SSEHandler> = {
       return
     }
 
-    // Auto-allowed client-executable tool: client runs it, we wait for completion.
+    // Client-executable tool: execute server-side if available, otherwise
+    // delegate to the client (React UI) and wait for completion.
     if (clientExecutable) {
-      toolCall.status = 'executing'
-      const completion = await waitForToolCompletion(
-        toolCallId,
-        options.timeout || STREAM_TIMEOUT_MS,
-        options.abortSignal
-      )
-      handleClientCompletion(toolCall, toolCallId, completion)
-      await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+      if (isToolAvailableOnSimSide(toolName)) {
+        fireToolExecution()
+      } else {
+        toolCall.status = 'executing'
+        const completion = await waitForToolCompletion(
+          toolCallId,
+          options.timeout || STREAM_TIMEOUT_MS,
+          options.abortSignal
+        )
+        handleClientCompletion(toolCall, toolCallId, completion)
+        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+      }
       return
     }
 
@@ -565,7 +553,7 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
       return
     }
 
-    if (!isToolAvailableOnSimSide(toolName)) {
+    if (!isToolAvailableOnSimSide(toolName) && !clientExecutable) {
       return
     }
 
@@ -580,24 +568,13 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
     }
 
     if (options.interactive === false) {
-      if (clientExecutable && CLIENT_WORKFLOW_TOOLS.has(toolName)) {
-        toolCall.status = 'executing'
-        const completion = await waitForToolCompletion(
-          toolCallId,
-          options.timeout || STREAM_TIMEOUT_MS,
-          options.abortSignal
-        )
-        handleClientCompletion(toolCall, toolCallId, completion)
-        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
-        return
-      }
       if (options.autoExecuteTools !== false) {
         fireToolExecution()
       }
       return
     }
 
-    if (requiresConfirmation) {
+    if (requiresConfirmation && options.promptForToolApproval) {
       const decision = await waitForToolDecision(
         toolCallId,
         options.timeout || STREAM_TIMEOUT_MS,
@@ -671,14 +648,18 @@ export const subAgentHandlers: Record<string, SSEHandler> = {
     }
 
     if (clientExecutable) {
-      toolCall.status = 'executing'
-      const completion = await waitForToolCompletion(
-        toolCallId,
-        options.timeout || STREAM_TIMEOUT_MS,
-        options.abortSignal
-      )
-      handleClientCompletion(toolCall, toolCallId, completion)
-      await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+      if (isToolAvailableOnSimSide(toolName)) {
+        fireToolExecution()
+      } else {
+        toolCall.status = 'executing'
+        const completion = await waitForToolCompletion(
+          toolCallId,
+          options.timeout || STREAM_TIMEOUT_MS,
+          options.abortSignal
+        )
+        handleClientCompletion(toolCall, toolCallId, completion)
+        await emitSyntheticToolResult(toolCallId, toolCall.name, completion, options)
+      }
       return
     }
 

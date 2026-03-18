@@ -1,13 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { memo, useCallback, useEffect, useState } from 'react'
 import { cn } from '@/lib/core/utils/cn'
 import { getFileExtension } from '@/lib/uploads/utils/file-utils'
 import type { PreviewMode } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
-import {
-  PREVIEW_ONLY_EXTENSIONS,
-  RICH_PREVIEWABLE_EXTENSIONS,
-} from '@/app/workspace/[workspaceId]/files/components/file-viewer'
+import { RICH_PREVIEWABLE_EXTENSIONS } from '@/app/workspace/[workspaceId]/files/components/file-viewer'
 import type {
   MothershipResource,
   MothershipResourceType,
@@ -34,7 +31,7 @@ interface MothershipViewProps {
   className?: string
 }
 
-export function MothershipView({
+export const MothershipView = memo(function MothershipView({
   workspaceId,
   chatId,
   resources,
@@ -49,12 +46,11 @@ export function MothershipView({
 }: MothershipViewProps) {
   const active = resources.find((r) => r.id === activeResourceId) ?? resources[0] ?? null
 
-  const [previewMode, setPreviewMode] = useState<PreviewMode>('split')
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('preview')
   const handleCyclePreview = useCallback(() => setPreviewMode((m) => PREVIEW_CYCLE[m]), [])
 
   useEffect(() => {
-    const ext = active?.type === 'file' ? getFileExtension(active.title) : ''
-    setPreviewMode(PREVIEW_ONLY_EXTENSIONS.has(ext) ? 'preview' : 'split')
+    setPreviewMode('preview')
   }, [active?.id])
 
   const isActivePreviewable =
@@ -63,12 +59,12 @@ export function MothershipView({
   return (
     <div
       className={cn(
-        'flex h-full flex-col overflow-hidden border-[var(--border)] transition-[width,min-width,border-width] duration-300 ease-out',
-        isCollapsed ? 'w-0 min-w-0 border-l-0' : 'w-[50%] min-w-[400px] border-l',
+        'relative z-10 flex h-full flex-col overflow-hidden border-[var(--border)] bg-[var(--bg)] transition-[width,min-width,border-width] duration-300 ease-out',
+        isCollapsed ? 'w-0 min-w-0 border-l-0' : 'w-[60%] border-l',
         className
       )}
     >
-      <div className='flex min-h-0 min-w-[400px] flex-1 flex-col'>
+      <div className='flex min-h-0 flex-1 flex-col'>
         <ResourceTabs
           workspaceId={workspaceId}
           chatId={chatId}
@@ -99,4 +95,4 @@ export function MothershipView({
       </div>
     </div>
   )
-}
+})

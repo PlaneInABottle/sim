@@ -4,9 +4,8 @@ import { useEffect, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { Camera, Globe, Linkedin, Mail } from 'lucide-react'
 import Image from 'next/image'
-import { Button, Combobox, Input, Textarea } from '@/components/emcn'
+import { Button, Combobox, Input, Skeleton, Textarea } from '@/components/emcn'
 import { AgentIcon, xIcon as XIcon } from '@/components/icons'
-import { Skeleton } from '@/components/ui/skeleton'
 import { useSession } from '@/lib/auth/auth-client'
 import { quickValidateEmail } from '@/lib/messaging/email/validation'
 import type { CreatorProfileDetails } from '@/app/_types/creator-profile'
@@ -505,7 +504,7 @@ export function TemplateProfile() {
         <Button
           onClick={handleSubmit}
           disabled={saveStatus === 'saving' || !isFormValid}
-          variant='tertiary'
+          variant='primary'
         >
           {saveStatus === 'saving' ? 'Saving...' : saveStatus === 'saved' ? 'Saved' : 'Save'}
         </Button>

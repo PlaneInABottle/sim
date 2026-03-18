@@ -1,6 +1,6 @@
 'use client'
 
-import { createElement, useCallback, useEffect, useMemo, useState } from 'react'
+import { createElement, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createLogger } from '@sim/logger'
 import { AlertTriangle, Check, Clipboard, Plus, Search, Share2 } from 'lucide-react'
 import { useParams } from 'next/navigation'
@@ -17,16 +17,18 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Textarea,
   Tooltip,
 } from '@/components/emcn'
-import { Skeleton, Input as UiInput } from '@/components/ui'
+import { Input as UiInput } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   clearPendingCredentialCreateRequest,
   PENDING_CREDENTIAL_CREATE_REQUEST_EVENT,
   type PendingCredentialCreateRequest,
   readPendingCredentialCreateRequest,
+  writeOAuthReturnContext,
 } from '@/lib/credentials/client-state'
 import {
   getCanonicalScopesForProvider,
@@ -53,6 +55,7 @@ import {
   useOAuthConnections,
 } from '@/hooks/queries/oauth/oauth-connections'
 import { useWorkspacePermissionsQuery } from '@/hooks/queries/workspace'
+import { useOAuthReturnRouter } from '@/hooks/use-oauth-return'
 
 const logger = createLogger('IntegrationsManager')
 
@@ -64,6 +67,8 @@ const roleOptions = [
 export function IntegrationsManager() {
   const params = useParams()
   const workspaceId = (params?.workspaceId as string) || ''
+
+  useOAuthReturnRouter()
 
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCredentialId, setSelectedCredentialId] = useState<string | null>(null)
@@ -83,6 +88,11 @@ export function IntegrationsManager() {
   const [showDeleteConfirmDialog, setShowDeleteConfirmDialog] = useState(false)
   const [deleteError, setDeleteError] = useState<string | null>(null)
   const [showUnsavedChangesAlert, setShowUnsavedChangesAlert] = useState(false)
+  const pendingReturnOriginRef = useRef<
+    | { type: 'workflow'; workflowId: string }
+    | { type: 'kb-connectors'; knowledgeBaseId: string }
+    | undefined
+  >(undefined)
   const { data: session } = useSession()
   const currentUserId = session?.user?.id || ''
 
@@ -277,6 +287,8 @@ export function IntegrationsManager() {
 
       if (request.type !== 'oauth') return
 
+      pendingReturnOriginRef.current = request.returnOrigin
+
       setShowCreateModal(true)
       setShowCreateOAuthRequiredModal(false)
       setCreateError(null)
@@ -349,6 +361,7 @@ export function IntegrationsManager() {
     setCreateOAuthProviderId('')
     setCreateError(null)
     setShowCreateOAuthRequiredModal(false)
+    pendingReturnOriginRef.current = undefined
   }
 
   const handleSelectCredential = (credential: WorkspaceCredential) => {
@@ -396,15 +409,42 @@ export function IntegrationsManager() {
         }),
       })
 
-      window.sessionStorage.setItem(
-        'sim.oauth-connect-pending',
-        JSON.stringify({
+      const oauthPreCount = credentials.filter(
+        (c) => c.type === 'oauth' && c.providerId === selectedOAuthService.providerId
+      ).length
+      const returnOrigin = pendingReturnOriginRef.current
+      pendingReturnOriginRef.current = undefined
+
+      if (returnOrigin?.type === 'workflow') {
+        writeOAuthReturnContext({
+          origin: 'workflow',
+          workflowId: returnOrigin.workflowId,
           displayName,
           providerId: selectedOAuthService.providerId,
-          preCount: credentials.filter((c) => c.type === 'oauth').length,
+          preCount: oauthPreCount,
           workspaceId,
+          requestedAt: Date.now(),
         })
-      )
+      } else if (returnOrigin?.type === 'kb-connectors') {
+        writeOAuthReturnContext({
+          origin: 'kb-connectors',
+          knowledgeBaseId: returnOrigin.knowledgeBaseId,
+          displayName,
+          providerId: selectedOAuthService.providerId,
+          preCount: oauthPreCount,
+          workspaceId,
+          requestedAt: Date.now(),
+        })
+      } else {
+        writeOAuthReturnContext({
+          origin: 'integrations',
+          displayName,
+          providerId: selectedOAuthService.providerId,
+          preCount: oauthPreCount,
+          workspaceId,
+          requestedAt: Date.now(),
+        })
+      }
 
       await connectOAuthService.mutateAsync({
         providerId: selectedOAuthService.providerId,
@@ -511,16 +551,18 @@ export function IntegrationsManager() {
         }),
       })
 
-      window.sessionStorage.setItem(
-        'sim.oauth-connect-pending',
-        JSON.stringify({
-          displayName: selectedCredential.displayName,
-          providerId: selectedCredential.providerId,
-          preCount: credentials.filter((c) => c.type === 'oauth').length,
-          workspaceId,
-          reconnect: true,
-        })
-      )
+      const oauthPreCount = credentials.filter(
+        (c) => c.type === 'oauth' && c.providerId === selectedCredential.providerId
+      ).length
+      writeOAuthReturnContext({
+        origin: 'integrations',
+        displayName: selectedCredential.displayName,
+        providerId: selectedCredential.providerId,
+        preCount: oauthPreCount,
+        workspaceId,
+        reconnect: true,
+        requestedAt: Date.now(),
+      })
 
       await connectOAuthService.mutateAsync({
         providerId: selectedCredential.providerId,
@@ -678,7 +720,7 @@ export function IntegrationsManager() {
             Cancel
           </Button>
           <Button
-            variant='tertiary'
+            variant='primary'
             onClick={handleCreateCredential}
             disabled={
               !createOAuthProviderId ||
@@ -1027,7 +1069,7 @@ export function IntegrationsManager() {
               </Button>
               {isSelectedAdmin && (
                 <Button
-                  variant='tertiary'
+                  variant='primary'
                   onClick={handleSaveDetails}
                   disabled={!isDetailsDirty || isSavingDetails}
                 >
@@ -1066,7 +1108,7 @@ export function IntegrationsManager() {
           <Button
             onClick={() => setShowCreateModal(true)}
             disabled={credentialsLoading}
-            variant='tertiary'
+            variant='primary'
           >
             <Plus className='mr-[6px] h-[13px] w-[13px]' />
             Connect

@@ -17,11 +17,12 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   TagInput,
   type TagItem,
 } from '@/components/emcn'
 import { GmailIcon, OutlookIcon } from '@/components/icons'
-import { Input as BaseInput, Skeleton } from '@/components/ui'
+import { Input as BaseInput } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { getSubscriptionStatus } from '@/lib/billing/client'
 import { cn } from '@/lib/core/utils/cn'
@@ -628,7 +629,7 @@ export function CredentialSets() {
             />
           </div>
           {canManageCredentialSets && (
-            <Button variant='tertiary' onClick={() => setShowCreateModal(true)}>
+            <Button variant='primary' onClick={() => setShowCreateModal(true)}>
               <Plus className='mr-[6px] h-[13px] w-[13px]' />
               Create
             </Button>
@@ -671,7 +672,7 @@ export function CredentialSets() {
                         </div>
                       </div>
                       <Button
-                        variant='tertiary'
+                        variant='primary'
                         onClick={() => handleAcceptInvitation(invitation.token)}
                         disabled={acceptInvitation.isPending}
                       >
@@ -843,7 +844,7 @@ export function CredentialSets() {
               Cancel
             </Button>
             <Button
-              variant='tertiary'
+              variant='primary'
               onClick={handleCreateCredentialSet}
               disabled={!newSetName.trim() || createCredentialSet.isPending}
             >

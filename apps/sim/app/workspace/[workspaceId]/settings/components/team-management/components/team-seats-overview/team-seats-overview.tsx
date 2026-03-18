@@ -1,5 +1,4 @@
-import { Badge, Button } from '@/components/emcn'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Badge, Button, Skeleton } from '@/components/emcn'
 import { checkEnterprisePlan } from '@/lib/billing/subscriptions/utils'
 import { cn } from '@/lib/core/utils/cn'
 
@@ -72,7 +71,7 @@ export function TeamSeatsOverview({
             </p>
           </div>
           <Button
-            variant='tertiary'
+            variant='primary'
             onClick={() => {
               onConfirmTeamUpgrade(2)
             }}

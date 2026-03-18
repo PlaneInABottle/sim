@@ -17,11 +17,12 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Textarea,
   Tooltip,
   Trash,
 } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
+import { Input } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import {
   clearPendingCredentialCreateRequest,
@@ -1311,7 +1312,7 @@ export function CredentialsManager() {
               </Button>
               {isSelectedAdmin && (
                 <Button
-                  variant='tertiary'
+                  variant='primary'
                   onClick={handleSaveDetails}
                   disabled={!isDetailsDirty || isSavingDetails}
                 >
@@ -1414,7 +1415,7 @@ export function CredentialsManager() {
               <Button
                 onClick={handleSave}
                 disabled={isLoading || !hasChanges || hasConflicts || hasInvalidKeys}
-                variant='tertiary'
+                variant='primary'
                 className={`${hasConflicts || hasInvalidKeys ? 'cursor-not-allowed opacity-50' : ''}`}
               >
                 Save

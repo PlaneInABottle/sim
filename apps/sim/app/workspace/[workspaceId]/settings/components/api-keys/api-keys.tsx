@@ -11,10 +11,11 @@ import {
   ModalContent,
   ModalFooter,
   ModalHeader,
+  Skeleton,
   Switch,
   Tooltip,
 } from '@/components/emcn'
-import { Input, Skeleton } from '@/components/ui'
+import { Input } from '@/components/ui'
 import { useSession } from '@/lib/auth/auth-client'
 import { formatDate } from '@/lib/core/utils/formatting'
 import { useUserPermissionsContext } from '@/app/workspace/[workspaceId]/providers/workspace-permissions-provider'
@@ -149,7 +150,7 @@ export function ApiKeys() {
             e.currentTarget.blur()
             setIsCreateDialogOpen(true)
           }}
-          variant='tertiary'
+          variant='primary'
           disabled={createButtonDisabled}
         >
           <Plus className='mr-[6px] h-[13px] w-[13px]' />
