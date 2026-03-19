@@ -8,6 +8,23 @@ import {
 import { afterAll, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
 
+const MOCK_BLOCK_TYPES = [
+  'action',
+  'agent',
+  'api',
+  'function',
+  'condition',
+  'router',
+  'slack',
+  'gmail',
+  'google_sheets',
+  'webhook',
+  'api_trigger',
+  'schedule',
+  'starter',
+  'response',
+] as const
+
 setupGlobalFetchMock()
 setupGlobalStorageMocks()
 
@@ -78,7 +95,13 @@ vi.mock('@/blocks/registry', () => ({
     subBlocks: [],
     outputs: {},
   })),
+  getAllBlockTypes: vi.fn(() => [...MOCK_BLOCK_TYPES]),
   getAllBlocks: vi.fn(() => ({})),
+  isValidBlockType: vi.fn(
+    (type: string) =>
+      MOCK_BLOCK_TYPES.includes(type as (typeof MOCK_BLOCK_TYPES)[number]) ||
+      MOCK_BLOCK_TYPES.includes(type.replace(/-/g, '_') as (typeof MOCK_BLOCK_TYPES)[number])
+  ),
 }))
 
 vi.mock('@trigger.dev/sdk', () => ({

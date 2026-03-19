@@ -810,7 +810,7 @@ const WorkflowContent = React.memo(
         )
         usePanelEditorStore.getState().setCurrentBlockId(id)
       },
-      [collaborativeBatchAddBlocks, setSelectedEdges, setPendingSelection]
+      [collaborativeBatchAddBlocks, isAutoConnectEnabled, setSelectedEdges, setPendingSelection]
     )
 
     const { activeBlockIds, pendingBlocks, isDebugging, isExecuting } = useExecutionStore(
@@ -1124,6 +1124,7 @@ const WorkflowContent = React.memo(
         addNotification,
         activeWorkflowId,
         collaborativeBatchAddBlocks,
+        isAutoConnectEnabled,
         setPendingSelection,
         resizeLoopNodesWrapper,
       ]
