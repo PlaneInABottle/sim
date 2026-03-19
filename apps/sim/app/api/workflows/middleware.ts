@@ -94,8 +94,8 @@ export async function validateWorkflowAccess(
       ) {
         return {
           error: {
-            message: 'Unauthorized: API key does not have access to this workspace',
-            status: 403,
+            message: 'Workflow not found',
+            status: 404,
           },
         }
       }

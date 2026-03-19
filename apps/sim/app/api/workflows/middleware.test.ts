@@ -194,7 +194,7 @@ describe('validateWorkflowAccess', () => {
     })
   })
 
-  it('returns 403 for workspace api keys scoped to a different workspace', async () => {
+  it('returns 404 for workspace api keys scoped to a different workspace', async () => {
     const auth = {
       success: true,
       userId: 'user-1',
@@ -212,11 +212,32 @@ describe('validateWorkflowAccess', () => {
 
     expect(result).toEqual({
       error: {
-        message: 'Unauthorized: API key does not have access to this workspace',
-        status: 403,
+        message: 'Workflow not found',
+        status: 404,
       },
     })
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+  })
+
+  it('preserves session auth semantics for accessible workflows', async () => {
+    const workflow = createWorkflow({ name: 'Session Workflow' })
+    const auth = { success: true, userId: 'user-1', authType: 'session' as const }
+
+    mockCheckHybridAuth.mockResolvedValue(auth)
+    mockGetActiveWorkflowRecord.mockResolvedValue(workflow)
+
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: false,
+      action: 'read',
+    })
+
+    expect(result).toEqual({ workflow, auth })
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: WORKFLOW_ID,
+      userId: 'user-1',
+      action: 'read',
+      workflow,
+    })
   })
 
   it('allows workspace api keys scoped to the same workspace', async () => {
