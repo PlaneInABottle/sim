@@ -1130,6 +1130,9 @@ async function handleBlocksOperationTx(
         parallelCount: Object.keys(parallels || {}).length,
       })
 
+      let allowedSubBlockValues: Record<string, unknown> = {}
+      let enrichedAllowedBlocks: Array<Record<string, unknown>> = []
+
       if (blocks && blocks.length > 0) {
         // Fetch existing blocks to check for locked parents
         const existingBlocks = await tx
@@ -1167,9 +1170,23 @@ async function handleBlocksOperationTx(
           }
         }
 
-        // Blocks are pre-enriched by enrichBatchAddBlocksPayload() upstream,
-        // so subBlocks, outputs, and triggerMode are already populated.
-        const blockValues = allowedBlocks.map((block: Record<string, unknown>) => {
+        const allowedBlockIds = new Set(allowedBlocks.map((block) => block.id as string))
+        allowedSubBlockValues = Object.fromEntries(
+          Object.entries((subBlockValues as Record<string, unknown> | undefined) ?? {}).filter(
+            ([id]) => allowedBlockIds.has(id)
+          )
+        )
+
+        const enrichedAllowedPayload = enrichBatchAddBlocksPayload({
+          ...payload,
+          blocks: allowedBlocks,
+          subBlockValues: allowedSubBlockValues,
+        })
+
+        enrichedAllowedBlocks =
+          (enrichedAllowedPayload.blocks as Array<Record<string, unknown>> | undefined) ?? []
+
+        const blockValues = enrichedAllowedBlocks.map((block: Record<string, unknown>) => {
           return {
             id: block.id as string,
             workflowId,
@@ -1215,7 +1232,7 @@ async function handleBlocksOperationTx(
         // Create subflow entries for loop/parallel blocks (skip if already in payload)
         const loopIds = new Set(loops ? Object.keys(loops) : [])
         const parallelIds = new Set(parallels ? Object.keys(parallels) : [])
-        for (const block of allowedBlocks) {
+        for (const block of enrichedAllowedBlocks) {
           const blockId = block.id as string
           if (block.type === 'loop' && !loopIds.has(blockId)) {
             await tx
@@ -1262,7 +1279,7 @@ async function handleBlocksOperationTx(
 
         // Update parent subflow node lists
         const parentIds = new Set<string>()
-        for (const block of allowedBlocks) {
+        for (const block of enrichedAllowedBlocks) {
           const parentId = (block.data as Record<string, unknown>)?.parentId as string | undefined
           if (parentId) {
             parentIds.add(parentId)
@@ -1273,7 +1290,7 @@ async function handleBlocksOperationTx(
         }
       }
 
-      const allowedBlockIds = new Set(allowedBlocks.map((block) => block.id as string))
+      const allowedBlockIds = new Set(enrichedAllowedBlocks.map((block) => block.id as string))
       const validEdgeEndpointIds = new Set([...existingBlockIds, ...allowedBlockIds])
       const allowedEdges = ((edges as Array<Record<string, unknown>> | undefined) ?? []).filter(
         (edge) => {
@@ -1295,11 +1312,6 @@ async function handleBlocksOperationTx(
       const allowedParallels = Object.fromEntries(
         Object.entries((parallels as Record<string, unknown> | undefined) ?? {}).filter(([id]) =>
           allowedBlockIds.has(id)
-        )
-      )
-      const allowedSubBlockValues = Object.fromEntries(
-        Object.entries((subBlockValues as Record<string, unknown> | undefined) ?? {}).filter(
-          ([id]) => allowedBlockIds.has(id)
         )
       )
 
@@ -1372,7 +1384,7 @@ async function handleBlocksOperationTx(
       return {
         appliedPayload: {
           ...payload,
-          blocks: allowedBlocks,
+          blocks: enrichedAllowedBlocks,
           edges: allowedEdges,
           loops: allowedLoops,
           parallels: allowedParallels,

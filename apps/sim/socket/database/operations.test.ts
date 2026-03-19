@@ -2,18 +2,39 @@
  * @vitest-environment node
  */
 
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   filterBatchAddBlocksByProtection,
   getBatchUpdateParentCoMovingKey,
+  persistWorkflowOperation,
 } from '@/socket/database/operations'
+
+const {
+  mockTransaction,
+  mockGetActiveWorkflowContext,
+  mockMergeSubBlockValues,
+  mockGetBlock,
+  mockWorkflowTable,
+  mockWorkflowBlocksTable,
+  mockWorkflowEdgesTable,
+  mockWorkflowSubflowsTable,
+} = vi.hoisted(() => ({
+  mockTransaction: vi.fn(),
+  mockGetActiveWorkflowContext: vi.fn(),
+  mockMergeSubBlockValues: vi.fn(),
+  mockGetBlock: vi.fn(),
+  mockWorkflowTable: {},
+  mockWorkflowBlocksTable: {},
+  mockWorkflowEdgesTable: {},
+  mockWorkflowSubflowsTable: {},
+}))
 
 vi.mock('@sim/db', () => ({
   webhook: {},
-  workflow: {},
-  workflowBlocks: {},
-  workflowEdges: {},
-  workflowSubflows: {},
+  workflow: mockWorkflowTable,
+  workflowBlocks: mockWorkflowBlocksTable,
+  workflowEdges: mockWorkflowEdgesTable,
+  workflowSubflows: mockWorkflowSubflowsTable,
 }))
 
 vi.mock('@sim/logger', () => ({
@@ -35,7 +56,7 @@ vi.mock('drizzle-orm', () => ({
 }))
 
 vi.mock('drizzle-orm/postgres-js', () => ({
-  drizzle: vi.fn(() => ({ transaction: vi.fn() })),
+  drizzle: vi.fn(() => ({ transaction: mockTransaction })),
 }))
 
 vi.mock('postgres', () => ({
@@ -59,7 +80,7 @@ vi.mock('@/lib/webhooks/provider-subscriptions', () => ({
 }))
 
 vi.mock('@/lib/workflows/active-context', () => ({
-  getActiveWorkflowContext: vi.fn(),
+  getActiveWorkflowContext: mockGetActiveWorkflowContext,
 }))
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
@@ -67,17 +88,27 @@ vi.mock('@/lib/workflows/persistence/utils', () => ({
 }))
 
 vi.mock('@/lib/workflows/subblocks', () => ({
-  mergeSubBlockValues: vi.fn(),
+  mergeSubBlockValues: mockMergeSubBlockValues,
 }))
 
 vi.mock('@/blocks/registry', () => ({
-  getBlock: vi.fn(),
+  getBlock: mockGetBlock,
 }))
 
 vi.mock('@/triggers', () => ({
   getTrigger: vi.fn(),
   isTriggerValid: vi.fn(() => false),
 }))
+
+beforeEach(() => {
+  vi.clearAllMocks()
+  mockGetActiveWorkflowContext.mockResolvedValue({ id: 'workflow-1' })
+  mockMergeSubBlockValues.mockImplementation((subBlocks, values) => ({
+    ...((subBlocks as Record<string, unknown>) ?? {}),
+    ...((values as Record<string, unknown>) ?? {}),
+  }))
+  mockGetBlock.mockReturnValue(undefined)
+})
 
 describe('getBatchUpdateParentCoMovingKey', () => {
   it('groups blocks entering the same destination container together', () => {
@@ -159,5 +190,108 @@ describe('filterBatchAddBlocksByProtection', () => {
 
     expect(allowedBlocks).toHaveLength(2)
     expect(allowedBlocks.map((block) => block.id)).toEqual(['new-container', 'new-child'])
+  })
+})
+
+describe('persistWorkflowOperation', () => {
+  it('defensively enriches batch-added blocks before persistence and broadcast payloads', async () => {
+    const insertedBlockValues: Array<Record<string, unknown>> = []
+
+    const tx = {
+      update: vi.fn(() => ({
+        set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+      })),
+      select: vi.fn(() => ({
+        from: vi.fn(() => ({
+          where: vi.fn().mockResolvedValue([]),
+        })),
+      })),
+      insert: vi.fn((table) => {
+        if (table === mockWorkflowBlocksTable) {
+          return {
+            values: vi.fn((values) => {
+              insertedBlockValues.push(...(values as Array<Record<string, unknown>>))
+              return {
+                onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+              }
+            }),
+          }
+        }
+
+        return {
+          values: vi.fn(() => ({
+            onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+          })),
+        }
+      }),
+    }
+
+    mockTransaction.mockImplementation(async (callback) => callback(tx))
+    mockGetBlock.mockReturnValue({
+      subBlocks: [
+        { id: 'prompt', type: 'short-input', defaultValue: 'registry-default' },
+        { id: 'temperature', type: 'slider', defaultValue: 0.7 },
+      ],
+      outputs: {
+        result: { type: 'string' },
+      },
+    })
+
+    const result = await persistWorkflowOperation('workflow-1', {
+      operation: 'batch-add-blocks',
+      target: 'blocks',
+      payload: {
+        blocks: [
+          {
+            id: 'block-1',
+            type: 'agent',
+            name: 'Agent',
+            position: { x: 10, y: 20 },
+            data: {},
+          },
+        ],
+        edges: [],
+        loops: {},
+        parallels: {},
+        subBlockValues: {
+          'block-1': {
+            prompt: { value: 'user value' },
+          },
+        },
+      },
+      timestamp: Date.now(),
+      userId: 'user-1',
+    })
+
+    expect(insertedBlockValues).toHaveLength(1)
+    expect(insertedBlockValues[0]).toMatchObject({
+      id: 'block-1',
+      subBlocks: {
+        prompt: { value: 'user value' },
+        temperature: { id: 'temperature', type: 'slider', value: 0.7 },
+      },
+      outputs: {
+        result: { type: 'string' },
+      },
+    })
+    expect(result.appliedPayload).toMatchObject({
+      blocks: [
+        {
+          id: 'block-1',
+          subBlocks: {
+            prompt: { value: 'user value' },
+            temperature: { id: 'temperature', type: 'slider', value: 0.7 },
+          },
+          outputs: {
+            result: { type: 'string' },
+          },
+        },
+      ],
+      subBlockValues: {
+        'block-1': {
+          prompt: { value: 'user value' },
+        },
+      },
+    })
   })
 })
