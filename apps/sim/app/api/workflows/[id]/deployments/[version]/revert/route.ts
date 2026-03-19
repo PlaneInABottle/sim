@@ -103,12 +103,18 @@ export async function POST(
       .set({ lastSynced: new Date(), updatedAt: new Date() })
       .where(eq(workflow.id, id))
 
-    await syncMcpToolsForWorkflow({
-      workflowId: id,
-      requestId,
-      state: deployedState,
-      context: 'revert',
-    })
+    try {
+      await syncMcpToolsForWorkflow({
+        workflowId: id,
+        requestId,
+        state: deployedState,
+        context: 'revert',
+      })
+    } catch (syncError) {
+      logger.error(`[${requestId}] Failed to sync MCP tools after revert for workflow ${id}`, {
+        error: syncError,
+      })
+    }
 
     try {
       const socketServerUrl = env.SOCKET_SERVER_URL || 'http://localhost:3002'

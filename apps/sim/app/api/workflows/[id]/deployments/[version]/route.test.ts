@@ -204,6 +204,32 @@ describe('Workflow deployment version route', () => {
     )
   })
 
+  it('returns success when MCP sync throws after activation succeeds', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockSyncMcpToolsForWorkflow.mockRejectedValue(new Error('MCP sync failed'))
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'test-key' },
+      body: JSON.stringify({ isActive: true }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(200)
+    const data = await response.json()
+    expect(data.success).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalled()
+  })
+
   it('returns write auth failure before parsing or updating metadata', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       error: { message: 'Write permission required', status: 403 },

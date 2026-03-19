@@ -271,12 +271,19 @@ export async function PATCH(
         }
       }
 
-      await syncMcpToolsForWorkflow({
-        workflowId: id,
-        requestId,
-        state: versionRow.state,
-        context: 'activate',
-      })
+      try {
+        await syncMcpToolsForWorkflow({
+          workflowId: id,
+          requestId,
+          state: versionRow.state,
+          context: 'activate',
+        })
+      } catch (syncError) {
+        logger.error(
+          `[${requestId}] Failed to sync MCP tools after activation for workflow ${id}`,
+          syncError
+        )
+      }
 
       // Apply name/description updates if provided alongside activation
       let updatedName: string | null | undefined

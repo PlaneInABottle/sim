@@ -191,6 +191,36 @@ describe('Workflow deploy route', () => {
     )
   })
 
+  it('returns success when MCP sync throws after deploy succeeds', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockDeployWorkflow.mockResolvedValue({
+      success: true,
+      deployedAt: '2024-01-01T00:00:00Z',
+      deploymentVersionId: 'dep-1',
+    })
+    mockSyncMcpToolsForWorkflow.mockRejectedValue(new Error('MCP sync failed'))
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+    const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(200)
+    const data = await response.json()
+    expect(data.isDeployed).toBe(true)
+    expect(mockRecordAudit).toHaveBeenCalled()
+  })
+
   it('allows API-key auth for undeploy using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },

@@ -242,8 +242,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
 
     logger.info(`[${requestId}] Workflow deployed successfully: ${id}`)
 
-    // Sync MCP tools with the latest parameter schema
-    await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
+    try {
+      await syncMcpToolsForWorkflow({ workflowId: id, requestId, context: 'deploy' })
+    } catch (syncError) {
+      logger.error(`[${requestId}] Failed to sync MCP tools after deploy for workflow ${id}`, {
+        error: syncError,
+      })
+    }
 
     const { actorName, actorEmail } = getAuditActorMetadata(auth)
 
