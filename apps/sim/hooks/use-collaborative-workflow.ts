@@ -45,7 +45,7 @@ function parseUndoRedoStackKey(key: string): { workflowId: string; userId: strin
   }
 }
 
-function pruneUndoRedoStacksForWorkflow(
+export function pruneUndoRedoStacksForWorkflow(
   workflowId: string,
   graph?: { blocksById: Record<string, BlockState>; edgesById: Record<string, Edge> }
 ) {
@@ -1086,6 +1086,11 @@ export function useCollaborativeWorkflow() {
               id: u.blockId,
               parentId: u.newParentId || '',
               position: u.newPosition,
+            })),
+            revertUpdates: batchUpdates.map((u) => ({
+              id: u.blockId,
+              parentId: u.oldParentId || '',
+              position: u.oldPosition,
             })),
             autoConnect: options?.autoConnect,
           },

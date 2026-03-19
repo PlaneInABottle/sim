@@ -12,6 +12,7 @@
  */
 
 import {
+  createAddBlockEntry,
   createMockStorage,
   expectBlockCount,
   expectBlockExists,
@@ -22,6 +23,8 @@ import {
   WorkflowBuilder,
 } from '@sim/testing'
 import { beforeEach, describe, expect, it } from 'vitest'
+import { pruneUndoRedoStacksForWorkflow } from '@/hooks/use-collaborative-workflow'
+import { useUndoRedoStore } from '@/stores/undo-redo'
 import { useWorkflowRegistry } from '@/stores/workflows/registry/store'
 import { useSubBlockStore } from '@/stores/workflows/subblock/store'
 import { useWorkflowStore } from '@/stores/workflows/workflow/store'
@@ -269,6 +272,39 @@ describe('workflow store', () => {
       expect(childBlock.height).toBe(200)
       expect(childBlock.data?.parentId).toBe('loop1')
       expect(childBlock.data?.extent).toBe('parent')
+    })
+  })
+
+  describe('replace workflow parity helpers', () => {
+    it('prunes undo and redo stacks for the replaced workflow only', () => {
+      const workflowId = 'workflow-replace'
+      const otherWorkflowId = 'workflow-other'
+      const userId = 'user-1'
+
+      useUndoRedoStore
+        .getState()
+        .push(workflowId, userId, createAddBlockEntry('missing-block', { workflowId, userId }))
+      useUndoRedoStore
+        .getState()
+        .push(
+          otherWorkflowId,
+          userId,
+          createAddBlockEntry('other-block', { workflowId: otherWorkflowId, userId })
+        )
+
+      pruneUndoRedoStacksForWorkflow(workflowId, {
+        blocksById: {},
+        edgesById: {},
+      })
+
+      expect(useUndoRedoStore.getState().getStackSizes(workflowId, userId)).toEqual({
+        undoSize: 0,
+        redoSize: 0,
+      })
+      expect(useUndoRedoStore.getState().getStackSizes(otherWorkflowId, userId)).toEqual({
+        undoSize: 1,
+        redoSize: 0,
+      })
     })
   })
 

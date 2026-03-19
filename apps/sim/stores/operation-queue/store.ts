@@ -1,15 +1,59 @@
 import { createLogger } from '@sim/logger'
 import { create } from 'zustand'
+import { useWorkflowStore } from '@/stores/workflows/workflow/store'
 import type { OperationQueueState, QueuedOperation } from './types'
+
+interface ParentUpdatePayload {
+  id: string
+  parentId?: string | null
+  position?: { x: number; y: number }
+}
 
 function isBlockStillPresent(blockId: string | undefined): boolean {
   if (!blockId) return true
   try {
-    const { useWorkflowStore } = require('@/stores/workflows/workflow/store')
     return Boolean(useWorkflowStore.getState().blocks[blockId])
   } catch {
     return true
   }
+}
+
+function normalizeParentUpdates(updates: ParentUpdatePayload[] | undefined) {
+  return (updates ?? [])
+    .filter((update) => update.id && update.position)
+    .map((update) => ({
+      id: update.id,
+      position: update.position as { x: number; y: number },
+      parentId: update.parentId || undefined,
+    }))
+}
+
+function getSkippedBatchAddIds(
+  requestedBlocks: Array<{ id: string }> | undefined,
+  appliedBlocks: Array<{ id: string }> | undefined
+) {
+  const appliedIds = new Set((appliedBlocks ?? []).map((block) => block.id))
+  return (requestedBlocks ?? [])
+    .map((block) => block.id)
+    .filter((blockId) => blockId && !appliedIds.has(blockId))
+}
+
+function getSkippedEdgeIds(
+  requestedEdges: Array<{ id: string }> | undefined,
+  appliedEdges: Array<{ id: string }> | undefined
+) {
+  const appliedIds = new Set((appliedEdges ?? []).map((edge) => edge.id))
+  return (requestedEdges ?? [])
+    .map((edge) => edge.id)
+    .filter((edgeId) => edgeId && !appliedIds.has(edgeId))
+}
+
+function getSkippedParentUpdates(
+  appliedUpdates: ParentUpdatePayload[] | undefined,
+  revertUpdates: ParentUpdatePayload[] | undefined
+) {
+  const appliedIds = new Set((appliedUpdates ?? []).map((update) => update.id))
+  return (revertUpdates ?? []).filter((update) => update.id && !appliedIds.has(update.id))
 }
 
 const logger = createLogger('OperationQueue')
@@ -194,15 +238,48 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
 
     if (operation && appliedPayload) {
       const { operation: opName, target } = operation.operation
-      const { useWorkflowStore } = require('@/stores/workflows/workflow/store')
+      const workflowStore = useWorkflowStore.getState()
 
       // Apply server-enriched payload if it differs from what we sent
       if (target === 'blocks' && opName === 'batch-add-blocks') {
         const { blocks, edges, subBlockValues } = appliedPayload
-        useWorkflowStore.getState().batchAddBlocks(blocks || [], edges || [], subBlockValues || {})
+        const requestedPayload = operation.operation.payload as {
+          blocks?: Array<{ id: string }>
+          edges?: Array<{ id: string }>
+        }
+
+        workflowStore.batchAddBlocks(blocks || [], edges || [], subBlockValues || {}, {
+          skipEdgeValidation: true,
+        })
+
+        const skippedBlockIds = getSkippedBatchAddIds(requestedPayload.blocks, blocks)
+        if (skippedBlockIds.length > 0) {
+          workflowStore.batchRemoveBlocks(skippedBlockIds)
+        }
+
+        const skippedEdgeIds = getSkippedEdgeIds(requestedPayload.edges, edges)
+        if (skippedEdgeIds.length > 0) {
+          workflowStore.batchRemoveEdges(skippedEdgeIds)
+        }
       } else if (target === 'blocks' && opName === 'batch-update-parent') {
         const { updates } = appliedPayload
-        useWorkflowStore.getState().batchUpdateParent(updates || [])
+        const requestedPayload = operation.operation.payload as {
+          updates?: ParentUpdatePayload[]
+          revertUpdates?: ParentUpdatePayload[]
+        }
+
+        const normalizedAppliedUpdates = normalizeParentUpdates(updates)
+        if (normalizedAppliedUpdates.length > 0) {
+          workflowStore.batchUpdateBlocksWithParent(normalizedAppliedUpdates)
+        }
+
+        const skippedParentUpdates = normalizeParentUpdates(
+          getSkippedParentUpdates(updates, requestedPayload.revertUpdates)
+        )
+
+        if (skippedParentUpdates.length > 0) {
+          workflowStore.batchUpdateBlocksWithParent(skippedParentUpdates)
+        }
       }
     }
 

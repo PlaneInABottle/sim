@@ -328,6 +328,15 @@ export const BatchUpdateParentSchema = z.object({
         position: PositionSchema,
       })
     ),
+    revertUpdates: z
+      .array(
+        z.object({
+          id: z.string(),
+          parentId: z.string().nullable().optional(),
+          position: PositionSchema,
+        })
+      )
+      .optional(),
     autoConnect: z.boolean().optional(),
   }),
   timestamp: z.number(),

@@ -294,4 +294,104 @@ describe('persistWorkflowOperation', () => {
       },
     })
   })
+
+  it('returns only applied batch parent updates when protected targets are skipped', async () => {
+    const updatedBlocks = new Map<string, Record<string, unknown>>([
+      ['block-1', { id: 'block-1', data: {}, positionX: 0, positionY: 0 }],
+      ['block-2', { id: 'block-2', data: {}, positionX: 5, positionY: 5 }],
+      ['loop-1', { id: 'loop-1', data: {}, positionX: 0, positionY: 0 }],
+      ['locked-parent', { id: 'locked-parent', locked: true, data: {} }],
+    ])
+
+    const tx = {
+      update: vi.fn((table) => {
+        if (table === mockWorkflowTable) {
+          return {
+            set: vi.fn(() => ({ where: vi.fn().mockResolvedValue(undefined) })),
+          }
+        }
+
+        return {
+          set: vi.fn((values) => ({
+            where: vi.fn().mockImplementation(() => {
+              if ('data' in values) {
+                const blockId = (values.data as Record<string, unknown>).parentId
+                  ? 'block-1'
+                  : 'block-2'
+                updatedBlocks.set(blockId, {
+                  ...updatedBlocks.get(blockId),
+                  ...values,
+                })
+              }
+              return Promise.resolve(undefined)
+            }),
+            returning: vi.fn().mockResolvedValue([{ id: 'block-1' }]),
+          })),
+        }
+      }),
+      select: vi.fn((selection) => ({
+        from: vi.fn((table) => ({
+          where: vi.fn(() => {
+            if (table === mockWorkflowBlocksTable) {
+              if ('positionX' in selection) {
+                return {
+                  limit: vi.fn().mockResolvedValue([
+                    updatedBlocks.get('block-1') ?? {
+                      id: 'block-1',
+                      data: {},
+                      positionX: 0,
+                      positionY: 0,
+                    },
+                  ]),
+                }
+              }
+
+              return Promise.resolve([
+                { id: 'block-1', locked: false, data: {} },
+                { id: 'block-2', locked: false, data: {} },
+                { id: 'loop-1', locked: false, data: {} },
+                { id: 'locked-parent', locked: true, data: {} },
+              ])
+            }
+
+            if (table === mockWorkflowEdgesTable) {
+              return Promise.resolve([])
+            }
+
+            return Promise.resolve([])
+          }),
+        })),
+      })),
+      insert: vi.fn(() => ({
+        values: vi.fn(() => ({
+          onConflictDoUpdate: vi.fn().mockResolvedValue(undefined),
+        })),
+      })),
+      delete: vi.fn(() => ({
+        where: vi.fn().mockResolvedValue(undefined),
+      })),
+    }
+
+    mockTransaction.mockImplementation(async (callback) => callback(tx))
+
+    const result = await persistWorkflowOperation('workflow-1', {
+      operation: 'batch-update-parent',
+      target: 'blocks',
+      payload: {
+        updates: [
+          { id: 'block-1', parentId: 'loop-1', position: { x: 10, y: 20 } },
+          { id: 'block-2', parentId: 'locked-parent', position: { x: 30, y: 40 } },
+        ],
+        autoConnect: false,
+      },
+      timestamp: Date.now(),
+      userId: 'user-1',
+    })
+
+    expect(result.appliedPayload).toEqual({
+      updates: [{ id: 'block-1', parentId: 'loop-1', position: { x: 10, y: 20 } }],
+      autoConnect: false,
+    })
+    expect(result.addedEdges).toEqual([])
+  })
 })
