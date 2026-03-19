@@ -20,9 +20,9 @@
   },
   "scripts": {
     "db:push": "bunx drizzle-kit push --config=./drizzle.config.ts",
-    "db:migrate": "bunx drizzle-kit migrate --config=./drizzle.config.ts && bunx drizzle-kit migrate --config=./drizzle-local.config.ts",
-    "db:migrate:upstream": "bunx drizzle-kit migrate --config=./drizzle.config.ts",
-    "db:migrate:local": "bunx drizzle-kit migrate --config=./drizzle-local.config.ts",
+    "db:migrate": "bun ../../node_modules/drizzle-kit/bin.cjs migrate --config=./drizzle.config.ts && bun ../../node_modules/drizzle-kit/bin.cjs migrate --config=./drizzle-local.config.ts",
+    "db:migrate:upstream": "bun ../../node_modules/drizzle-kit/bin.cjs migrate --config=./drizzle.config.ts",
+    "db:migrate:local": "bun ../../node_modules/drizzle-kit/bin.cjs migrate --config=./drizzle-local.config.ts",
     "db:studio": "bunx drizzle-kit studio --config=./drizzle.config.ts",
     "type-check": "tsc --noEmit",
     "lint": "biome check --write --unsafe .",
