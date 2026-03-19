@@ -10,6 +10,7 @@ import { useUndoRedo } from '@/hooks/use-undo-redo'
 import {
   BLOCK_OPERATIONS,
   BLOCKS_OPERATIONS,
+  EDGE_OPERATIONS,
   EDGES_OPERATIONS,
   OPERATION_TARGETS,
   SUBBLOCK_OPERATIONS,
@@ -191,6 +192,25 @@ export function useCollaborativeWorkflow() {
                 .getState()
                 .setBlockCanonicalMode(payload.id, payload.canonicalId, payload.canonicalMode)
               break
+            case BLOCK_OPERATIONS.UPDATE_POSITION: {
+              if (payload.id && payload.position) {
+                useWorkflowStore
+                  .getState()
+                  .batchUpdatePositions([{ id: payload.id, position: payload.position }])
+              }
+              break
+            }
+            case BLOCK_OPERATIONS.UPDATE_PARENT: {
+              const block = useWorkflowStore.getState().blocks[payload.id]
+              if (block) {
+                useWorkflowStore
+                  .getState()
+                  .batchUpdateBlocksWithParent([
+                    { id: payload.id, position: block.position, parentId: payload.parentId },
+                  ])
+              }
+              break
+            }
           }
         } else if (target === OPERATION_TARGETS.BLOCKS) {
           switch (operation) {
@@ -237,6 +257,37 @@ export function useCollaborativeWorkflow() {
                 if (newEdges.length > 0) {
                   useWorkflowStore.getState().batchAddEdges(newEdges, { skipValidation: true })
                 }
+              }
+              break
+            }
+          }
+        } else if (target === OPERATION_TARGETS.EDGE) {
+          switch (operation) {
+            case EDGE_OPERATIONS.REMOVE: {
+              if (payload.id) {
+                logger.info('Received remove-edge from remote user', {
+                  userId,
+                  edgeId: payload.id,
+                })
+                useWorkflowStore.getState().batchRemoveEdges([payload.id])
+
+                const updatedBlocks = useWorkflowStore.getState().blocks
+                const updatedEdges = useWorkflowStore.getState().edges
+                const graph = {
+                  blocksById: updatedBlocks,
+                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                }
+
+                const undoRedoStore = useUndoRedoStore.getState()
+                const stackKeys = Object.keys(undoRedoStore.stacks)
+                stackKeys.forEach((key) => {
+                  const [wfId, uId] = key.split(':')
+                  if (wfId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(wfId, uId, graph)
+                  }
+                })
+
+                logger.info('Successfully applied remove-edge from remote user')
               }
               break
             }

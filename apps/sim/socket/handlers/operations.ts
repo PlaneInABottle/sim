@@ -9,7 +9,7 @@ import {
   type VariableOperation,
   WORKFLOW_OPERATIONS,
 } from '@/socket/constants'
-import { persistWorkflowOperation } from '@/socket/database/operations'
+import { persistWorkflowOperation, enrichBatchAddBlocksPayload } from '@/socket/database/operations'
 import type { AuthenticatedSocket } from '@/socket/middleware/auth'
 import { checkRolePermission } from '@/socket/middleware/permissions'
 import type { IRoomManager, UserSession } from '@/socket/rooms'
@@ -319,10 +319,14 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
       }
 
       if (target === OPERATION_TARGETS.BLOCKS && operation === BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS) {
+        // Enrich payload with registry defaults BEFORE both persistence and broadcast
+        // so DB and real-time clients receive the same enriched data
+        const enrichedPayload = enrichBatchAddBlocksPayload(payload)
+
         await persistWorkflowOperation(workflowId, {
           operation,
           target,
-          payload,
+          payload: enrichedPayload,
           timestamp: operationTimestamp,
           userId: session.userId,
         })
@@ -332,7 +336,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         socket.to(workflowId).emit('workflow-operation', {
           operation,
           target,
-          payload,
+          payload: enrichedPayload,
           timestamp: operationTimestamp,
           senderId: socket.id,
           userId: session.userId,
@@ -476,7 +480,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         target === OPERATION_TARGETS.BLOCKS &&
         operation === BLOCKS_OPERATIONS.BATCH_UPDATE_PARENT
       ) {
-        await persistWorkflowOperation(workflowId, {
+        const result = await persistWorkflowOperation(workflowId, {
           operation,
           target,
           payload,
@@ -496,6 +500,34 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           userName: session.userName,
           metadata: { workflowId, operationId: crypto.randomUUID() },
         })
+
+        // Broadcast edge removals if the parent update cleaned up boundary edges
+        if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
+          socket.to(workflowId).emit('workflow-operation', {
+            operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+            target: OPERATION_TARGETS.EDGES,
+            payload: { ids: result.removedEdgeIds },
+            timestamp: operationTimestamp,
+            senderId: socket.id,
+            userId: session.userId,
+            userName: session.userName,
+            metadata: { workflowId, operationId: crypto.randomUUID() },
+          })
+        }
+
+        // Broadcast auto-connected edges so clients add them to local state
+        if (result?.addedEdges && result.addedEdges.length > 0) {
+          socket.to(workflowId).emit('workflow-operation', {
+            operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
+            target: OPERATION_TARGETS.EDGES,
+            payload: { edges: result.addedEdges },
+            timestamp: operationTimestamp,
+            senderId: socket.id,
+            userId: session.userId,
+            userName: session.userName,
+            metadata: { workflowId, operationId: crypto.randomUUID() },
+          })
+        }
 
         if (operationId) {
           socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
@@ -534,7 +566,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
       }
 
       // For non-position operations, persist first then broadcast
-      await persistWorkflowOperation(workflowId, {
+      const result = await persistWorkflowOperation(workflowId, {
         operation,
         target,
         payload,
@@ -559,6 +591,35 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
       }
 
       socket.to(workflowId).emit('workflow-operation', broadcastData)
+
+      // Broadcast edge removals if the operation cleaned up boundary edges
+      // (e.g., update-parent nesting a block into a container)
+      if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
+        socket.to(workflowId).emit('workflow-operation', {
+          operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+          target: OPERATION_TARGETS.EDGES,
+          payload: { ids: result.removedEdgeIds },
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+      }
+
+      // Broadcast auto-connected edges so clients add them to local state
+      if (result?.addedEdges && result.addedEdges.length > 0) {
+        socket.to(workflowId).emit('workflow-operation', {
+          operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
+          target: OPERATION_TARGETS.EDGES,
+          payload: { edges: result.addedEdges },
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+      }
 
       if (operationId) {
         socket.emit('operation-confirmed', {

@@ -10,6 +10,7 @@ import { cleanupExternalWebhook } from '@/lib/webhooks/provider-subscriptions'
 import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { mergeSubBlockValues } from '@/lib/workflows/subblocks'
+import { getBlock } from '@/blocks/registry'
 import {
   BLOCK_OPERATIONS,
   BLOCKS_OPERATIONS,
@@ -20,6 +21,7 @@ import {
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
 } from '@/socket/constants'
+import { getTrigger, isTriggerValid } from '@/triggers'
 
 const logger = createLogger('SocketDatabase')
 
@@ -127,6 +129,262 @@ function isSubflowBlockType(blockType: string): blockType is SubflowType {
   return Object.values(SubflowType).includes(blockType as SubflowType)
 }
 
+/**
+ * Result metadata from workflow operations.
+ * Used to communicate side-effects (e.g., removed edges) back to callers
+ * so they can broadcast supplemental operations to connected clients.
+ */
+export interface OperationResult {
+  removedEdgeIds?: string[]
+  /** Full edge payloads for broadcasting auto-connected edges to connected clients. */
+  addedEdges?: Array<{
+    id: string
+    source: string
+    target: string
+    sourceHandle: string | null
+    targetHandle: string | null
+    type: string
+  }>
+}
+
+/**
+ * Remove cross-boundary edges when a block is reparented into or out of a container.
+ *
+ * When a block is added to a container (loop/parallel), any edges connecting it to
+ * blocks outside that container are removed. When a block is removed from a container,
+ * any edges connecting it to blocks still inside the old container are removed.
+ *
+ * @param tx - Database transaction
+ * @param workflowId - Workflow ID
+ * @param blockId - Block being reparented
+ * @param newParentId - New parent container ID (or null/undefined if removing from container)
+ * @param oldParentId - Previous parent container ID (or null/undefined if was standalone)
+ * @returns Array of removed edge IDs
+ */
+async function removeBoundaryEdges(
+  tx: any,
+  workflowId: string,
+  blockId: string,
+  newParentId: string | null | undefined,
+  oldParentId: string | null | undefined,
+  coMovingBlockIds?: Set<string>
+): Promise<string[]> {
+  const removedEdgeIds: string[] = []
+
+  if (newParentId) {
+    // Block is being ADDED to a container.
+    // Remove edges connecting to blocks OUTSIDE the new container.
+
+    // 1. Get all edges connected to this block
+    const connectedEdges = await tx
+      .select({
+        id: workflowEdges.id,
+        source: workflowEdges.sourceBlockId,
+        target: workflowEdges.targetBlockId,
+      })
+      .from(workflowEdges)
+      .where(
+        and(
+          eq(workflowEdges.workflowId, workflowId),
+          or(eq(workflowEdges.sourceBlockId, blockId), eq(workflowEdges.targetBlockId, blockId))
+        )
+      )
+
+    if (connectedEdges.length === 0) return removedEdgeIds
+
+    // 2. Get all blocks currently inside the target container
+    const containerChildren = await tx
+      .select({ id: workflowBlocks.id })
+      .from(workflowBlocks)
+      .where(
+        and(
+          eq(workflowBlocks.workflowId, workflowId),
+          sql`${workflowBlocks.data}->>'parentId' = ${newParentId}`
+        )
+      )
+
+    const containerChildIds = new Set(containerChildren.map((b: { id: string }) => b.id))
+    containerChildIds.add(blockId) // Include the block being moved
+
+    // Include all blocks being moved in the same batch to prevent
+    // incorrect deletion of edges between co-moving blocks
+    if (coMovingBlockIds) {
+      coMovingBlockIds.forEach((id) => containerChildIds.add(id))
+    }
+
+    // 3. Find boundary-crossing edges (other endpoint is outside container)
+    const boundaryEdges = connectedEdges.filter(
+      (edge: { id: string; source: string; target: string }) => {
+        const otherId = edge.source === blockId ? edge.target : edge.source
+        // Allow edges to/from the container itself (e.g., loop-start-source handle)
+        return otherId !== newParentId && !containerChildIds.has(otherId)
+      }
+    )
+
+    // 4. Delete boundary-crossing edges
+    if (boundaryEdges.length > 0) {
+      const boundaryEdgeIds = boundaryEdges.map((e: { id: string }) => e.id)
+      await tx
+        .delete(workflowEdges)
+        .where(
+          and(eq(workflowEdges.workflowId, workflowId), inArray(workflowEdges.id, boundaryEdgeIds))
+        )
+      removedEdgeIds.push(...boundaryEdgeIds)
+      logger.debug(
+        `Removed ${boundaryEdgeIds.length} boundary-crossing edge(s) for block ${blockId}: [${boundaryEdgeIds.join(', ')}]`
+      )
+    }
+  } else if (oldParentId) {
+    // Block is being REMOVED from a container.
+    // Remove edges connecting to blocks still inside the old container.
+
+    const connectedEdges = await tx
+      .select({
+        id: workflowEdges.id,
+        source: workflowEdges.sourceBlockId,
+        target: workflowEdges.targetBlockId,
+      })
+      .from(workflowEdges)
+      .where(
+        and(
+          eq(workflowEdges.workflowId, workflowId),
+          or(eq(workflowEdges.sourceBlockId, blockId), eq(workflowEdges.targetBlockId, blockId))
+        )
+      )
+
+    if (connectedEdges.length === 0) return removedEdgeIds
+
+    const containerChildren = await tx
+      .select({ id: workflowBlocks.id })
+      .from(workflowBlocks)
+      .where(
+        and(
+          eq(workflowBlocks.workflowId, workflowId),
+          sql`${workflowBlocks.data}->>'parentId' = ${oldParentId}`
+        )
+      )
+
+    const containerChildIds = new Set(containerChildren.map((b: { id: string }) => b.id))
+    containerChildIds.delete(blockId) // Exclude the block being removed
+
+    // Remove edges to/from the container itself or blocks still inside it
+    const internalEdges = connectedEdges.filter(
+      (edge: { id: string; source: string; target: string }) => {
+        const otherId = edge.source === blockId ? edge.target : edge.source
+        return otherId === oldParentId || containerChildIds.has(otherId)
+      }
+    )
+
+    if (internalEdges.length > 0) {
+      const internalEdgeIds = internalEdges.map((e: { id: string }) => e.id)
+      await tx
+        .delete(workflowEdges)
+        .where(
+          and(eq(workflowEdges.workflowId, workflowId), inArray(workflowEdges.id, internalEdgeIds))
+        )
+      removedEdgeIds.push(...internalEdgeIds)
+      logger.debug(
+        `Removed ${internalEdgeIds.length} internal edge(s) for block ${blockId}: [${internalEdgeIds.join(', ')}]`
+      )
+    }
+  }
+
+  return removedEdgeIds
+}
+
+interface AutoConnectResult {
+  edges: Array<{
+    id: string
+    source: string
+    target: string
+    sourceHandle: string | null
+    targetHandle: string | null
+    type: string
+  }>
+}
+
+/**
+ * Auto-connect a block to its container's start handle when it has no incoming edges.
+ *
+ * Mirrors the UI's `tryCreateAutoConnectEdge()` behavior: when a block is moved
+ * into a loop or parallel container and has no incoming edges after boundary-edge
+ * cleanup, an edge is created from the container's start handle to the block.
+ *
+ * @param tx - Database transaction
+ * @param workflowId - Workflow ID
+ * @param blockId - Block that was just reparented into a container
+ * @param parentId - Container block ID (loop or parallel)
+ * @returns Edge IDs and full edge payloads for broadcasting
+ */
+async function autoConnectToContainerStart(
+  tx: any,
+  workflowId: string,
+  blockId: string,
+  parentId: string
+): Promise<AutoConnectResult> {
+  const empty: AutoConnectResult = { edges: [] }
+
+  // Check if block has any incoming edges after boundary-edge cleanup
+  const incomingEdges = await tx
+    .select({ id: workflowEdges.id })
+    .from(workflowEdges)
+    .where(and(eq(workflowEdges.workflowId, workflowId), eq(workflowEdges.targetBlockId, blockId)))
+
+  if (incomingEdges.length > 0) {
+    return empty // Block already has incoming edges — no auto-connect needed
+  }
+
+  // Fetch container block type to determine start handle
+  const [containerBlock] = await tx
+    .select({ type: workflowBlocks.type })
+    .from(workflowBlocks)
+    .where(and(eq(workflowBlocks.id, parentId), eq(workflowBlocks.workflowId, workflowId)))
+    .limit(1)
+
+  if (!containerBlock) {
+    logger.warn(`Auto-connect skipped: container block ${parentId} not found`)
+    return empty
+  }
+
+  const containerType = containerBlock.type
+  if (containerType !== 'loop' && containerType !== 'parallel') {
+    logger.warn(
+      `Auto-connect skipped: block ${parentId} is type '${containerType}', not a container`
+    )
+    return empty
+  }
+
+  const startHandle = containerType === 'loop' ? 'loop-start-source' : 'parallel-start-source'
+  const autoEdgeId = crypto.randomUUID()
+
+  await tx.insert(workflowEdges).values({
+    id: autoEdgeId,
+    workflowId,
+    sourceBlockId: parentId,
+    targetBlockId: blockId,
+    sourceHandle: startHandle,
+    targetHandle: 'target',
+  })
+
+  logger.info('Auto-connected block to container start', {
+    blockId,
+    containerId: parentId,
+    edgeId: autoEdgeId,
+    handle: startHandle,
+  })
+
+  const edgePayload = {
+    id: autoEdgeId,
+    source: parentId,
+    target: blockId,
+    sourceHandle: startHandle,
+    targetHandle: 'target',
+    type: 'workflowEdge',
+  }
+
+  return { edges: [edgePayload] }
+}
+
 export async function updateSubflowNodeList(dbOrTx: any, workflowId: string, parentId: string) {
   try {
     // Get all child blocks of this parent
@@ -213,7 +471,10 @@ export async function getWorkflowState(workflowId: string) {
   }
 }
 
-export async function persistWorkflowOperation(workflowId: string, operation: any) {
+export async function persistWorkflowOperation(
+  workflowId: string,
+  operation: any
+): Promise<OperationResult> {
   const startTime = Date.now()
   try {
     const { operation: op, target, payload, timestamp, userId } = operation
@@ -231,6 +492,8 @@ export async function persistWorkflowOperation(workflowId: string, operation: an
       })
     }
 
+    let result: OperationResult = {}
+
     await db.transaction(async (tx) => {
       await tx
         .update(workflow)
@@ -239,10 +502,10 @@ export async function persistWorkflowOperation(workflowId: string, operation: an
 
       switch (target) {
         case OPERATION_TARGETS.BLOCK:
-          await handleBlockOperationTx(tx, workflowId, op, payload)
+          result = (await handleBlockOperationTx(tx, workflowId, op, payload)) ?? {}
           break
         case OPERATION_TARGETS.BLOCKS:
-          await handleBlocksOperationTx(tx, workflowId, op, payload)
+          result = (await handleBlocksOperationTx(tx, workflowId, op, payload)) ?? {}
           break
         case OPERATION_TARGETS.EDGE:
           await handleEdgeOperationTx(tx, workflowId, op, payload)
@@ -284,6 +547,8 @@ export async function persistWorkflowOperation(workflowId: string, operation: an
         workflowId: `${workflowId.substring(0, 8)}...`,
       })
     }
+
+    return result
   } catch (error) {
     const duration = Date.now() - startTime
     logger.error(
@@ -336,7 +601,7 @@ async function handleBlockOperationTx(
   workflowId: string,
   operation: string,
   payload: any
-) {
+): Promise<OperationResult | void> {
   switch (operation) {
     case BLOCK_OPERATIONS.UPDATE_POSITION: {
       if (!payload.id || !payload.position) {
@@ -497,6 +762,29 @@ async function handleBlockOperationTx(
         throw new Error(`Block ${payload.id} not found in workflow ${workflowId}`)
       }
 
+      // Remove cross-boundary edges that would be invalid after reparenting
+      const removedEdgeIds = await removeBoundaryEdges(
+        tx,
+        workflowId,
+        payload.id,
+        payload.parentId ?? null,
+        existing?.parentId ?? null,
+        undefined // Single block operation, no co-moving blocks
+      )
+
+      // Auto-connect: if block is entering a container and has no incoming edges,
+      // connect it from the container's start handle (mirrors UI tryCreateAutoConnectEdge)
+      let addedEdges: OperationResult['addedEdges'] = []
+      if (payload.parentId) {
+        const autoConnect = await autoConnectToContainerStart(
+          tx,
+          workflowId,
+          payload.id,
+          payload.parentId
+        )
+        addedEdges = autoConnect.edges
+      }
+
       // If the block now has a parent, update the new parent's subflow node list
       if (payload.parentId) {
         await updateSubflowNodeList(tx, workflowId, payload.parentId)
@@ -511,7 +799,7 @@ async function handleBlockOperationTx(
           isRemovingFromParent ? ' (cleared data JSON)' : ''
         }`
       )
-      break
+      return { removedEdgeIds, addedEdges }
     }
 
     case BLOCK_OPERATIONS.UPDATE_ADVANCED_MODE: {
@@ -606,12 +894,175 @@ async function handleBlockOperationTx(
   }
 }
 
+/**
+ * Initializes subBlocks from the block registry, merging with any existing subBlocks.
+ * Preserves existing subBlocks and adds only missing ones from registry.
+ * This mirrors the UI's `prepareBlockState` logic to ensure blocks added via
+ * server-side paths (e.g., MCP) have proper subBlock definitions.
+ */
+function initializeSubBlocksFromRegistry(
+  blockType: string,
+  existingSubBlocks: Record<string, unknown>,
+  blockId?: string
+): Record<string, unknown> {
+  const blockConfig = getBlock(blockType)
+  if (!blockConfig?.subBlocks) {
+    return existingSubBlocks
+  }
+
+  // Start with existing subBlocks, then add any missing ones from registry
+  const initialized: Record<string, unknown> = { ...(existingSubBlocks || {}) }
+
+  for (const subBlock of blockConfig.subBlocks) {
+    // Skip if this subBlock already exists (preserve caller-provided values)
+    if (subBlock.id in initialized) continue
+
+    let initialValue: unknown = null
+
+    if (typeof subBlock.value === 'function') {
+      try {
+        initialValue = subBlock.value({})
+      } catch {
+        initialValue = null
+      }
+    } else if (subBlock.defaultValue !== undefined) {
+      initialValue = subBlock.defaultValue
+    } else if (subBlock.type === 'input-format' || subBlock.type === 'response-format') {
+      initialValue = [
+        {
+          id: crypto.randomUUID(),
+          name: '',
+          type: 'string',
+          value: '',
+          collapsed: false,
+        },
+      ]
+    } else if (subBlock.type === 'table') {
+      initialValue = []
+    } else if (subBlock.type === 'condition-input' && blockId) {
+      // Auto-generate default if/else conditions (matches UI behavior)
+      initialValue = JSON.stringify([
+        { id: `${blockId}-if`, title: 'if', value: '' },
+        { id: `${blockId}-else`, title: 'else', value: '' },
+      ])
+    }
+
+    initialized[subBlock.id] = {
+      id: subBlock.id,
+      type: subBlock.type,
+      value: initialValue,
+    }
+  }
+
+  return initialized
+}
+
+/**
+ * Enriches a BATCH_ADD_BLOCKS payload by initializing subBlocks and outputs from registry.
+ * This ensures both DB persistence and real-time broadcast use the same enriched data.
+ * Returns a new payload with enriched blocks (does not mutate the original).
+ */
+export function enrichBatchAddBlocksPayload(
+  payload: Record<string, unknown>
+): Record<string, unknown> {
+  const { blocks, subBlockValues } = payload as {
+    blocks?: Array<Record<string, unknown>>
+    subBlockValues?: Record<string, Record<string, unknown>>
+  }
+
+  if (!blocks || blocks.length === 0) {
+    return payload
+  }
+
+  const enrichedBlocks = blocks.map((block) => {
+    const blockType = block.type as string
+    const blockId = block.id as string
+
+    // Auto-detect trigger blocks and set triggerMode
+    const blockConfig = getBlock(blockType)
+    const isTriggerBlock = blockConfig?.category === 'triggers'
+    const triggerMode = (block.triggerMode as boolean) ?? isTriggerBlock
+
+    // Initialize subBlocks from registry (merge mode: preserves existing, adds missing)
+    const initializedSubBlocks = initializeSubBlocksFromRegistry(
+      blockType,
+      (block.subBlocks as Record<string, unknown>) || {},
+      blockId
+    )
+
+    // Merge any caller-provided subBlockValues
+    const mergedSubBlocks = mergeSubBlockValues(initializedSubBlocks, subBlockValues?.[blockId])
+
+    // Resolve outputs from registry/trigger config when empty
+    const outputs = resolveBlockOutputs(
+      blockType,
+      triggerMode,
+      (block.outputs as Record<string, unknown>) || {}
+    )
+
+    return {
+      ...block,
+      subBlocks: mergedSubBlocks,
+      outputs,
+      triggerMode,
+      enabled: (block.enabled as boolean) ?? true,
+      horizontalHandles: (block.horizontalHandles as boolean) ?? true,
+      advancedMode: (block.advancedMode as boolean) ?? false,
+      height: (block.height as number) || 0,
+      locked: (block.locked as boolean) ?? false,
+    }
+  })
+
+  return {
+    ...payload,
+    blocks: enrichedBlocks,
+  }
+}
+
+/**
+ * Resolves outputs for a block from the registry. For trigger-mode blocks,
+ * returns the trigger's outputs. Otherwise returns the block's static outputs.
+ */
+function resolveBlockOutputs(
+  blockType: string,
+  triggerMode: boolean,
+  existingOutputs: Record<string, unknown>
+): Record<string, unknown> {
+  // Only resolve if outputs are empty
+  if (existingOutputs && Object.keys(existingOutputs).length > 0) {
+    return existingOutputs
+  }
+
+  const blockConfig = getBlock(blockType)
+  if (!blockConfig) {
+    return existingOutputs
+  }
+
+  // For trigger blocks, get outputs from the trigger config
+  if (triggerMode && blockConfig.triggers?.enabled) {
+    const triggerId = blockConfig.triggers.available?.[0]
+    if (triggerId && isTriggerValid(triggerId)) {
+      const trigger = getTrigger(triggerId)
+      if (trigger.outputs) {
+        return trigger.outputs as Record<string, unknown>
+      }
+    }
+  }
+
+  // Fall back to block's static outputs
+  if (blockConfig.outputs && Object.keys(blockConfig.outputs).length > 0) {
+    return blockConfig.outputs as Record<string, unknown>
+  }
+
+  return existingOutputs
+}
+
 async function handleBlocksOperationTx(
   tx: any,
   workflowId: string,
   operation: string,
   payload: any
-) {
+): Promise<OperationResult | void> {
   switch (operation) {
     case BLOCKS_OPERATIONS.BATCH_UPDATE_POSITIONS: {
       const { updates } = payload
@@ -635,7 +1086,7 @@ async function handleBlocksOperationTx(
     }
 
     case BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS: {
-      const { blocks, edges, loops, parallels, subBlockValues } = payload
+      const { blocks, edges, loops, parallels } = payload
 
       logger.info(`Batch adding blocks to workflow ${workflowId}`, {
         blockCount: blocks?.length || 0,
@@ -675,22 +1126,18 @@ async function handleBlocksOperationTx(
           break
         }
 
+        // Blocks are pre-enriched by enrichBatchAddBlocksPayload() upstream,
+        // so subBlocks, outputs, and triggerMode are already populated.
         const blockValues = allowedBlocks.map((block: Record<string, unknown>) => {
-          const blockId = block.id as string
-          const mergedSubBlocks = mergeSubBlockValues(
-            block.subBlocks as Record<string, unknown>,
-            subBlockValues?.[blockId]
-          )
-
           return {
-            id: blockId,
+            id: block.id as string,
             workflowId,
             type: block.type as string,
             name: block.name as string,
             positionX: (block.position as { x: number; y: number }).x,
             positionY: (block.position as { x: number; y: number }).y,
             data: (block.data as Record<string, unknown>) || {},
-            subBlocks: mergedSubBlocks,
+            subBlocks: (block.subBlocks as Record<string, unknown>) || {},
             outputs: (block.outputs as Record<string, unknown>) || {},
             enabled: (block.enabled as boolean) ?? true,
             horizontalHandles: (block.horizontalHandles as boolean) ?? true,
@@ -1182,6 +1629,12 @@ async function handleBlocksOperationTx(
         allBlocks.map((b: ParentBlockRecord) => [b.id, b])
       )
 
+      const allRemovedEdgeIds: string[] = []
+      const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
+
+      // Collect all block IDs being moved in this batch so removeBoundaryEdges
+      // can treat them as already inside the target container
+      const allMovingBlockIds = new Set(updates.map((u: { id: string }) => u.id))
       for (const update of updates) {
         const { id, parentId, position } = update
         if (!id) continue
@@ -1242,6 +1695,24 @@ async function handleBlocksOperationTx(
           })
           .where(and(eq(workflowBlocks.id, id), eq(workflowBlocks.workflowId, workflowId)))
 
+        // Remove cross-boundary edges that would be invalid after reparenting
+        const removedEdgeIds = await removeBoundaryEdges(
+          tx,
+          workflowId,
+          id,
+          parentId ?? null,
+          existingParentId ?? null,
+          allMovingBlockIds
+        )
+        allRemovedEdgeIds.push(...removedEdgeIds)
+
+        // Auto-connect: if block is entering a container and has no incoming edges,
+        // connect it from the container's start handle
+        if (parentId) {
+          const autoConnect = await autoConnectToContainerStart(tx, workflowId, id, parentId)
+          allAddedEdges.push(...autoConnect.edges)
+        }
+
         // If the block now has a parent, update the new parent's subflow node list
         if (parentId) {
           await updateSubflowNodeList(tx, workflowId, parentId)
@@ -1253,7 +1724,7 @@ async function handleBlocksOperationTx(
       }
 
       logger.debug(`Batch updated parent for ${updates.length} blocks`)
-      break
+      return { removedEdgeIds: allRemovedEdgeIds, addedEdges: allAddedEdges }
     }
 
     default:
