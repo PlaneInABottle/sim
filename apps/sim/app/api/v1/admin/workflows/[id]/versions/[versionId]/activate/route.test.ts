@@ -66,7 +66,8 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
 }))
 
 vi.mock('@/lib/webhooks/deploy', () => ({
-  restorePreviousVersionWebhooks: (...args: unknown[]) => mockRestorePreviousVersionWebhooks(...args),
+  restorePreviousVersionWebhooks: (...args: unknown[]) =>
+    mockRestorePreviousVersionWebhooks(...args),
   saveTriggerWebhooksForDeploy: (...args: unknown[]) => mockSaveTriggerWebhooksForDeploy(...args),
 }))
 
@@ -85,11 +86,8 @@ vi.mock('@/lib/workflows/schedules', () => ({
 }))
 
 vi.mock('@/app/api/v1/admin/middleware', () => ({
-  withAdminAuthParams: <TParams,>(
-    handler: (
-      request: NextRequest,
-      context: { params: Promise<TParams> }
-    ) => Promise<Response>
+  withAdminAuthParams: <TParams>(
+    handler: (request: NextRequest, context: { params: Promise<TParams> }) => Promise<Response>
   ) => handler,
 }))
 

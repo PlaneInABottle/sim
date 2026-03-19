@@ -61,7 +61,9 @@ describe('Workflow deployed-state route', () => {
 
   it('returns null deployedState for absence-like loader failures', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({ workflow: { id: 'wf-1' } })
-    mockLoadDeployedWorkflowState.mockRejectedValue(new Error('Workflow wf-1 has no active deployment'))
+    mockLoadDeployedWorkflowState.mockRejectedValue(
+      new Error('Workflow wf-1 has no active deployment')
+    )
 
     const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployed', {
       headers: { 'x-api-key': 'test-key' },
@@ -106,7 +108,9 @@ describe('Workflow deployed-state route', () => {
   })
 
   it('returns 500 when a non-loader error says workflow has no active deployment', async () => {
-    mockValidateWorkflowAccess.mockRejectedValue(new Error('Workflow wf-1 has no active deployment'))
+    mockValidateWorkflowAccess.mockRejectedValue(
+      new Error('Workflow wf-1 has no active deployment')
+    )
 
     const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployed', {
       headers: { 'x-api-key': 'test-key' },
