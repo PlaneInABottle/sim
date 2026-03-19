@@ -1630,6 +1630,7 @@ async function handleBlocksOperationTx(
       )
 
       const allRemovedEdgeIds: string[] = []
+      const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
       const applicableUpdates: Array<(typeof updates)[number]> = []
 
       for (const update of updates) {
@@ -1715,6 +1716,11 @@ async function handleBlocksOperationTx(
         )
         allRemovedEdgeIds.push(...removedEdgeIds)
 
+        if (parentId) {
+          const autoConnect = await autoConnectToContainerStart(tx, workflowId, id, parentId)
+          allAddedEdges.push(...autoConnect.edges)
+        }
+
         // If the block now has a parent, update the new parent's subflow node list
         if (parentId) {
           await updateSubflowNodeList(tx, workflowId, parentId)
@@ -1726,7 +1732,7 @@ async function handleBlocksOperationTx(
       }
 
       logger.debug(`Batch updated parent for ${updates.length} blocks`)
-      return { removedEdgeIds: allRemovedEdgeIds }
+      return { removedEdgeIds: allRemovedEdgeIds, addedEdges: allAddedEdges }
     }
 
     default:

@@ -517,7 +517,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         // Broadcast auto-connected edges so clients add them to local state
         if (result?.addedEdges && result.addedEdges.length > 0) {
-          socket.to(workflowId).emit('workflow-operation', {
+          roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
             operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
             target: OPERATION_TARGETS.EDGES,
             payload: { edges: result.addedEdges },
