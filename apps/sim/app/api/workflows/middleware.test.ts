@@ -293,9 +293,8 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
-    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
-      keyTypes: ['workspace', 'personal'],
-    })
+    expect(mockGetActiveWorkflowRecord).toHaveBeenCalledWith(WORKFLOW_ID)
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })
 
   it('returns 401 before deployed workflow lookup when api key is missing', async () => {
@@ -334,11 +333,12 @@ describe('validateWorkflowAccess', () => {
         status: 401,
       },
     })
-    expect(mockGetActiveWorkflowRecord).not.toHaveBeenCalled()
-    expect(mockGetWorkflowById).not.toHaveBeenCalled()
+    expect(mockGetActiveWorkflowRecord).toHaveBeenCalledWith(WORKFLOW_ID)
     expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('invalid-key', {
+      workspaceId: WORKSPACE_ID,
       keyTypes: ['workspace', 'personal'],
     })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledTimes(1)
   })
 
   it('returns 403 for deployed access when authenticated workflow has no workspace', async () => {
@@ -368,9 +368,7 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
-    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
-      keyTypes: ['workspace', 'personal'],
-    })
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })
 
   it('returns 404 for deployed access when authenticated workflow workspace is archived', async () => {
@@ -400,9 +398,7 @@ describe('validateWorkflowAccess', () => {
     })
     expect(mockGetWorkflowById).toHaveBeenCalledWith(WORKFLOW_ID)
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
-    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
-      keyTypes: ['workspace', 'personal'],
-    })
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })
 
   it('returns 403 for deployed access when authenticated workflow is not deployed', async () => {
@@ -430,8 +426,10 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('valid-key', {
+      workspaceId: WORKSPACE_ID,
       keyTypes: ['workspace', 'personal'],
     })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledTimes(1)
     expect(mockUpdateApiKeyLastUsed).not.toHaveBeenCalled()
   })
 })

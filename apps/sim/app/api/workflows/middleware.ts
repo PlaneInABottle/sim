@@ -141,19 +141,6 @@ export async function validateWorkflowAccess(
             },
           }
         }
-
-        const preflightResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
-          keyTypes: ['workspace', 'personal'],
-        })
-
-        if (!preflightResult.success) {
-          return {
-            error: {
-              message: 'Unauthorized: Invalid API key',
-              status: 401,
-            },
-          }
-        }
       }
 
       const workflowResult = await getValidatedWorkflow(workflowId)
@@ -162,16 +149,16 @@ export async function validateWorkflowAccess(
       }
       const workflow = workflowResult.workflow
 
-      if (!workflow.isDeployed) {
-        return {
-          error: {
-            message: 'Workflow is not deployed',
-            status: 403,
-          },
-        }
-      }
-
       if (hasValidInternalSecret) {
+        if (!workflow.isDeployed) {
+          return {
+            error: {
+              message: 'Workflow is not deployed',
+              status: 403,
+            },
+          }
+        }
+
         return { workflow }
       }
 
@@ -191,6 +178,15 @@ export async function validateWorkflowAccess(
           error: {
             message: 'Unauthorized: Invalid API key',
             status: 401,
+          },
+        }
+      }
+
+      if (!workflow.isDeployed) {
+        return {
+          error: {
+            message: 'Workflow is not deployed',
+            status: 403,
           },
         }
       }
