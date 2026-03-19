@@ -304,4 +304,50 @@ describe('Workflow deployment version route', () => {
     expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
     expect(mockRecordAudit).not.toHaveBeenCalled()
   })
+
+  it('returns 400 for malformed JSON bodies without side effects', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'user-1', authType: 'session' },
+    })
+
+    const req = {
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected end of JSON input')),
+    } as unknown as NextRequest
+
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(400)
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    expect(mockSaveTriggerWebhooksForDeploy).not.toHaveBeenCalled()
+    expect(mockCreateSchedulesForDeploy).not.toHaveBeenCalled()
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
+
+  it('returns invalid version before parsing the request body', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'user-1', authType: 'session' },
+    })
+
+    const jsonSpy = vi.fn().mockResolvedValue({ isActive: true })
+    const req = {
+      json: jsonSpy,
+    } as unknown as NextRequest
+
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: 'NaN' }) })
+
+    expect(response.status).toBe(400)
+    expect(jsonSpy).not.toHaveBeenCalled()
+    expect(mockDbSelect).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    expect(mockSaveTriggerWebhooksForDeploy).not.toHaveBeenCalled()
+    expect(mockCreateSchedulesForDeploy).not.toHaveBeenCalled()
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
 })

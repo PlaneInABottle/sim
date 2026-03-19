@@ -109,7 +109,18 @@ export async function PATCH(
       return createErrorResponse(access.error.message, access.error.status)
     }
 
-    const body = await request.json()
+    const versionNum = Number(version)
+    if (!Number.isFinite(versionNum)) {
+      return createErrorResponse('Invalid version', 400)
+    }
+
+    let body: unknown
+    try {
+      body = await request.json()
+    } catch {
+      return createErrorResponse('Invalid JSON body', 400)
+    }
+
     const validation = patchBodySchema.safeParse(body)
 
     if (!validation.success) {
@@ -119,11 +130,6 @@ export async function PATCH(
     const { name, description, isActive } = validation.data
     const auth = access.auth
     const workflowData = access.workflow
-
-    const versionNum = Number(version)
-    if (!Number.isFinite(versionNum)) {
-      return createErrorResponse('Invalid version', 400)
-    }
 
     // Handle activation
     if (isActive) {
