@@ -1,5 +1,5 @@
 import { db } from '@sim/db'
-import { apiKey as apiKeyTable } from '@sim/db/schema'
+import { apiKey as apiKeyTable, user as userTable } from '@sim/db/schema'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import { authenticateApiKey } from '@/lib/api-key/auth'
@@ -33,6 +33,8 @@ export interface ApiKeyAuthOptions {
 export interface ApiKeyAuthResult {
   success: boolean
   userId?: string
+  userName?: string | null
+  userEmail?: string | null
   keyId?: string
   keyType?: 'personal' | 'workspace'
   workspaceId?: string
@@ -68,12 +70,15 @@ export async function authenticateApiKeyFromHeader(
       .select({
         id: apiKeyTable.id,
         userId: apiKeyTable.userId,
+        userName: userTable.name,
+        userEmail: userTable.email,
         workspaceId: apiKeyTable.workspaceId,
         type: apiKeyTable.type,
         key: apiKeyTable.key,
         expiresAt: apiKeyTable.expiresAt,
       })
       .from(apiKeyTable)
+      .innerJoin(userTable, eq(apiKeyTable.userId, userTable.id))
 
     // Apply filters
     const conditions = []
@@ -154,6 +159,8 @@ export async function authenticateApiKeyFromHeader(
           return {
             success: true,
             userId: storedKey.userId,
+            userName: storedKey.userName,
+            userEmail: storedKey.userEmail,
             keyId: storedKey.id,
             keyType: storedKey.type as 'personal' | 'workspace',
             workspaceId: storedKey.workspaceId || options.workspaceId || undefined,

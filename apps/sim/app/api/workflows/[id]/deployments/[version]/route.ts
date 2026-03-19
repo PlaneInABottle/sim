@@ -129,6 +129,7 @@ export async function PATCH(
         workflowId: id,
         userId: auth.userId,
         action: 'admin',
+        workflow: workflowData,
       })
       if (!authorization.allowed) {
         return createErrorResponse(authorization.message || 'Access denied', authorization.status)

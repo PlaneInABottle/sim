@@ -125,7 +125,13 @@ describe('Workflow deployment version revert route', () => {
   it('allows API-key auth for revert using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
-      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
     })
 
     const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3/revert', {
@@ -144,8 +150,8 @@ describe('Workflow deployment version revert route', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'api-user',
-        actorName: undefined,
-        actorEmail: undefined,
+        actorName: 'API Key Actor',
+        actorEmail: 'api@example.com',
       })
     )
   })

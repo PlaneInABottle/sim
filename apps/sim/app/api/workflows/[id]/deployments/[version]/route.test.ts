@@ -164,7 +164,13 @@ describe('Workflow deployment version route', () => {
   it('allows API-key auth for activation using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
-      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
     })
 
     const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
@@ -184,6 +190,7 @@ describe('Workflow deployment version route', () => {
       workflowId: 'wf-1',
       userId: 'api-user',
       action: 'admin',
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
     })
     expect(mockSaveTriggerWebhooksForDeploy).toHaveBeenCalledWith(
       expect.objectContaining({ userId: 'api-user' })
@@ -191,8 +198,8 @@ describe('Workflow deployment version route', () => {
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
         actorId: 'api-user',
-        actorName: undefined,
-        actorEmail: undefined,
+        actorName: 'API Key Actor',
+        actorEmail: 'api@example.com',
       })
     )
   })
@@ -243,6 +250,7 @@ describe('Workflow deployment version route', () => {
       workflowId: 'wf-1',
       userId: 'user-1',
       action: 'admin',
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
     })
     expect(mockDbSelect).not.toHaveBeenCalled()
     expect(mockSaveTriggerWebhooksForDeploy).not.toHaveBeenCalled()

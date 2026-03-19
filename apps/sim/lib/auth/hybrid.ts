@@ -218,6 +218,8 @@ export async function checkHybridAuth(
           success: true,
           userId: result.userId!,
           workspaceId: result.workspaceId,
+          userName: result.userName,
+          userEmail: result.userEmail,
           authType: AuthType.API_KEY,
           apiKeyType: result.keyType,
         }
