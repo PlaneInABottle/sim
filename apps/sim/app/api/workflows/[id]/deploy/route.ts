@@ -373,9 +373,21 @@ export async function DELETE(
       return createErrorResponse(result.error || 'Failed to undeploy workflow', 500)
     }
 
-    await cleanupWebhooksForWorkflow(id, workflowData as Record<string, unknown>, requestId)
+    try {
+      await cleanupWebhooksForWorkflow(id, workflowData as Record<string, unknown>, requestId)
+    } catch (cleanupError) {
+      logger.error(`[${requestId}] Failed to cleanup webhooks after undeploy for workflow ${id}`, {
+        error: cleanupError,
+      })
+    }
 
-    await removeMcpToolsForWorkflow(id, requestId)
+    try {
+      await removeMcpToolsForWorkflow(id, requestId)
+    } catch (cleanupError) {
+      logger.error(`[${requestId}] Failed to cleanup MCP tools after undeploy for workflow ${id}`, {
+        error: cleanupError,
+      })
+    }
 
     logger.info(`[${requestId}] Workflow undeployed successfully: ${id}`)
 

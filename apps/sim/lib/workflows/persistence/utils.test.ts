@@ -1165,6 +1165,59 @@ describe('Database Helpers', () => {
     })
   })
 
+  describe('restoreWorkflowDraftState', () => {
+    it('rolls back normalized graph restore when workflow variable update fails', async () => {
+      const txDeleteWhere = vi.fn().mockResolvedValue(undefined)
+      const txInsertValues = vi.fn().mockResolvedValue(undefined)
+      const txUpdateWhere = vi.fn().mockRejectedValue(new Error('workflow update failed'))
+      const txUpdateSet = vi.fn().mockReturnValue({ where: txUpdateWhere })
+      const tx = {
+        delete: vi.fn().mockReturnValue({ where: txDeleteWhere }),
+        insert: vi.fn().mockReturnValue({ values: txInsertValues }),
+        update: vi.fn().mockReturnValue({ set: txUpdateSet }),
+      }
+
+      mockDb.transaction = vi.fn().mockImplementation(async (callback) => callback(tx))
+
+      const result = await dbHelpers.restoreWorkflowDraftState({
+        workflowId: mockWorkflowId,
+        state: {
+          blocks: asAppState(mockWorkflowState).blocks,
+          edges: asAppState(mockWorkflowState).edges,
+          loops: asAppState(mockWorkflowState).loops,
+          parallels: asAppState(mockWorkflowState).parallels,
+        },
+        variables: {
+          apiToken: {
+            id: 'apiToken',
+            name: 'API Token',
+            type: 'string',
+            value: 'secret',
+          },
+        },
+        restoredAt: new Date('2024-01-01T00:00:00.000Z'),
+      })
+
+      expect(result).toEqual({ success: false, error: 'workflow update failed' })
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+      expect(tx.delete).toHaveBeenCalledTimes(3)
+      expect(tx.insert).toHaveBeenCalledTimes(3)
+      expect(tx.update).toHaveBeenCalledWith({})
+      expect(txUpdateSet).toHaveBeenCalledWith({
+        variables: {
+          apiToken: {
+            id: 'apiToken',
+            name: 'API Token',
+            type: 'string',
+            value: 'secret',
+          },
+        },
+        lastSynced: new Date('2024-01-01T00:00:00.000Z'),
+        updatedAt: new Date('2024-01-01T00:00:00.000Z'),
+      })
+    })
+  })
+
   describe('migrateAgentBlocksToMessagesFormat', () => {
     it('should migrate agent block with both systemPrompt and userPrompt', () => {
       const blocks = {

@@ -9,26 +9,18 @@ const {
   mockDbFrom,
   mockDbLimit,
   mockDbSelect,
-  mockDbSet,
-  mockDbUpdate,
   mockDbWhere,
-  mockDbWhereUpdate,
   mockRecordAudit,
-  mockSaveWorkflowToNormalizedTables,
-  mockSetWorkflowVariables,
+  mockRestoreWorkflowDraftState,
   mockSyncMcpToolsForWorkflow,
   mockValidateWorkflowAccess,
 } = vi.hoisted(() => ({
   mockDbFrom: vi.fn(),
   mockDbLimit: vi.fn(),
   mockDbSelect: vi.fn(),
-  mockDbSet: vi.fn(),
-  mockDbUpdate: vi.fn(),
   mockDbWhere: vi.fn(),
-  mockDbWhereUpdate: vi.fn(),
   mockRecordAudit: vi.fn(),
-  mockSaveWorkflowToNormalizedTables: vi.fn(),
-  mockSetWorkflowVariables: vi.fn(),
+  mockRestoreWorkflowDraftState: vi.fn(),
   mockSyncMcpToolsForWorkflow: vi.fn(),
   mockValidateWorkflowAccess: vi.fn(),
 }))
@@ -64,9 +56,7 @@ vi.mock('@/lib/core/config/env', async (importOriginal) => {
 vi.mock('@sim/db', () => ({
   db: {
     select: mockDbSelect,
-    update: mockDbUpdate,
   },
-  workflow: { id: 'id' },
   workflowDeploymentVersion: {
     state: 'state',
     workflowId: 'workflowId',
@@ -85,16 +75,11 @@ vi.mock('drizzle-orm', async (importOriginal) => {
 })
 
 vi.mock('@/lib/workflows/persistence/utils', () => ({
-  saveWorkflowToNormalizedTables: (...args: unknown[]) =>
-    mockSaveWorkflowToNormalizedTables(...args),
+  restoreWorkflowDraftState: (...args: unknown[]) => mockRestoreWorkflowDraftState(...args),
 }))
 
 vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
   syncMcpToolsForWorkflow: (...args: unknown[]) => mockSyncMcpToolsForWorkflow(...args),
-}))
-
-vi.mock('@/lib/workflows/utils', () => ({
-  setWorkflowVariables: (...args: unknown[]) => mockSetWorkflowVariables(...args),
 }))
 
 vi.mock('@/lib/audit/log', () => ({
@@ -121,11 +106,7 @@ describe('Workflow deployment version revert route', () => {
         },
       },
     ])
-    mockDbUpdate.mockReturnValue({ set: mockDbSet })
-    mockDbSet.mockReturnValue({ where: mockDbWhereUpdate })
-    mockDbWhereUpdate.mockResolvedValue(undefined)
-    mockSaveWorkflowToNormalizedTables.mockResolvedValue({ success: true })
-    mockSetWorkflowVariables.mockResolvedValue(undefined)
+    mockRestoreWorkflowDraftState.mockResolvedValue({ success: true })
     mockFetch.mockResolvedValue({ ok: true })
   })
 
@@ -152,7 +133,7 @@ describe('Workflow deployment version revert route', () => {
       requireDeployment: false,
       action: 'admin',
     })
-    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalled()
+    expect(mockRestoreWorkflowDraftState).toHaveBeenCalled()
     expect(mockSyncMcpToolsForWorkflow).toHaveBeenCalled()
     expect(mockRecordAudit).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -195,9 +176,14 @@ describe('Workflow deployment version revert route', () => {
 
     await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
-    expect(mockSetWorkflowVariables).toHaveBeenCalledWith('wf-1', {
-      var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
-    })
+    expect(mockRestoreWorkflowDraftState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: 'wf-1',
+        variables: {
+          var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
+        },
+      })
+    )
   })
 
   it('defaults variables safely when missing from the deployment snapshot', async () => {
@@ -219,7 +205,12 @@ describe('Workflow deployment version revert route', () => {
 
     await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
-    expect(mockSetWorkflowVariables).toHaveBeenCalledWith('wf-1', {})
+    expect(mockRestoreWorkflowDraftState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: 'wf-1',
+        variables: {},
+      })
+    )
   })
 
   it('returns success when MCP sync throws after revert succeeds', async () => {

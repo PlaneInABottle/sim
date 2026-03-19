@@ -118,7 +118,7 @@ export async function validateWorkflowAccess(
       return { workflow, auth }
     }
 
-    if (requireDeployment) {
+    {
       const internalSecret = request.headers.get('X-Internal-Secret')
       const hasValidInternalSecret =
         allowInternalSecret && env.INTERNAL_API_SECRET && internalSecret === env.INTERNAL_API_SECRET
@@ -196,13 +196,6 @@ export async function validateWorkflowAccess(
       }
 
       return { workflow }
-    }
-
-    return {
-      error: {
-        message: 'Internal server error',
-        status: 500,
-      },
     }
   } catch (error) {
     logger.error('Validation error:', { error })

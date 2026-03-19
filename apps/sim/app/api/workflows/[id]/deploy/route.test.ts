@@ -254,6 +254,33 @@ describe('Workflow deploy route', () => {
     )
   })
 
+  it('returns success when webhook cleanup throws after undeploy succeeds', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockUndeployWorkflow.mockResolvedValue({ success: true })
+    mockCleanupWebhooksForWorkflow.mockRejectedValue(new Error('cleanup failed'))
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'DELETE',
+      headers: { 'x-api-key': 'test-key' },
+    })
+    const response = await DELETE(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(200)
+    const data = await response.json()
+    expect(data.isDeployed).toBe(false)
+    expect(mockRemoveMcpToolsForWorkflow).toHaveBeenCalledWith('wf-1', 'req-123')
+    expect(mockRecordAudit).toHaveBeenCalled()
+  })
+
   it('checks public API restrictions against hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },

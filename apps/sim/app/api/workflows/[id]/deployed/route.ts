@@ -41,19 +41,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    let deployedState = null
-    try {
-      const data = await loadDeployedWorkflowState(id)
-      deployedState = {
-        blocks: data.blocks,
-        edges: data.edges,
-        loops: data.loops,
-        parallels: data.parallels,
-        variables: data.variables,
-      }
-    } catch (error) {
-      logger.warn(`[${requestId}] Failed to load deployed state for workflow ${id}`, { error })
-      deployedState = null
+    const data = await loadDeployedWorkflowState(id)
+    const deployedState = {
+      blocks: data.blocks,
+      edges: data.edges,
+      loops: data.loops,
+      parallels: data.parallels,
+      variables: data.variables,
     }
 
     const response = createSuccessResponse({ deployedState })

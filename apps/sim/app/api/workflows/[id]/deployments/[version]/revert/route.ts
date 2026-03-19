@@ -1,4 +1,4 @@
-import { db, workflow, workflowDeploymentVersion } from '@sim/db'
+import { db, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
 import type { NextRequest } from 'next/server'
@@ -7,8 +7,7 @@ import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
-import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { setWorkflowVariables } from '@/lib/workflows/utils'
+import { restoreWorkflowDraftState } from '@/lib/workflows/persistence/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -85,26 +84,22 @@ export async function POST(
       return createErrorResponse('Invalid deployed state structure', 500)
     }
 
-    const saveResult = await saveWorkflowToNormalizedTables(id, {
-      blocks: deployedState.blocks,
-      edges: deployedState.edges,
-      loops: deployedState.loops || {},
-      parallels: deployedState.parallels || {},
+    const restoredAt = new Date()
+    const saveResult = await restoreWorkflowDraftState({
+      workflowId: id,
+      state: {
+        blocks: deployedState.blocks,
+        edges: deployedState.edges,
+        loops: deployedState.loops || {},
+        parallels: deployedState.parallels || {},
+      },
       variables: deployedState.variables || {},
-      lastSaved: Date.now(),
-      deploymentStatuses: deployedState.deploymentStatuses || {},
+      restoredAt,
     })
 
     if (!saveResult.success) {
       return createErrorResponse(saveResult.error || 'Failed to save deployed state', 500)
     }
-
-    await setWorkflowVariables(id, deployedState.variables || {})
-
-    await db
-      .update(workflow)
-      .set({ lastSynced: new Date(), updatedAt: new Date() })
-      .where(eq(workflow.id, id))
 
     try {
       await syncMcpToolsForWorkflow({
@@ -150,7 +145,7 @@ export async function POST(
 
     return createSuccessResponse({
       message: 'Reverted to deployment version',
-      lastSaved: Date.now(),
+      lastSaved: restoredAt.getTime(),
     })
   } catch (error: any) {
     logger.error('Error reverting to deployment version', error)
