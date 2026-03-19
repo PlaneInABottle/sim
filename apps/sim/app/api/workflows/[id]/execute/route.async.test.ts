@@ -115,10 +115,75 @@ describe('workflow execute async route', () => {
     })
   })
 
-  it('queues async execution with matching correlation metadata', async () => {
+  it('rejects API-key async execution when useDraftState is omitted and effective behavior would be draft', async () => {
+    mockCheckHybridAuth.mockResolvedValue({
+      success: true,
+      userId: 'api-user-1',
+      authType: 'api_key',
+      apiKeyType: 'workspace',
+      workspaceId: 'workspace-1',
+    })
+
     const req = createMockRequest(
       'POST',
       { input: { hello: 'world' } },
+      {
+        'Content-Type': 'application/json',
+        'X-Execution-Mode': 'async',
+      }
+    )
+    const params = Promise.resolve({ id: 'workflow-1' })
+
+    const response = await POST(req as any, { params })
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('Async execution does not support draft or override execution controls')
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
+
+  it('rejects API-key async execution when runFromBlock is provided', async () => {
+    mockCheckHybridAuth.mockResolvedValue({
+      success: true,
+      userId: 'api-user-1',
+      authType: 'api_key',
+      apiKeyType: 'workspace',
+      workspaceId: 'workspace-1',
+    })
+
+    const req = createMockRequest(
+      'POST',
+      {
+        useDraftState: false,
+        runFromBlock: { startBlockId: 'block-1', executionId: 'exec-1' },
+      },
+      {
+        'Content-Type': 'application/json',
+        'X-Execution-Mode': 'async',
+      }
+    )
+    const params = Promise.resolve({ id: 'workflow-1' })
+
+    const response = await POST(req as any, { params })
+    const body = await response.json()
+
+    expect(response.status).toBe(400)
+    expect(body.error).toBe('Async execution does not support draft or override execution controls')
+    expect(mockEnqueue).not.toHaveBeenCalled()
+  })
+
+  it('queues async execution for API-key callers only when useDraftState is explicitly false', async () => {
+    mockCheckHybridAuth.mockResolvedValue({
+      success: true,
+      userId: 'api-user-1',
+      authType: 'api_key',
+      apiKeyType: 'workspace',
+      workspaceId: 'workspace-1',
+    })
+
+    const req = createMockRequest(
+      'POST',
+      { input: { hello: 'world' }, useDraftState: false },
       {
         'Content-Type': 'application/json',
         'X-Execution-Mode': 'async',
@@ -150,7 +215,7 @@ describe('workflow execute async route', () => {
           requestId: 'req-12345678',
           source: 'workflow',
           workflowId: 'workflow-1',
-          triggerType: 'manual',
+          triggerType: 'api',
         },
       }),
       {
@@ -162,7 +227,7 @@ describe('workflow execute async route', () => {
             requestId: 'req-12345678',
             source: 'workflow',
             workflowId: 'workflow-1',
-            triggerType: 'manual',
+            triggerType: 'api',
           },
         },
       }

@@ -167,6 +167,62 @@ type AsyncExecutionParams = {
   callChain?: string[]
 }
 
+function shouldExecuteDraftState(params: {
+  isPublicApiAccess: boolean
+  authType: string
+  useDraftState?: boolean
+}): boolean {
+  const { isPublicApiAccess, authType, useDraftState } = params
+
+  if (isPublicApiAccess) {
+    return false
+  }
+
+  if (useDraftState !== undefined) {
+    return useDraftState
+  }
+
+  return authType === AuthType.SESSION || authType === AuthType.API_KEY
+}
+
+function isAsyncExecutionControlUnsupported(params: {
+  isAsyncMode: boolean
+  authType: string
+  shouldUseDraftState: boolean
+  hasWorkflowStateOverride: boolean
+  hasRunFromBlock: boolean
+  hasStopAfterBlockId: boolean
+  selectedOutputs?: string[]
+  includeFileBase64?: boolean
+  base64MaxBytes?: number
+}): boolean {
+  const {
+    isAsyncMode,
+    authType,
+    shouldUseDraftState,
+    hasWorkflowStateOverride,
+    hasRunFromBlock,
+    hasStopAfterBlockId,
+    selectedOutputs,
+    includeFileBase64,
+    base64MaxBytes,
+  } = params
+
+  if (!isAsyncMode) {
+    return false
+  }
+
+  return Boolean(
+    hasWorkflowStateOverride ||
+      hasRunFromBlock ||
+      hasStopAfterBlockId ||
+      selectedOutputs?.length ||
+      includeFileBase64 !== undefined ||
+      base64MaxBytes !== undefined ||
+      (authType === AuthType.API_KEY && shouldUseDraftState)
+  )
+}
+
 async function handleAsyncExecution(params: AsyncExecutionParams): Promise<NextResponse> {
   const { requestId, workflowId, userId, input, triggerType, executionId, callChain } = params
   const statusUrl = `${getBaseUrl()}/api/jobs/`
@@ -376,13 +432,34 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
           { status: 400 }
         )
       }
+    }
 
-      if (useDraftState) {
-        return NextResponse.json(
-          { error: 'API key callers cannot execute draft workflow state' },
-          { status: 400 }
-        )
-      }
+    const requestAuthType = auth.authType ?? ''
+    const executionModeHeader = req.headers.get('X-Execution-Mode')
+    const isAsyncMode = executionModeHeader === 'async'
+    const shouldUseDraftState = shouldExecuteDraftState({
+      isPublicApiAccess,
+      authType: requestAuthType,
+      useDraftState,
+    })
+
+    if (
+      isAsyncExecutionControlUnsupported({
+        isAsyncMode,
+        authType: requestAuthType,
+        shouldUseDraftState,
+        hasWorkflowStateOverride: body.workflowStateOverride !== undefined,
+        hasRunFromBlock: body.runFromBlock !== undefined,
+        hasStopAfterBlockId: body.stopAfterBlockId !== undefined,
+        selectedOutputs: body.selectedOutputs,
+        includeFileBase64: body.includeFileBase64,
+        base64MaxBytes: body.base64MaxBytes,
+      })
+    ) {
+      return NextResponse.json(
+        { error: 'Async execution does not support draft or override execution controls' },
+        { status: 400 }
+      )
     }
 
     // Resolve runFromBlock snapshot from executionId if needed
@@ -397,9 +474,9 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
         )
       }
 
-      if (rawRunFromBlock.executionId && (auth.authType === 'api_key' || isPublicApiAccess)) {
+      if (rawRunFromBlock.executionId && isPublicApiAccess) {
         return NextResponse.json(
-          { error: 'External callers cannot resume from stored execution snapshots' },
+          { error: 'Public API callers cannot resume from stored execution snapshots' },
           { status: 400 }
         )
       }
@@ -468,32 +545,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     const sanitizedWorkflowStateOverride = isPublicApiAccess ? undefined : workflowStateOverride
 
     // Public API callers always execute the deployed state, never the draft.
-    const shouldUseDraftState = isPublicApiAccess
-      ? false
-      : (useDraftState ?? auth.authType === AuthType.SESSION)
     const streamHeader = req.headers.get('X-Stream-Response') === 'true'
     const enableSSE = streamHeader || streamParam === true
-    const executionModeHeader = req.headers.get('X-Execution-Mode')
-    const isAsyncMode = executionModeHeader === 'async'
     const requiresWriteExecutionAccess = Boolean(
-      useDraftState || workflowStateOverride || rawRunFromBlock
+      shouldUseDraftState || sanitizedWorkflowStateOverride || rawRunFromBlock
     )
-
-    if (
-      isAsyncMode &&
-      (body.useDraftState !== undefined ||
-        body.workflowStateOverride !== undefined ||
-        body.runFromBlock !== undefined ||
-        body.stopAfterBlockId !== undefined ||
-        body.selectedOutputs?.length ||
-        body.includeFileBase64 !== undefined ||
-        body.base64MaxBytes !== undefined)
-    ) {
-      return NextResponse.json(
-        { error: 'Async execution does not support draft or override execution controls' },
-        { status: 400 }
-      )
-    }
 
     logger.info(`[${requestId}] Starting server-side execution`, {
       workflowId,
