@@ -18,7 +18,7 @@ export interface OperationQueueState {
   hasOperationError: boolean
 
   addToQueue: (operation: Omit<QueuedOperation, 'timestamp' | 'retryCount' | 'status'>) => void
-  confirmOperation: (operationId: string) => void
+  confirmOperation: (operationId: string, appliedPayload?: any) => void
   failOperation: (operationId: string, retryable?: boolean) => void
   handleOperationTimeout: (operationId: string) => void
   processNextOperation: () => void

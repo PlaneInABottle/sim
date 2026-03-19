@@ -188,9 +188,24 @@ export const useOperationQueueStore = create<OperationQueueState>((set, get) => 
     get().processNextOperation()
   },
 
-  confirmOperation: (operationId) => {
+  confirmOperation: (operationId, appliedPayload) => {
     const state = get()
     const operation = state.operations.find((op) => op.id === operationId)
+
+    if (operation && appliedPayload) {
+      const { operation: opName, target } = operation.operation
+      const { useWorkflowStore } = require('@/stores/workflows/workflow/store')
+
+      // Apply server-enriched payload if it differs from what we sent
+      if (target === 'blocks' && opName === 'batch-add-blocks') {
+        const { blocks, edges, subBlockValues } = appliedPayload
+        useWorkflowStore.getState().batchAddBlocks(blocks || [], edges || [], subBlockValues || {})
+      } else if (target === 'blocks' && opName === 'batch-update-parent') {
+        const { updates } = appliedPayload
+        useWorkflowStore.getState().batchUpdateParent(updates || [])
+      }
+    }
+
     const newOperations = state.operations.filter((op) => op.id !== operationId)
 
     const retryTimeout = retryTimeouts.get(operationId)

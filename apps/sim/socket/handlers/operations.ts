@@ -371,7 +371,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+            appliedPayload: broadcastPayload,
+          })
         }
 
         return
@@ -403,7 +407,10 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
         }
 
         return
@@ -432,7 +439,10 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
         }
 
         return
@@ -464,7 +474,10 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
         }
 
         return
@@ -496,7 +509,10 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
         }
 
         return
@@ -566,7 +582,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         }
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+            appliedPayload: broadcastPayload,
+          })
         }
 
         return
@@ -595,14 +615,145 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
 
         if (operationId) {
-          socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
         }
 
         return
       }
 
-      // For non-position operations, persist first then broadcast
-      const result = await persistWorkflowOperation(workflowId, {
+      if (target === OPERATION_TARGETS.VARIABLE && operation === VARIABLE_OPERATIONS.UPDATE) {
+        await persistWorkflowOperation(workflowId, {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          userId: session.userId,
+        })
+
+        await roomManager.updateRoomLastModified(workflowId)
+
+        socket.to(workflowId).emit('workflow-operation', {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+
+        if (operationId) {
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
+        }
+
+        return
+      }
+
+      if (target === OPERATION_TARGETS.BLOCK && operation === BLOCK_OPERATIONS.UPDATE_METADATA) {
+        await persistWorkflowOperation(workflowId, {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          userId: session.userId,
+        })
+
+        await roomManager.updateRoomLastModified(workflowId)
+
+        socket.to(workflowId).emit('workflow-operation', {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+
+        if (operationId) {
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
+        }
+
+        return
+      }
+
+      if (target === OPERATION_TARGETS.BLOCK && operation === BLOCK_OPERATIONS.UPDATE_NAME) {
+        await persistWorkflowOperation(workflowId, {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          userId: session.userId,
+        })
+
+        await roomManager.updateRoomLastModified(workflowId)
+
+        socket.to(workflowId).emit('workflow-operation', {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+
+        if (operationId) {
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
+        }
+
+        return
+      }
+
+      if (target === OPERATION_TARGETS.BLOCK && operation === BLOCK_OPERATIONS.UPDATE_SUBBLOCK) {
+        await persistWorkflowOperation(workflowId, {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          userId: session.userId,
+        })
+
+        await roomManager.updateRoomLastModified(workflowId)
+
+        socket.to(workflowId).emit('workflow-operation', {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+
+        if (operationId) {
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
+          })
+        }
+
+        return
+      }
+
+      // Default handler for simple persistence and broadcast
+      await persistWorkflowOperation(workflowId, {
         operation,
         target,
         payload,
@@ -612,7 +763,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
       await roomManager.updateRoomLastModified(workflowId)
 
-      const broadcastData = {
+      socket.to(workflowId).emit('workflow-operation', {
         operation,
         target,
         payload,
@@ -620,42 +771,8 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         senderId: socket.id,
         userId: session.userId,
         userName: session.userName,
-        metadata: {
-          workflowId,
-          operationId: crypto.randomUUID(),
-        },
-      }
-
-      socket.to(workflowId).emit('workflow-operation', broadcastData)
-
-      // Broadcast edge removals if the operation cleaned up boundary edges
-      // (e.g., update-parent nesting a block into a container)
-      if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
-        roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
-          operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
-          target: OPERATION_TARGETS.EDGES,
-          payload: { ids: result.removedEdgeIds },
-          timestamp: operationTimestamp,
-          senderId: socket.id,
-          userId: session.userId,
-          userName: session.userName,
-          metadata: { workflowId, operationId: crypto.randomUUID() },
-        })
-      }
-
-      // Broadcast auto-connected edges so clients add them to local state
-      if (result?.addedEdges && result.addedEdges.length > 0) {
-        roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
-          operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
-          target: OPERATION_TARGETS.EDGES,
-          payload: { edges: result.addedEdges },
-          timestamp: operationTimestamp,
-          senderId: socket.id,
-          userId: session.userId,
-          userName: session.userName,
-          metadata: { workflowId, operationId: crypto.randomUUID() },
-        })
-      }
+        metadata: { workflowId, operationId: crypto.randomUUID() },
+      })
 
       if (operationId) {
         socket.emit('operation-confirmed', {
@@ -664,60 +781,21 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         })
       }
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred'
-
-      if (operationId) {
-        socket.emit('operation-failed', {
-          operationId,
-          error: errorMessage,
-          retryable: !(error instanceof ZodError),
-        })
-      }
-
       if (error instanceof ZodError) {
-        socket.emit('operation-error', {
-          type: 'VALIDATION_ERROR',
-          message: 'Invalid operation data',
-          errors: error.errors,
-          operation: data.operation,
-          target: data.target,
+        logger.error('Invalid operation format:', error.errors)
+        socket.emit('operation-failed', {
+          error: 'Invalid operation format',
+          details: error.errors,
         })
-        logger.warn(`Validation error for operation from ${session.userId}:`, error.errors)
-      } else if (error instanceof Error) {
-        if (error.message.includes('not found')) {
-          socket.emit('operation-error', {
-            type: 'RESOURCE_NOT_FOUND',
-            message: error.message,
-            operation: data.operation,
-            target: data.target,
-          })
-        } else if (error.message.includes('duplicate') || error.message.includes('unique')) {
-          socket.emit('operation-error', {
-            type: 'DUPLICATE_RESOURCE',
-            message: 'Resource already exists',
-            operation: data.operation,
-            target: data.target,
-          })
-        } else {
-          socket.emit('operation-error', {
-            type: 'OPERATION_FAILED',
-            message: error.message,
-            operation: data.operation,
-            target: data.target,
+      } else {
+        logger.error('Unexpected error processing operation:', error)
+        if (operationId) {
+          socket.emit('operation-failed', {
+            operationId,
+            error: error instanceof Error ? error.message : 'Operation failed',
+            retryable: true,
           })
         }
-        logger.error(
-          `Operation error for ${session.userId} (${data.operation} on ${data.target}):`,
-          error
-        )
-      } else {
-        socket.emit('operation-error', {
-          type: 'UNKNOWN_ERROR',
-          message: 'An unknown error occurred',
-          operation: data.operation,
-          target: data.target,
-        })
-        logger.error('Unknown error handling workflow operation:', error)
       }
     }
   })

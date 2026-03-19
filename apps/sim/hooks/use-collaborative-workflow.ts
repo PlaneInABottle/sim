@@ -477,6 +477,7 @@ export function useCollaborativeWorkflow() {
                 )
                 if (activeWorkflowId) {
                   useSubBlockStore.getState().setWorkflowValues(activeWorkflowId, subBlockValues)
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
 
                 logger.info('Successfully applied remote workflow state replacement')
@@ -726,9 +727,9 @@ export function useCollaborativeWorkflow() {
     }
 
     const handleOperationConfirmed = (data: any) => {
-      const { operationId } = data
+      const { operationId, appliedPayload } = data
       logger.debug('Operation confirmed', { operationId })
-      confirmOperation(operationId)
+      confirmOperation(operationId, appliedPayload)
     }
 
     const handleOperationFailed = (data: any) => {
@@ -1017,7 +1018,8 @@ export function useCollaborativeWorkflow() {
         newParentId: string | null
         newPosition: { x: number; y: number }
         affectedEdges: Edge[]
-      }>
+      }>,
+      options?: { autoConnect?: boolean }
     ) => {
       if (isBaselineDiffView) {
         return
@@ -1085,6 +1087,7 @@ export function useCollaborativeWorkflow() {
               parentId: u.newParentId || '',
               position: u.newPosition,
             })),
+            autoConnect: options?.autoConnect,
           },
         },
         workflowId: activeWorkflowId || '',
@@ -1705,7 +1708,7 @@ export function useCollaborativeWorkflow() {
       loops: Record<string, Loop> = {},
       parallels: Record<string, Parallel> = {},
       subBlockValues: Record<string, Record<string, unknown>> = {},
-      options?: { skipUndoRedo?: boolean }
+      options?: { skipUndoRedo?: boolean; autoConnect?: boolean }
     ) => {
       if (!activeWorkflowId) {
         logger.debug('Skipping batch add blocks - no active workflow')
@@ -1745,7 +1748,14 @@ export function useCollaborativeWorkflow() {
         operation: {
           operation: BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS,
           target: OPERATION_TARGETS.BLOCKS,
-          payload: { blocks, edges: validEdges, loops, parallels, subBlockValues },
+          payload: {
+            blocks,
+            edges: validEdges,
+            loops,
+            parallels,
+            subBlockValues,
+            autoConnect: options?.autoConnect,
+          },
         },
         workflowId: activeWorkflowId || '',
         userId: session?.user?.id || 'unknown',

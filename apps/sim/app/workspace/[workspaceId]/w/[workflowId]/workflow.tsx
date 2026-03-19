@@ -645,10 +645,11 @@ const WorkflowContent = React.memo(
             newParentId: u.parentId || null,
             newPosition: u.position,
             affectedEdges: [],
-          }))
+          })),
+          { autoConnect: isAutoConnectEnabled }
         )
       },
-      [collaborativeBatchUpdateParent]
+      [collaborativeBatchUpdateParent, isAutoConnectEnabled]
     )
 
     /**
@@ -804,7 +805,8 @@ const WorkflowContent = React.memo(
           autoConnectEdge ? [autoConnectEdge] : [],
           {},
           {},
-          subBlockValues
+          subBlockValues,
+          { autoConnect: isAutoConnectEnabled }
         )
         usePanelEditorStore.getState().setCurrentBlockId(id)
       },
@@ -1106,7 +1108,8 @@ const WorkflowContent = React.memo(
           pasteData.edges,
           pasteData.loops,
           pasteData.parallels,
-          pasteData.subBlockValues
+          pasteData.subBlockValues,
+          { autoConnect: isAutoConnectEnabled }
         )
 
         // Resize container if we pasted into a subflow
@@ -2498,12 +2501,33 @@ const WorkflowContent = React.memo(
       // Preserve existing selection state
       setDisplayNodes((currentNodes) => {
         const selectedIds = new Set(currentNodes.filter((n) => n.selected).map((n) => n.id))
-        return derivedNodes.map((node) => ({
-          ...node,
-          selected: selectedIds.has(node.id),
-        }))
+        const dragStart = getDragStartPosition()
+        const multiDrag = multiNodeDragStartRef.current
+
+        return derivedNodes.map((node) => {
+          const isSelected = selectedIds.has(node.id)
+          const isBeingDragged = dragStart?.id === node.id || multiDrag.has(node.id)
+
+          if (isBeingDragged) {
+            // Find the current display node to preserve its position
+            const currentNode = currentNodes.find((n) => n.id === node.id)
+            if (currentNode) {
+              return {
+                ...node,
+                position: currentNode.position,
+                parentId: currentNode.parentId,
+                selected: isSelected,
+              }
+            }
+          }
+
+          return {
+            ...node,
+            selected: isSelected,
+          }
+        })
       })
-    }, [derivedNodes, blocks, pendingSelection, clearPendingSelection])
+    }, [derivedNodes, blocks, pendingSelection, clearPendingSelection, getDragStartPosition])
 
     /** Pans viewport to pending blocks once they have valid dimensions. */
     useEffect(() => {
@@ -2608,7 +2632,7 @@ const WorkflowContent = React.memo(
           })
 
           // Single atomic batch update (handles edge removal + parent update + undo/redo)
-          collaborativeBatchUpdateParent(updates)
+          collaborativeBatchUpdateParent(updates, { autoConnect: isAutoConnectEnabled })
 
           // Update displayNodes once to prevent React Flow from using stale parent data
           setDisplayNodes((nodes) =>

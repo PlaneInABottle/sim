@@ -1,10 +1,12 @@
 import { z } from 'zod'
+import { getAllBlockTypes, isValidBlockType } from '@/blocks/registry'
 import {
   BLOCK_OPERATIONS,
   BLOCKS_OPERATIONS,
   EDGE_OPERATIONS,
   EDGES_OPERATIONS,
   OPERATION_TARGETS,
+  SUBBLOCK_OPERATIONS,
   SUBFLOW_OPERATIONS,
   VARIABLE_OPERATIONS,
   WORKFLOW_OPERATIONS,
@@ -15,6 +17,89 @@ const PositionSchema = z.object({
   y: z.number(),
 })
 
+/**
+ * Special subflow block types that are not in the registry
+ * but are valid for batch-add-blocks operations.
+ */
+const SPECIAL_BLOCK_TYPES = ['loop', 'parallel'] as const
+
+/**
+ * Check if a block type is valid (either registered or a special subflow type).
+ */
+export function isValidBlockTypeOrSubflow(type: string): boolean {
+  return isValidBlockType(type) || SPECIAL_BLOCK_TYPES.includes(type as any)
+}
+
+/**
+ * Get all valid block types (registered + special subflow types).
+ */
+export function getAllValidBlockTypes(): string[] {
+  return [...getAllBlockTypes(), ...SPECIAL_BLOCK_TYPES]
+}
+
+/**
+ * Schema for a block in batch-add-blocks operations.
+ * Validates that the block type is a registered block or a special subflow type.
+ */
+const BlockSchema = z.object({
+  id: z.string({
+    required_error: 'Block id is required',
+    invalid_type_error: 'Block id must be a string',
+  }),
+  type: z
+    .string({
+      required_error: 'Block type is required',
+      invalid_type_error: 'Block type must be a string',
+    })
+    .refine(
+      (type) => isValidBlockTypeOrSubflow(type),
+      (type) => {
+        const validTypes = getAllValidBlockTypes()
+        // Show first 15 most common types as examples
+        const exampleTypes = [
+          'agent',
+          'api',
+          'function',
+          'condition',
+          'router',
+          'slack',
+          'gmail',
+          'google_sheets',
+          'webhook',
+          'api_trigger',
+          'schedule',
+          'loop',
+          'parallel',
+          'starter',
+          'response',
+        ]
+          .filter((t) => validTypes.includes(t))
+          .join(', ')
+        return {
+          message:
+            `Invalid block type: "${type}". ` +
+            `Valid types include: ${exampleTypes}, and ${validTypes.length - 15} more. ` +
+            `Use underscores (e.g., "api_trigger", "google_sheets") not hyphens.`,
+        }
+      }
+    ),
+  name: z.string({
+    required_error: 'Block name is required',
+    invalid_type_error: 'Block name must be a string',
+  }),
+  position: PositionSchema,
+  // Optional fields with defaults
+  enabled: z.boolean().optional(),
+  horizontalHandles: z.boolean().optional(),
+  advancedMode: z.boolean().optional(),
+  triggerMode: z.boolean().optional(),
+  height: z.number().optional(),
+  data: z.record(z.any()).optional(),
+  subBlocks: z.record(z.any()).optional(),
+  outputs: z.record(z.any()).optional(),
+})
+
+// Schema for auto-connect edge data
 const AutoConnectEdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
@@ -53,6 +138,7 @@ export const BlockOperationSchema = z.object({
     canonicalMode: z.enum(['basic', 'advanced']).optional(),
     triggerMode: z.boolean().optional(),
     height: z.number().optional(),
+    autoConnect: z.boolean().optional(),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -93,7 +179,7 @@ export const SubflowOperationSchema = z.object({
   payload: z.object({
     id: z.string(),
     type: z.enum(['loop', 'parallel']).optional(),
-    config: z.record(z.any()).optional(),
+    config: z.record(z.any()),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -134,11 +220,23 @@ export const WorkflowStateOperationSchema = z.object({
   operationId: z.string().optional(),
 })
 
+export const SubblockUpdateSchema = z.object({
+  operation: z.literal(SUBBLOCK_OPERATIONS.UPDATE),
+  target: z.literal(OPERATION_TARGETS.SUBBLOCK),
+  payload: z.object({
+    blockId: z.string(),
+    subblockId: z.string(),
+    value: z.any(),
+  }),
+  timestamp: z.number(),
+  operationId: z.string().optional(),
+})
+
 export const BatchAddBlocksSchema = z.object({
   operation: z.literal(BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS),
   target: z.literal(OPERATION_TARGETS.BLOCKS),
   payload: z.object({
-    blocks: z.array(z.record(z.any())),
+    blocks: z.array(BlockSchema),
     edges: z.array(AutoConnectEdgeSchema).optional(),
     loops: z.record(z.any()).optional(),
     parallels: z.record(z.any()).optional(),
@@ -226,10 +324,11 @@ export const BatchUpdateParentSchema = z.object({
     updates: z.array(
       z.object({
         id: z.string(),
-        parentId: z.string(),
+        parentId: z.string().nullable().optional(),
         position: PositionSchema,
       })
     ),
+    autoConnect: z.boolean().optional(),
   }),
   timestamp: z.number(),
   operationId: z.string().optional(),
@@ -250,4 +349,7 @@ export const WorkflowOperationSchema = z.union([
   SubflowOperationSchema,
   VariableOperationSchema,
   WorkflowStateOperationSchema,
+  SubblockUpdateSchema,
 ])
+
+export { PositionSchema, AutoConnectEdgeSchema, BlockSchema }

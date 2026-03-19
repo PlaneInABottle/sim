@@ -13,6 +13,7 @@ import type {
   Operation,
   OperationEntry,
   UndoRedoState,
+  UpdateParentOperation,
 } from '@/stores/undo-redo/types'
 import type { BlockState } from '@/stores/workflows/workflow/types'
 
@@ -97,15 +98,36 @@ function isOperationApplicable(
     }
     case UNDO_REDO_OPERATIONS.BATCH_MOVE_BLOCKS: {
       const op = operation as BatchMoveBlocksOperation
-      return op.data.moves.every((move) => Boolean(graph.blocksById[move.blockId]))
+      return op.data.moves.every((move) => {
+        const block = graph.blocksById[move.blockId]
+        if (!block) return false
+        // Move is only applicable if the parent hasn't changed remotely
+        // (Move undo/redo assumes the coordinate system of the original parent)
+        const currentParentId = block.data?.parentId || undefined
+        const expectedParentId = move.after.parentId || undefined
+        return currentParentId === expectedParentId
+      })
     }
     case UNDO_REDO_OPERATIONS.UPDATE_PARENT: {
       const blockId = operation.data.blockId
-      return Boolean(graph.blocksById[blockId])
+      const block = graph.blocksById[blockId]
+      if (!block) return false
+
+      // Update parent is only applicable if the current parent matches what we expect to change FROM
+      const op = operation as UpdateParentOperation
+      const currentParentId = block.data?.parentId || undefined
+      const expectedOldParentId = op.data.oldParentId || undefined
+      return currentParentId === expectedOldParentId
     }
     case UNDO_REDO_OPERATIONS.BATCH_UPDATE_PARENT: {
       const op = operation as BatchUpdateParentOperation
-      return op.data.updates.every((u) => Boolean(graph.blocksById[u.blockId]))
+      return op.data.updates.every((u) => {
+        const block = graph.blocksById[u.blockId]
+        if (!block) return false
+        const currentParentId = block.data?.parentId || undefined
+        const expectedOldParentId = u.oldParentId || undefined
+        return currentParentId === expectedOldParentId
+      })
     }
     case UNDO_REDO_OPERATIONS.BATCH_REMOVE_EDGES: {
       const op = operation as BatchRemoveEdgesOperation

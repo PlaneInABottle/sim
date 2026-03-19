@@ -808,7 +808,7 @@ async function handleBlockOperationTx(
       // Auto-connect: if block is entering a container and has no incoming edges,
       // connect it from the container's start handle (mirrors UI tryCreateAutoConnectEdge)
       let addedEdges: OperationResult['addedEdges'] = []
-      if (payload.parentId) {
+      if (payload.parentId && payload.autoConnect !== false) {
         const autoConnect = await autoConnectToContainerStart(
           tx,
           workflowId,
@@ -1815,8 +1815,9 @@ async function handleBlocksOperationTx(
           )
         )
         allRemovedEdgeIds.push(...removedEdgeIds)
+        const canAutoConnect = payload.autoConnect !== false
 
-        if (parentId) {
+        if (parentId && canAutoConnect) {
           const autoConnect = await autoConnectToContainerStart(tx, workflowId, id, parentId)
           allAddedEdges.push(...autoConnect.edges)
         }
