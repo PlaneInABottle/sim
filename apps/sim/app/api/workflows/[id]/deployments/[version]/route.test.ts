@@ -318,6 +318,10 @@ describe('Workflow deployment version route', () => {
     const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
     expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Invalid JSON body',
+      code: 'INVALID_JSON_BODY',
+    })
     expect(mockDbSelect).not.toHaveBeenCalled()
     expect(mockDbUpdate).not.toHaveBeenCalled()
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
@@ -341,6 +345,10 @@ describe('Workflow deployment version route', () => {
     const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: 'NaN' }) })
 
     expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Invalid version',
+      code: 'INVALID_VERSION',
+    })
     expect(jsonSpy).not.toHaveBeenCalled()
     expect(mockDbSelect).not.toHaveBeenCalled()
     expect(mockDbUpdate).not.toHaveBeenCalled()
