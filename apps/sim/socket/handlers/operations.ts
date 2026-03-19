@@ -503,7 +503,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         // Broadcast edge removals if the parent update cleaned up boundary edges
         if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
-          socket.to(workflowId).emit('workflow-operation', {
+          roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
             operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
             target: OPERATION_TARGETS.EDGES,
             payload: { ids: result.removedEdgeIds },

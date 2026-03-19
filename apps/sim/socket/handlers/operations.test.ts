@@ -123,7 +123,9 @@ describe('setupOperationsHandlers', () => {
       timestamp: expect.any(Number),
       userId: 'user-1',
     })
-    expect(socketRoomEmit).toHaveBeenCalledWith(
+    expect(emitToWorkflow).toHaveBeenNthCalledWith(
+      1,
+      'workflow-1',
       'workflow-operation',
       expect.objectContaining({
         operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
