@@ -44,7 +44,7 @@ vi.mock('@/lib/auth/hybrid', () => ({
 }))
 
 vi.mock('@/lib/core/config/env', () => ({
-  env: {},
+  env: { INTERNAL_API_SECRET: 'internal-secret' },
   getEnv: vi.fn(),
 }))
 
@@ -431,5 +431,43 @@ describe('validateWorkflowAccess', () => {
     })
     expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledTimes(1)
     expect(mockUpdateApiKeyLastUsed).not.toHaveBeenCalled()
+  })
+
+  it('allows internal secret without requiring api key when workflow is deployed', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(createWorkflow({ isDeployed: true }))
+
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-internal-secret': 'internal-secret' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: true,
+      allowInternalSecret: true,
+    })
+
+    expect(result).toEqual({ workflow: createWorkflow({ isDeployed: true }) })
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+    expect(mockUpdateApiKeyLastUsed).not.toHaveBeenCalled()
+  })
+
+  it('still returns undeployed error before internal secret success when workflow is not deployed', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(createWorkflow({ isDeployed: false }))
+
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-internal-secret': 'internal-secret' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: true,
+      allowInternalSecret: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Workflow is not deployed',
+        status: 403,
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })
 })

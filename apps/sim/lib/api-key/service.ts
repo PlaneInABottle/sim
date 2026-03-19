@@ -78,7 +78,7 @@ export async function authenticateApiKeyFromHeader(
         expiresAt: apiKeyTable.expiresAt,
       })
       .from(apiKeyTable)
-      .innerJoin(userTable, eq(apiKeyTable.userId, userTable.id))
+      .leftJoin(userTable, eq(apiKeyTable.userId, userTable.id))
 
     // Apply filters
     const conditions = []
