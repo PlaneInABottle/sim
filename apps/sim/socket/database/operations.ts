@@ -601,7 +601,7 @@ async function handleBlockOperationTx(
   workflowId: string,
   operation: string,
   payload: any
-): Promise<OperationResult | void> {
+): Promise<OperationResult | undefined> {
   switch (operation) {
     case BLOCK_OPERATIONS.UPDATE_POSITION: {
       if (!payload.id || !payload.position) {
@@ -1062,7 +1062,7 @@ async function handleBlocksOperationTx(
   workflowId: string,
   operation: string,
   payload: any
-): Promise<OperationResult | void> {
+): Promise<OperationResult | undefined> {
   switch (operation) {
     case BLOCKS_OPERATIONS.BATCH_UPDATE_POSITIONS: {
       const { updates } = payload
@@ -1631,10 +1631,8 @@ async function handleBlocksOperationTx(
 
       const allRemovedEdgeIds: string[] = []
       const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
+      const applicableUpdates: Array<(typeof updates)[number]> = []
 
-      // Collect all block IDs being moved in this batch so removeBoundaryEdges
-      // can treat them as already inside the target container
-      const allMovingBlockIds = new Set(updates.map((u: { id: string }) => u.id))
       for (const update of updates) {
         const { id, parentId, position } = update
         if (!id) continue
@@ -1661,6 +1659,17 @@ async function handleBlocksOperationTx(
           logger.warn(`Block ${id} not found for batch-update-parent`)
           continue
         }
+
+        applicableUpdates.push(update)
+      }
+
+      // Collect only block IDs that will actually be moved in this batch so
+      // removeBoundaryEdges can treat them as already inside the target container.
+      const allMovingBlockIds = new Set(applicableUpdates.map((update) => update.id))
+
+      for (const update of applicableUpdates) {
+        const { id, parentId, position } = update
+        if (!id) continue
 
         const isRemovingFromParent = !parentId
 

@@ -9,7 +9,7 @@ import {
   type VariableOperation,
   WORKFLOW_OPERATIONS,
 } from '@/socket/constants'
-import { persistWorkflowOperation, enrichBatchAddBlocksPayload } from '@/socket/database/operations'
+import { enrichBatchAddBlocksPayload, persistWorkflowOperation } from '@/socket/database/operations'
 import type { AuthenticatedSocket } from '@/socket/middleware/auth'
 import { checkRolePermission } from '@/socket/middleware/permissions'
 import type { IRoomManager, UserSession } from '@/socket/rooms'
