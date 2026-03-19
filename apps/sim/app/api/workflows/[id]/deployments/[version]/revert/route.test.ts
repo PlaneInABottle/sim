@@ -155,4 +155,73 @@ describe('Workflow deployment version revert route', () => {
       })
     )
   })
+
+  it('restores variables from the deployment snapshot', async () => {
+    mockDbLimit.mockResolvedValue([
+      {
+        state: {
+          blocks: { 'block-1': { id: 'block-1', type: 'start_trigger', name: 'Start' } },
+          edges: [],
+          loops: {},
+          parallels: {},
+          variables: {
+            var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
+          },
+        },
+      },
+    ])
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3/revert', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+
+    await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'wf-1',
+      expect.objectContaining({
+        variables: {
+          var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
+        },
+      })
+    )
+  })
+
+  it('defaults variables safely when missing from the deployment snapshot', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3/revert', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+
+    await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalledWith(
+      'wf-1',
+      expect.objectContaining({
+        variables: {},
+      })
+    )
+  })
 })

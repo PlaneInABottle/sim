@@ -89,6 +89,7 @@ export async function POST(
       edges: deployedState.edges,
       loops: deployedState.loops || {},
       parallels: deployedState.parallels || {},
+      variables: deployedState.variables || {},
       lastSaved: Date.now(),
       deploymentStatuses: deployedState.deploymentStatuses || {},
     })
