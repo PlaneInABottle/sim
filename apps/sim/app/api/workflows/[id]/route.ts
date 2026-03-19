@@ -51,10 +51,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     }
 
     if (auth.apiKeyType === 'workspace' && auth.workspaceId !== workflowData.workspaceId) {
-      return NextResponse.json(
-        { error: 'API key is not authorized for this workspace' },
-        { status: 403 }
-      )
+      return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
     }
 
     if (isInternalCall && !userId) {

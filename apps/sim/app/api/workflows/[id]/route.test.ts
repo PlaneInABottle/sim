@@ -144,6 +144,36 @@ describe('Workflow By ID API Route', () => {
       expect(data.error).toBe('Workflow not found')
     })
 
+    it('should return 404 for workspace api key targeting a workflow in another workspace', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'other-user',
+        name: 'Foreign Workflow',
+        workspaceId: 'workspace-b',
+      }
+
+      mockCheckHybridAuth.mockResolvedValue({
+        success: true,
+        userId: 'api-user',
+        authType: 'api_key',
+        apiKeyType: 'workspace',
+        workspaceId: 'workspace-a',
+      })
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        headers: { 'x-api-key': 'test-key' },
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(404)
+      const data = await response.json()
+      expect(data.error).toBe('Workflow not found')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    })
+
     it('should allow access when user has admin workspace permission', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
@@ -218,6 +248,38 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(200)
       const data = await response.json()
       expect(data.data.id).toBe('workflow-123')
+    })
+
+    it('should keep session access semantics unchanged for readable workflows', async () => {
+      const mockWorkflow = {
+        id: 'workflow-123',
+        userId: 'other-user',
+        name: 'Test Workflow',
+        workspaceId: 'workspace-456',
+      }
+
+      mockGetSession({ user: { id: 'user-123' } })
+      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
+        allowed: true,
+        status: 200,
+        workflow: mockWorkflow,
+        workspacePermission: 'read',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123')
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(200)
+      const data = await response.json()
+      expect(data.data.id).toBe('workflow-123')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+        workflowId: 'workflow-123',
+        userId: 'user-123',
+        action: 'read',
+      })
     })
 
     it('should deny access when user has no workspace permissions', async () => {
