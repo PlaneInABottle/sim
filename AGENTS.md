@@ -559,3 +559,48 @@ import type { BlockConfig } from '@/blocks/types'
 import type { ToolConfig } from '@/tools/types'
 import type { ProviderConfig } from '@/providers/types'
 ```
+
+---
+
+## Upstream Rebase Awareness
+
+This repo is regularly rebased from the upstream [sim(sim-studio/sim)](https://github.com/sim-studio/sim) repository. Local customizations may conflict with upstream improvements.
+
+### AI Responsibilities on Rebase
+
+When working on code that may have upstream changes:
+
+1. **Check for upstream updates before implementing**: Run `git fetch upstream` and `git log HEAD..upstream/main` to see what changed upstream. If upstream has already solved the issue or added the feature, prefer the upstream solution.
+
+2. **Identify obsolete local changes**: After fetching upstream, compare local changes against upstream changes for the same files/features. If both solve the same problem differently, flag this conflict.
+
+3. **Report conflicts proactively**: When you detect that upstream has a better or different solution than what you're implementing or what already exists locally, tell the user:
+   - What upstream changed
+   - What local change conflicts with it
+   - Recommend dropping or adapting the local change
+
+4. **Drop obsolete changes when necessary**: If local changes duplicate upstream solutions or implement conflicting approaches, discard them unless the user explicitly asks to keep both. Avoid merging conflicting implementations.
+
+### Quick Commands
+
+```bash
+# Fetch and view upstream changes
+git fetch upstream
+git log HEAD..upstream/main --oneline
+
+# View diff for specific file
+git diff HEAD..upstream/main -- <filepath>
+
+# Rebase onto upstream
+git rebase upstream/main
+```
+
+### Conflict Resolution Priority
+
+| Situation | Action |
+|-----------|--------|
+| Upstream improved same feature | Use upstream, drop local |
+| Upstream added feature you were building | Skip local implementation |
+| Local and upstream both partial | Combine if possible, otherwise upstream wins |
+| Local-only feature | Keep local |
+| Unknown if conflict exists | Ask user, don't guess |
