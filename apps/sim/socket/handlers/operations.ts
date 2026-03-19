@@ -33,6 +33,42 @@ function getPayloadArray(payload: unknown, key: string): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
+function emitParentUpdateSideEffects(
+  roomManager: IRoomManager,
+  workflowId: string,
+  result: Awaited<ReturnType<typeof persistWorkflowOperation>>,
+  operationTimestamp: number,
+  senderId: string,
+  userId: string,
+  userName: string
+) {
+  if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
+    roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
+      operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+      target: OPERATION_TARGETS.EDGES,
+      payload: { ids: result.removedEdgeIds },
+      timestamp: operationTimestamp,
+      senderId,
+      userId,
+      userName,
+      metadata: { workflowId, operationId: crypto.randomUUID() },
+    })
+  }
+
+  if (result?.addedEdges && result.addedEdges.length > 0) {
+    roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
+      operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
+      target: OPERATION_TARGETS.EDGES,
+      payload: { edges: result.addedEdges },
+      timestamp: operationTimestamp,
+      senderId,
+      userId,
+      userName,
+      metadata: { workflowId, operationId: crypto.randomUUID() },
+    })
+  }
+}
+
 export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager: IRoomManager) {
   socket.on('workflow-operation', async (data) => {
     const emitOperationError = (
@@ -553,39 +589,63 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           metadata: { workflowId, operationId: crypto.randomUUID() },
         })
 
-        // Broadcast edge removals if the parent update cleaned up boundary edges
-        if (result?.removedEdgeIds && result.removedEdgeIds.length > 0) {
-          roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
-            operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
-            target: OPERATION_TARGETS.EDGES,
-            payload: { ids: result.removedEdgeIds },
-            timestamp: operationTimestamp,
-            senderId: socket.id,
-            userId: session.userId,
-            userName: session.userName,
-            metadata: { workflowId, operationId: crypto.randomUUID() },
-          })
-        }
-
-        // Broadcast auto-connected edges so clients add them to local state
-        if (result?.addedEdges && result.addedEdges.length > 0) {
-          roomManager.emitToWorkflow(workflowId, 'workflow-operation', {
-            operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
-            target: OPERATION_TARGETS.EDGES,
-            payload: { edges: result.addedEdges },
-            timestamp: operationTimestamp,
-            senderId: socket.id,
-            userId: session.userId,
-            userName: session.userName,
-            metadata: { workflowId, operationId: crypto.randomUUID() },
-          })
-        }
+        emitParentUpdateSideEffects(
+          roomManager,
+          workflowId,
+          result,
+          operationTimestamp,
+          socket.id,
+          session.userId,
+          session.userName
+        )
 
         if (operationId) {
           socket.emit('operation-confirmed', {
             operationId,
             serverTimestamp: Date.now(),
             appliedPayload: broadcastPayload,
+          })
+        }
+
+        return
+      }
+
+      if (target === OPERATION_TARGETS.BLOCK && operation === BLOCK_OPERATIONS.UPDATE_PARENT) {
+        const result = await persistWorkflowOperation(workflowId, {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          userId: session.userId,
+        })
+
+        await roomManager.updateRoomLastModified(workflowId)
+
+        socket.to(workflowId).emit('workflow-operation', {
+          operation,
+          target,
+          payload,
+          timestamp: operationTimestamp,
+          senderId: socket.id,
+          userId: session.userId,
+          userName: session.userName,
+          metadata: { workflowId, operationId: crypto.randomUUID() },
+        })
+
+        emitParentUpdateSideEffects(
+          roomManager,
+          workflowId,
+          result,
+          operationTimestamp,
+          socket.id,
+          session.userId,
+          session.userName
+        )
+
+        if (operationId) {
+          socket.emit('operation-confirmed', {
+            operationId,
+            serverTimestamp: Date.now(),
           })
         }
 
@@ -784,6 +844,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
       if (error instanceof ZodError) {
         logger.error('Invalid operation format:', error.errors)
         socket.emit('operation-failed', {
+          ...(operationId ? { operationId } : {}),
           error: 'Invalid operation format',
           details: error.errors,
         })

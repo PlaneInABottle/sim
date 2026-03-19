@@ -3,6 +3,7 @@
  */
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { ZodError } from 'zod'
 
 const { mockPersistWorkflowOperation, mockCheckRolePermission, mockWorkflowOperationParse } =
   vi.hoisted(() => ({
@@ -26,7 +27,12 @@ vi.mock('@/socket/validation/schemas', () => ({
   },
 }))
 
-import { BLOCKS_OPERATIONS, EDGES_OPERATIONS, OPERATION_TARGETS } from '@/socket/constants'
+import {
+  BLOCK_OPERATIONS,
+  BLOCKS_OPERATIONS,
+  EDGES_OPERATIONS,
+  OPERATION_TARGETS,
+} from '@/socket/constants'
 import { setupOperationsHandlers } from '@/socket/handlers/operations'
 
 describe('setupOperationsHandlers', () => {
@@ -692,6 +698,202 @@ describe('setupOperationsHandlers', () => {
         appliedPayload: {
           updates: [{ id: 'block-1', parentId: 'loop-1', position: { x: 10, y: 20 } }],
         },
+      })
+    )
+  })
+
+  it('broadcasts single block parent side-effect edges to the whole workflow', async () => {
+    mockPersistWorkflowOperation.mockResolvedValue({
+      removedEdgeIds: ['edge-removed'],
+      addedEdges: [
+        {
+          id: 'edge-added',
+          source: 'loop-1',
+          target: 'block-1',
+          sourceHandle: 'loop-start-source',
+          targetHandle: 'target',
+          type: 'workflowEdge',
+        },
+      ],
+    })
+
+    const socketEmit = vi.fn()
+    const socketRoomEmit = vi.fn()
+    const emitToWorkflow = vi.fn()
+    const socketHandlers = new Map<string, (data: unknown) => Promise<void>>()
+
+    const socket = {
+      id: 'socket-1',
+      on: vi.fn((event: string, handler: (data: unknown) => Promise<void>) => {
+        socketHandlers.set(event, handler)
+      }),
+      emit: socketEmit,
+      to: vi.fn(() => ({
+        emit: socketRoomEmit,
+      })),
+    }
+
+    const roomManager = {
+      io: {} as never,
+      initialize: vi.fn(),
+      isReady: vi.fn(() => true),
+      shutdown: vi.fn(),
+      addUserToRoom: vi.fn(),
+      removeUserFromRoom: vi.fn(),
+      getWorkflowIdForSocket: vi.fn().mockResolvedValue('workflow-1'),
+      getUserSession: vi.fn().mockResolvedValue({ userId: 'user-1', userName: 'Test User' }),
+      getWorkflowUsers: vi.fn().mockResolvedValue([
+        {
+          socketId: 'socket-1',
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          userName: 'Test User',
+          joinedAt: Date.now(),
+          lastActivity: Date.now(),
+          role: 'admin',
+        },
+      ]),
+      hasWorkflowRoom: vi.fn().mockResolvedValue(true),
+      updateUserActivity: vi.fn(),
+      updateRoomLastModified: vi.fn(),
+      broadcastPresenceUpdate: vi.fn(),
+      emitToWorkflow,
+      getUniqueUserCount: vi.fn(),
+      getTotalActiveConnections: vi.fn(),
+      handleWorkflowDeletion: vi.fn(),
+      handleWorkflowRevert: vi.fn(),
+      handleWorkflowUpdate: vi.fn(),
+    }
+
+    setupOperationsHandlers(socket as never, roomManager)
+
+    const workflowOperationHandler = socketHandlers.get('workflow-operation')
+
+    await workflowOperationHandler?.({
+      operationId: 'op-single-parent',
+      operation: BLOCK_OPERATIONS.UPDATE_PARENT,
+      target: OPERATION_TARGETS.BLOCK,
+      payload: { id: 'block-1', parentId: 'loop-1', position: { x: 10, y: 20 } },
+      timestamp: 123,
+    })
+
+    expect(socketRoomEmit).toHaveBeenCalledWith(
+      'workflow-operation',
+      expect.objectContaining({
+        operation: BLOCK_OPERATIONS.UPDATE_PARENT,
+        target: OPERATION_TARGETS.BLOCK,
+        payload: { id: 'block-1', parentId: 'loop-1', position: { x: 10, y: 20 } },
+      })
+    )
+    expect(emitToWorkflow).toHaveBeenNthCalledWith(
+      1,
+      'workflow-1',
+      'workflow-operation',
+      expect.objectContaining({
+        operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+        target: OPERATION_TARGETS.EDGES,
+        payload: { ids: ['edge-removed'] },
+      })
+    )
+    expect(emitToWorkflow).toHaveBeenNthCalledWith(
+      2,
+      'workflow-1',
+      'workflow-operation',
+      expect.objectContaining({
+        operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
+        target: OPERATION_TARGETS.EDGES,
+        payload: {
+          edges: [
+            expect.objectContaining({
+              id: 'edge-added',
+              source: 'loop-1',
+              target: 'block-1',
+            }),
+          ],
+        },
+      })
+    )
+    expect(socketEmit).toHaveBeenCalledWith(
+      'operation-confirmed',
+      expect.objectContaining({
+        operationId: 'op-single-parent',
+        serverTimestamp: expect.any(Number),
+      })
+    )
+  })
+
+  it('includes operationId when a zod error happens after parsing', async () => {
+    const socketEmit = vi.fn()
+    const socketHandlers = new Map<string, (data: unknown) => Promise<void>>()
+
+    const socket = {
+      id: 'socket-1',
+      on: vi.fn((event: string, handler: (data: unknown) => Promise<void>) => {
+        socketHandlers.set(event, handler)
+      }),
+      emit: socketEmit,
+      to: vi.fn(() => ({
+        emit: vi.fn(),
+      })),
+    }
+
+    const roomManager = {
+      io: {} as never,
+      initialize: vi.fn(),
+      isReady: vi.fn(() => true),
+      shutdown: vi.fn(),
+      addUserToRoom: vi.fn(),
+      removeUserFromRoom: vi.fn(),
+      getWorkflowIdForSocket: vi.fn().mockResolvedValue('workflow-1'),
+      getUserSession: vi.fn().mockResolvedValue({ userId: 'user-1', userName: 'Test User' }),
+      getWorkflowUsers: vi.fn().mockResolvedValue([
+        {
+          socketId: 'socket-1',
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          userName: 'Test User',
+          joinedAt: Date.now(),
+          lastActivity: Date.now(),
+          role: 'admin',
+        },
+      ]),
+      hasWorkflowRoom: vi.fn().mockResolvedValue(true),
+      updateUserActivity: vi.fn().mockRejectedValue(
+        new ZodError([
+          {
+            code: 'custom',
+            path: ['payload'],
+            message: 'Invalid payload',
+          },
+        ])
+      ),
+      updateRoomLastModified: vi.fn(),
+      broadcastPresenceUpdate: vi.fn(),
+      emitToWorkflow: vi.fn(),
+      getUniqueUserCount: vi.fn(),
+      getTotalActiveConnections: vi.fn(),
+      handleWorkflowDeletion: vi.fn(),
+      handleWorkflowRevert: vi.fn(),
+      handleWorkflowUpdate: vi.fn(),
+    }
+
+    setupOperationsHandlers(socket as never, roomManager)
+
+    const workflowOperationHandler = socketHandlers.get('workflow-operation')
+
+    await workflowOperationHandler?.({
+      operationId: 'op-zod-after-parse',
+      operation: BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS,
+      target: OPERATION_TARGETS.BLOCKS,
+      payload: { blocks: [], edges: [], loops: {}, parallels: {}, subBlockValues: {} },
+      timestamp: 123,
+    })
+
+    expect(socketEmit).toHaveBeenCalledWith(
+      'operation-failed',
+      expect.objectContaining({
+        operationId: 'op-zod-after-parse',
+        error: 'Invalid operation format',
       })
     )
   })
