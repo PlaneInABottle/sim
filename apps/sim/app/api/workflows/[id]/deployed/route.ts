@@ -16,6 +16,14 @@ function addNoCacheHeaders(response: NextResponse): NextResponse {
   return response
 }
 
+function isAbsentDeploymentStateError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  return error.message.includes('has no active deployment') || error.message.includes('has no workspace')
+}
+
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const requestId = generateRequestId()
   const { id } = await params
@@ -53,6 +61,11 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const response = createSuccessResponse({ deployedState })
     return addNoCacheHeaders(response)
   } catch (error: any) {
+    if (isAbsentDeploymentStateError(error)) {
+      const response = createSuccessResponse({ deployedState: null })
+      return addNoCacheHeaders(response)
+    }
+
     logger.error(`[${requestId}] Error fetching deployed state: ${id}`, error)
     const response = createErrorResponse(error.message || 'Failed to fetch deployed state', 500)
     return addNoCacheHeaders(response)
