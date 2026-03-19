@@ -45,6 +45,25 @@ function parseUndoRedoStackKey(key: string): { workflowId: string; userId: strin
   }
 }
 
+function pruneUndoRedoStacksForWorkflow(
+  workflowId: string,
+  graph?: { blocksById: Record<string, BlockState>; edgesById: Record<string, Edge> }
+) {
+  const resolvedGraph = graph ?? {
+    blocksById: useWorkflowStore.getState().blocks,
+    edgesById: Object.fromEntries(useWorkflowStore.getState().edges.map((edge) => [edge.id, edge])),
+  }
+
+  const undoRedoStore = useUndoRedoStore.getState()
+  const stackKeys = Object.keys(undoRedoStore.stacks)
+  stackKeys.forEach((key) => {
+    const parsedKey = parseUndoRedoStackKey(key)
+    if (parsedKey?.workflowId === workflowId) {
+      undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, resolvedGraph)
+    }
+  })
+}
+
 export function useCollaborativeWorkflow() {
   const undoRedo = useUndoRedo()
   const isUndoRedoInProgress = useRef(false)
@@ -248,23 +267,9 @@ export function useCollaborativeWorkflow() {
                   },
                 ])
 
-                // Prune undo/redo stacks since remote parent change may invalidate local history
-                const freshStore = useWorkflowStore.getState()
-                const updatedBlocks = freshStore.blocks
-                const updatedEdges = freshStore.edges
-                const graph = {
-                  blocksById: updatedBlocks,
-                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                if (activeWorkflowId) {
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (parsedKey?.workflowId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
-                  }
-                })
               }
               break
             }
@@ -317,23 +322,9 @@ export function useCollaborativeWorkflow() {
                   )
                 )
 
-                // Prune undo/redo stacks
-                const freshStore = useWorkflowStore.getState()
-                const updatedBlocks = freshStore.blocks
-                const updatedEdges = freshStore.edges
-                const graph = {
-                  blocksById: updatedBlocks,
-                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                if (activeWorkflowId) {
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (parsedKey?.workflowId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
-                  }
-                })
               }
 
               logger.info('Successfully applied batch-update-parent from remote user')
@@ -347,21 +338,9 @@ export function useCollaborativeWorkflow() {
               if (Array.isArray(ids) && ids.length > 0) {
                 useWorkflowStore.getState().batchRemoveEdges(ids)
 
-                const updatedBlocks = useWorkflowStore.getState().blocks
-                const updatedEdges = useWorkflowStore.getState().edges
-                const graph = {
-                  blocksById: updatedBlocks,
-                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                if (activeWorkflowId) {
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (parsedKey?.workflowId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
-                  }
-                })
               }
               break
             }
@@ -389,21 +368,9 @@ export function useCollaborativeWorkflow() {
                 })
                 useWorkflowStore.getState().batchRemoveEdges([payload.id])
 
-                const updatedBlocks = useWorkflowStore.getState().blocks
-                const updatedEdges = useWorkflowStore.getState().edges
-                const graph = {
-                  blocksById: updatedBlocks,
-                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                if (activeWorkflowId) {
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (parsedKey?.workflowId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
-                  }
-                })
 
                 logger.info('Successfully applied remove-edge from remote user')
               }
@@ -548,23 +515,9 @@ export function useCollaborativeWorkflow() {
                 const store = useWorkflowStore.getState()
                 store.batchRemoveBlocks(ids)
 
-                // Prune undo/redo stacks
-                const freshStore = useWorkflowStore.getState()
-                const updatedBlocks = freshStore.blocks
-                const updatedEdges = freshStore.edges
-                const graph = {
-                  blocksById: updatedBlocks,
-                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                if (activeWorkflowId) {
+                  pruneUndoRedoStacksForWorkflow(activeWorkflowId)
                 }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (parsedKey?.workflowId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
-                  }
-                })
               }
 
               logger.info('Successfully applied batch-remove-blocks from remote user')
@@ -751,22 +704,11 @@ export function useCollaborativeWorkflow() {
 
                 logger.info(`Successfully loaded reverted workflow state for ${workflowId}`)
 
-                const graph = {
+                pruneUndoRedoStacksForWorkflow(workflowId, {
                   blocksById: workflowData.state.blocks || {},
                   edgesById: Object.fromEntries(
-                    (workflowData.state.edges || []).map((e: any) => [e.id, e])
+                    (workflowData.state.edges || []).map((edge: any) => [edge.id, edge])
                   ),
-                }
-
-                const undoRedoStore = useUndoRedoStore.getState()
-                const stackKeys = Object.keys(undoRedoStore.stacks)
-                stackKeys.forEach((key) => {
-                  const parsedKey = parseUndoRedoStackKey(key)
-                  if (!parsedKey || parsedKey.workflowId !== workflowId) {
-                    return
-                  }
-
-                  undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
                 })
               } finally {
                 isApplyingRemoteChange.current = false
