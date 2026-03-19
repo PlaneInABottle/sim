@@ -267,6 +267,10 @@ async function removeBoundaryEdges(
     const containerChildIds = new Set(containerChildren.map((b: { id: string }) => b.id))
     containerChildIds.delete(blockId) // Exclude the block being removed
 
+    if (coMovingBlockIds) {
+      coMovingBlockIds.forEach((id) => containerChildIds.delete(id))
+    }
+
     // Remove edges to/from the container itself or blocks still inside it
     const internalEdges = connectedEdges.filter(
       (edge: { id: string; source: string; target: string }) => {
