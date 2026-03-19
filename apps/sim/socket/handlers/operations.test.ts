@@ -153,4 +153,126 @@ describe('setupOperationsHandlers', () => {
       expect.objectContaining({ operationId: 'op-1', serverTimestamp: expect.any(Number) })
     )
   })
+
+  it('broadcasts generic side-effect edge syncs to the initiating client', async () => {
+    mockPersistWorkflowOperation.mockResolvedValue({
+      removedEdgeIds: ['edge-removed'],
+      addedEdges: [
+        {
+          id: 'edge-added',
+          source: 'container-1',
+          target: 'block-1',
+          sourceHandle: 'loop-start-source',
+          targetHandle: 'target',
+          type: 'workflowEdge',
+        },
+      ],
+    })
+
+    const socketEmit = vi.fn()
+    const socketRoomEmit = vi.fn()
+    const emitToWorkflow = vi.fn()
+    const socketHandlers = new Map<string, (data: unknown) => Promise<void>>()
+
+    const socket = {
+      id: 'socket-1',
+      on: vi.fn((event: string, handler: (data: unknown) => Promise<void>) => {
+        socketHandlers.set(event, handler)
+      }),
+      emit: socketEmit,
+      to: vi.fn(() => ({
+        emit: socketRoomEmit,
+      })),
+    }
+
+    const roomManager = {
+      io: {} as never,
+      initialize: vi.fn(),
+      isReady: vi.fn(() => true),
+      shutdown: vi.fn(),
+      addUserToRoom: vi.fn(),
+      removeUserFromRoom: vi.fn(),
+      getWorkflowIdForSocket: vi.fn().mockResolvedValue('workflow-1'),
+      getUserSession: vi.fn().mockResolvedValue({ userId: 'user-1', userName: 'Test User' }),
+      getWorkflowUsers: vi.fn().mockResolvedValue([
+        {
+          socketId: 'socket-1',
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          userName: 'Test User',
+          joinedAt: Date.now(),
+          lastActivity: Date.now(),
+          role: 'admin',
+        },
+      ]),
+      hasWorkflowRoom: vi.fn().mockResolvedValue(true),
+      updateUserActivity: vi.fn(),
+      updateRoomLastModified: vi.fn(),
+      broadcastPresenceUpdate: vi.fn(),
+      emitToWorkflow,
+      getUniqueUserCount: vi.fn(),
+      getTotalActiveConnections: vi.fn(),
+      handleWorkflowDeletion: vi.fn(),
+      handleWorkflowRevert: vi.fn(),
+      handleWorkflowUpdate: vi.fn(),
+    }
+
+    setupOperationsHandlers(socket as never, roomManager)
+
+    const workflowOperationHandler = socketHandlers.get('workflow-operation')
+
+    expect(workflowOperationHandler).toBeDefined()
+
+    await workflowOperationHandler?.({
+      operationId: 'op-2',
+      operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED,
+      target: OPERATION_TARGETS.BLOCKS,
+      payload: {
+        ids: ['block-1'],
+        locked: true,
+      },
+      timestamp: 456,
+    })
+
+    expect(socketRoomEmit).toHaveBeenCalledWith(
+      'workflow-operation',
+      expect.objectContaining({
+        operation: BLOCKS_OPERATIONS.BATCH_TOGGLE_LOCKED,
+        target: OPERATION_TARGETS.BLOCKS,
+        payload: { ids: ['block-1'], locked: true },
+      })
+    )
+    expect(emitToWorkflow).toHaveBeenNthCalledWith(
+      1,
+      'workflow-1',
+      'workflow-operation',
+      expect.objectContaining({
+        operation: EDGES_OPERATIONS.BATCH_REMOVE_EDGES,
+        target: OPERATION_TARGETS.EDGES,
+        payload: { ids: ['edge-removed'] },
+      })
+    )
+    expect(emitToWorkflow).toHaveBeenNthCalledWith(
+      2,
+      'workflow-1',
+      'workflow-operation',
+      expect.objectContaining({
+        operation: EDGES_OPERATIONS.BATCH_ADD_EDGES,
+        target: OPERATION_TARGETS.EDGES,
+        payload: {
+          edges: [
+            expect.objectContaining({
+              id: 'edge-added',
+              source: 'container-1',
+              target: 'block-1',
+            }),
+          ],
+        },
+      })
+    )
+    expect(socketEmit).toHaveBeenCalledWith(
+      'operation-confirmed',
+      expect.objectContaining({ operationId: 'op-2', serverTimestamp: expect.any(Number) })
+    )
+  })
 })
