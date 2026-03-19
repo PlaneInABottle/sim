@@ -120,22 +120,6 @@ export async function PATCH(
     const auth = access.auth
     const workflowData = access.workflow
 
-    if (isActive) {
-      if (!auth?.userId) {
-        return createErrorResponse('Unable to determine activating user', 400)
-      }
-
-      const authorization = await authorizeWorkflowByWorkspacePermission({
-        workflowId: id,
-        userId: auth.userId,
-        action: 'admin',
-        workflow: workflowData,
-      })
-      if (!authorization.allowed) {
-        return createErrorResponse(authorization.message || 'Access denied', authorization.status)
-      }
-    }
-
     const versionNum = Number(version)
     if (!Number.isFinite(versionNum)) {
       return createErrorResponse('Invalid version', 400)
@@ -144,6 +128,19 @@ export async function PATCH(
     // Handle activation
     if (isActive) {
       const actorUserId = auth?.userId
+      if (!actorUserId) {
+        return createErrorResponse('Unable to determine activating user', 400)
+      }
+
+      const authorization = await authorizeWorkflowByWorkspacePermission({
+        workflowId: id,
+        userId: actorUserId,
+        action: 'admin',
+        workflow: workflowData,
+      })
+      if (!authorization.allowed) {
+        return createErrorResponse(authorization.message || 'Access denied', authorization.status)
+      }
 
       const [versionRow] = await db
         .select({
@@ -194,7 +191,7 @@ export async function PATCH(
         request,
         workflowId: id,
         workflow: workflowData as Record<string, unknown>,
-        userId: actorUserId!,
+        userId: actorUserId,
         blocks,
         requestId,
         deploymentVersionId: versionRow.id,
@@ -222,7 +219,7 @@ export async function PATCH(
           await restorePreviousVersionWebhooks({
             request,
             workflow: workflowData as Record<string, unknown>,
-            userId: actorUserId!,
+            userId: actorUserId,
             previousVersionId,
             requestId,
           })
@@ -242,7 +239,7 @@ export async function PATCH(
           await restorePreviousVersionWebhooks({
             request,
             workflow: workflowData as Record<string, unknown>,
-            userId: actorUserId!,
+            userId: actorUserId,
             previousVersionId,
             requestId,
           })
@@ -325,7 +322,7 @@ export async function PATCH(
 
       recordAudit({
         workspaceId: workflowData?.workspaceId,
-        actorId: actorUserId!,
+        actorId: actorUserId,
         actorName,
         actorEmail,
         action: AuditAction.WORKFLOW_DEPLOYMENT_ACTIVATED,

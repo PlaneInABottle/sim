@@ -283,4 +283,25 @@ describe('Workflow deployment version route', () => {
     expect(mockCreateSchedulesForDeploy).not.toHaveBeenCalled()
     expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
   })
+
+  it('returns 400 when activation auth has no userId', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: null, authType: 'session' },
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deployments/3', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ isActive: true }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
+
+    expect(response.status).toBe(400)
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    expect(mockSaveTriggerWebhooksForDeploy).not.toHaveBeenCalled()
+    expect(mockCreateSchedulesForDeploy).not.toHaveBeenCalled()
+    expect(mockActivateWorkflowVersion).not.toHaveBeenCalled()
+    expect(mockRecordAudit).not.toHaveBeenCalled()
+  })
 })
