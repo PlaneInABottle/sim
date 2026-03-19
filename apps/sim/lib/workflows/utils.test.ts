@@ -31,6 +31,7 @@ vi.mock('@/lib/workflows/active-context', () => ({
 
 import {
   authorizeWorkflowByWorkspacePermission,
+  setWorkflowVariables,
   validateWorkflowPermissions,
 } from '@/lib/workflows/utils'
 
@@ -361,5 +362,32 @@ describe('authorizeWorkflowByWorkspacePermission', () => {
       workspacePermission: null,
     })
     expect(mockGetActiveWorkflowContext).not.toHaveBeenCalled()
+  })
+})
+
+describe('setWorkflowVariables', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it('persists variables to the workflow row', async () => {
+    const snapshotVariables = {
+      var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
+    }
+
+    const mockWhere = vi.fn().mockResolvedValue(undefined)
+    const mockSet = vi.fn(() => ({ where: mockWhere }))
+    vi.mocked(mockDb.update).mockReturnValue({ set: mockSet } as any)
+
+    await setWorkflowVariables('wf-1', snapshotVariables)
+
+    expect(mockDb.update).toHaveBeenCalled()
+    expect(mockSet).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variables: snapshotVariables,
+        updatedAt: expect.any(Date),
+      })
+    )
+    expect(mockWhere).toHaveBeenCalled()
   })
 })
