@@ -16,12 +16,15 @@ function addNoCacheHeaders(response: NextResponse): NextResponse {
   return response
 }
 
-function isAbsentDeploymentStateError(error: unknown): boolean {
+function isAbsentDeploymentStateError(error: unknown, workflowId: string): boolean {
   if (!(error instanceof Error)) {
     return false
   }
 
-  return error.message.includes('has no active deployment') || error.message.includes('has no workspace')
+  return (
+    error.message === `Workflow ${workflowId} has no active deployment` ||
+    error.message === `Workflow ${workflowId} has no workspace`
+  )
 }
 
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -49,7 +52,17 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    const data = await loadDeployedWorkflowState(id)
+    let data
+    try {
+      data = await loadDeployedWorkflowState(id)
+    } catch (error) {
+      if (isAbsentDeploymentStateError(error, id)) {
+        const response = createSuccessResponse({ deployedState: null })
+        return addNoCacheHeaders(response)
+      }
+
+      throw error
+    }
     const deployedState = {
       blocks: data.blocks,
       edges: data.edges,
@@ -61,11 +74,6 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     const response = createSuccessResponse({ deployedState })
     return addNoCacheHeaders(response)
   } catch (error: any) {
-    if (isAbsentDeploymentStateError(error)) {
-      const response = createSuccessResponse({ deployedState: null })
-      return addNoCacheHeaders(response)
-    }
-
     logger.error(`[${requestId}] Error fetching deployed state: ${id}`, error)
     const response = createErrorResponse(error.message || 'Failed to fetch deployed state', 500)
     return addNoCacheHeaders(response)
