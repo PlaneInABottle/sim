@@ -174,12 +174,19 @@ export const POST = withAdminAuthParams<RouteParams>(async (request, context) =>
       }
     }
 
-    await syncMcpToolsForWorkflow({
-      workflowId,
-      requestId,
-      state: versionRow.state,
-      context: 'activate',
-    })
+    try {
+      await syncMcpToolsForWorkflow({
+        workflowId,
+        requestId,
+        state: versionRow.state,
+        context: 'activate',
+      })
+    } catch (syncError) {
+      logger.error(
+        `[${requestId}] Admin API: Failed to sync MCP tools after activation for workflow ${workflowId}`,
+        syncError
+      )
+    }
 
     logger.info(
       `[${requestId}] Admin API: Activated version ${versionNum} for workflow ${workflowId}`
