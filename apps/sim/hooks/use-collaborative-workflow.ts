@@ -6,6 +6,7 @@ import { useSession } from '@/lib/auth/auth-client'
 import { useSocket } from '@/app/workspace/providers/socket-provider'
 import { getBlock } from '@/blocks'
 import { normalizeName, RESERVED_BLOCK_NAMES } from '@/executor/constants'
+import { resolveRemoteParentUpdatePosition } from '@/hooks/use-collaborative-workflow.utils'
 import { useUndoRedo } from '@/hooks/use-undo-redo'
 import {
   BLOCK_OPERATIONS,
@@ -262,7 +263,7 @@ export function useCollaborativeWorkflow() {
                 store.batchUpdateBlocksWithParent([
                   {
                     id: payload.id,
-                    position: block.position,
+                    position: resolveRemoteParentUpdatePosition(payload.position, block.position),
                     parentId: payload.parentId || undefined,
                   },
                 ])

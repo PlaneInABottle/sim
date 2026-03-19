@@ -272,7 +272,10 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
           await roomManager.updateRoomLastModified(workflowId)
 
           if (operationId) {
-            socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+            socket.emit('operation-confirmed', {
+              operationId,
+              serverTimestamp: Date.now(),
+            })
           }
         } catch (error) {
           logger.error('Failed to persist batch position update:', error)
@@ -389,7 +392,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         if (getPayloadArray(broadcastPayload, 'blocks').length === 0) {
           if (operationId) {
-            socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+            socket.emit('operation-confirmed', {
+              operationId,
+              serverTimestamp: Date.now(),
+              appliedPayload: broadcastPayload,
+            })
           }
 
           return
@@ -572,7 +579,11 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         if (getPayloadArray(broadcastPayload, 'updates').length === 0) {
           if (operationId) {
-            socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+            socket.emit('operation-confirmed', {
+              operationId,
+              serverTimestamp: Date.now(),
+              appliedPayload: broadcastPayload,
+            })
           }
 
           return

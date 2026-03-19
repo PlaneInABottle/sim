@@ -200,6 +200,9 @@ describe('setupOperationsHandlers', () => {
       expect.objectContaining({
         operationId: 'op-empty-parent',
         serverTimestamp: expect.any(Number),
+        appliedPayload: {
+          updates: [],
+        },
       })
     )
   })
@@ -377,7 +380,17 @@ describe('setupOperationsHandlers', () => {
     expect(socketRoomEmit).not.toHaveBeenCalled()
     expect(socketEmit).toHaveBeenCalledWith(
       'operation-confirmed',
-      expect.objectContaining({ operationId: 'op-empty-add', serverTimestamp: expect.any(Number) })
+      expect.objectContaining({
+        operationId: 'op-empty-add',
+        serverTimestamp: expect.any(Number),
+        appliedPayload: {
+          blocks: [],
+          edges: [],
+          loops: {},
+          parallels: {},
+          subBlockValues: {},
+        },
+      })
     )
   })
 
