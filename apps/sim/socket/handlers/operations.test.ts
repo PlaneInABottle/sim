@@ -992,4 +992,97 @@ describe('setupOperationsHandlers', () => {
       expect.objectContaining({ operationId: 'op-2', serverTimestamp: expect.any(Number) })
     )
   })
+
+  it('broadcasts valid block toggle operations through the default handler', async () => {
+    mockPersistWorkflowOperation.mockResolvedValue({})
+
+    const socketEmit = vi.fn()
+    const socketRoomEmit = vi.fn()
+    const emitToWorkflow = vi.fn()
+    const socketHandlers = new Map<string, (data: unknown) => Promise<void>>()
+
+    const socket = {
+      id: 'socket-1',
+      on: vi.fn((event: string, handler: (data: unknown) => Promise<void>) => {
+        socketHandlers.set(event, handler)
+      }),
+      emit: socketEmit,
+      to: vi.fn(() => ({
+        emit: socketRoomEmit,
+      })),
+    }
+
+    const roomManager = {
+      io: {} as never,
+      initialize: vi.fn(),
+      isReady: vi.fn(() => true),
+      shutdown: vi.fn(),
+      addUserToRoom: vi.fn(),
+      removeUserFromRoom: vi.fn(),
+      getWorkflowIdForSocket: vi.fn().mockResolvedValue('workflow-1'),
+      getUserSession: vi.fn().mockResolvedValue({ userId: 'user-1', userName: 'Test User' }),
+      getWorkflowUsers: vi.fn().mockResolvedValue([
+        {
+          socketId: 'socket-1',
+          userId: 'user-1',
+          workflowId: 'workflow-1',
+          userName: 'Test User',
+          joinedAt: Date.now(),
+          lastActivity: Date.now(),
+          role: 'admin',
+        },
+      ]),
+      hasWorkflowRoom: vi.fn().mockResolvedValue(true),
+      updateUserActivity: vi.fn(),
+      updateRoomLastModified: vi.fn(),
+      broadcastPresenceUpdate: vi.fn(),
+      emitToWorkflow,
+      getUniqueUserCount: vi.fn(),
+      getTotalActiveConnections: vi.fn(),
+      handleWorkflowDeletion: vi.fn(),
+      handleWorkflowRevert: vi.fn(),
+      handleWorkflowUpdate: vi.fn(),
+    }
+
+    setupOperationsHandlers(socket as never, roomManager)
+
+    const workflowOperationHandler = socketHandlers.get('workflow-operation')
+
+    await workflowOperationHandler?.({
+      operationId: 'op-toggle-enabled',
+      operation: BLOCK_OPERATIONS.TOGGLE_ENABLED,
+      target: OPERATION_TARGETS.BLOCK,
+      payload: {
+        id: 'block-1',
+        enabled: false,
+      },
+      timestamp: 789,
+    })
+
+    expect(mockPersistWorkflowOperation).toHaveBeenCalledWith(
+      'workflow-1',
+      expect.objectContaining({
+        operation: BLOCK_OPERATIONS.TOGGLE_ENABLED,
+        target: OPERATION_TARGETS.BLOCK,
+        payload: { id: 'block-1', enabled: false },
+        userId: 'user-1',
+      })
+    )
+    expect(socketRoomEmit).toHaveBeenCalledWith(
+      'workflow-operation',
+      expect.objectContaining({
+        operation: BLOCK_OPERATIONS.TOGGLE_ENABLED,
+        target: OPERATION_TARGETS.BLOCK,
+        payload: { id: 'block-1', enabled: false },
+      })
+    )
+    expect(emitToWorkflow).not.toHaveBeenCalled()
+    expect(socketEmit).toHaveBeenCalledWith(
+      'operation-confirmed',
+      expect.objectContaining({
+        operationId: 'op-toggle-enabled',
+        serverTimestamp: expect.any(Number),
+      })
+    )
+  })
 })
