@@ -310,7 +310,13 @@ export async function PATCH(request: NextRequest, { params }: { params: Promise<
 
     const auth = access.auth
 
-    const body = await request.json()
+    let body: { isPublicApi?: unknown }
+    try {
+      body = await request.json()
+    } catch {
+      return createErrorResponse('Invalid JSON body', 400)
+    }
+
     const { isPublicApi } = body
 
     if (typeof isPublicApi !== 'boolean') {

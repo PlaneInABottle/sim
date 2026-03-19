@@ -297,4 +297,43 @@ describe('Workflow deploy route', () => {
     expect(response.status).toBe(200)
     expect(mockValidatePublicApiAllowed).toHaveBeenCalledWith('api-user')
   })
+
+  it('returns 400 for malformed JSON bodies without permission checks or updates', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+    })
+
+    const req = {
+      json: vi.fn().mockRejectedValue(new SyntaxError('Unexpected end of JSON input')),
+    } as unknown as NextRequest
+
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toEqual({
+      error: 'Invalid JSON body',
+      code: 'INVALID_JSON_BODY',
+    })
+    expect(mockValidatePublicApiAllowed).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
+
+  it('returns 400 when isPublicApi is not a boolean', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: { success: true, userId: 'api-user', authType: 'api_key' },
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', 'x-api-key': 'test-key' },
+      body: JSON.stringify({ isPublicApi: 'yes' }),
+    })
+    const response = await PATCH(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(400)
+    expect(mockValidatePublicApiAllowed).not.toHaveBeenCalled()
+    expect(mockDbUpdate).not.toHaveBeenCalled()
+  })
 })
