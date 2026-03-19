@@ -13,12 +13,17 @@ const { mockAuthenticateApiKeyFromHeader, mockUpdateApiKeyLastUsed, mockCheckHyb
     mockCheckHybridAuth: vi.fn(),
   }))
 
-const { mockAuthorizeWorkflowByWorkspacePermission, mockGetWorkflowById, mockLoggerError } =
-  vi.hoisted(() => ({
-    mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
-    mockGetWorkflowById: vi.fn(),
-    mockLoggerError: vi.fn(),
-  }))
+const {
+  mockAuthorizeWorkflowByWorkspacePermission,
+  mockGetActiveWorkflowRecord,
+  mockGetWorkflowById,
+  mockLoggerError,
+} = vi.hoisted(() => ({
+  mockAuthorizeWorkflowByWorkspacePermission: vi.fn(),
+  mockGetActiveWorkflowRecord: vi.fn(),
+  mockGetWorkflowById: vi.fn(),
+  mockLoggerError: vi.fn(),
+}))
 
 vi.mock('@sim/logger', () => ({
   createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: mockLoggerError }),
@@ -38,14 +43,14 @@ vi.mock('@/lib/auth/hybrid', () => ({
   checkHybridAuth: (...args: unknown[]) => mockCheckHybridAuth(...args),
 }))
 
-vi.mock('@/lib/core/config/env', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@/lib/core/config/env')>()
+vi.mock('@/lib/core/config/env', () => ({
+  env: {},
+  getEnv: vi.fn(),
+}))
 
-  return {
-    ...actual,
-    env: actual.env,
-  }
-})
+vi.mock('@/lib/workflows/active-context', () => ({
+  getActiveWorkflowRecord: (...args: unknown[]) => mockGetActiveWorkflowRecord(...args),
+}))
 
 vi.mock('@/lib/workflows/utils', () => ({
   authorizeWorkflowByWorkspacePermission: (...args: unknown[]) =>
@@ -73,6 +78,7 @@ describe('validateWorkflowAccess', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mockCheckHybridAuth.mockResolvedValue({ success: true, userId: 'user-1', authType: 'session' })
+    mockGetActiveWorkflowRecord.mockResolvedValue(createWorkflow())
     mockGetWorkflowById.mockResolvedValue(createWorkflow())
     mockAuthorizeWorkflowByWorkspacePermission.mockResolvedValue({
       allowed: true,
@@ -104,6 +110,7 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 404 for authenticated missing workflow', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(null)
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
@@ -122,6 +129,7 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 403 for authenticated workflow without workspace', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(createWorkflow({ workspaceId: null }))
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
@@ -136,6 +144,25 @@ describe('validateWorkflowAccess', () => {
         status: 403,
       },
     })
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for authenticated workflow in an archived workspace', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
+    mockGetWorkflowById.mockResolvedValue(createWorkflow())
+
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: false,
+      action: 'read',
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Workflow not found',
+        status: 404,
+      },
+    })
+    expect(mockGetWorkflowById).toHaveBeenCalledWith(WORKFLOW_ID)
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
   })
 
@@ -203,7 +230,7 @@ describe('validateWorkflowAccess', () => {
     }
 
     mockCheckHybridAuth.mockResolvedValue(auth)
-    mockGetWorkflowById.mockResolvedValue(workflow)
+    mockGetActiveWorkflowRecord.mockResolvedValue(workflow)
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
       requireDeployment: false,
@@ -224,7 +251,7 @@ describe('validateWorkflowAccess', () => {
     const auth = { success: true, userId: 'user-1', authType: 'session' as const }
 
     mockCheckHybridAuth.mockResolvedValue(auth)
-    mockGetWorkflowById.mockResolvedValue(workflow)
+    mockGetActiveWorkflowRecord.mockResolvedValue(workflow)
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
       requireDeployment: false,
@@ -241,6 +268,7 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 404 for deployed access when workflow is missing', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(null)
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
@@ -258,6 +286,7 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 403 for deployed access when workflow has no workspace', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(createWorkflow({ workspaceId: null, isDeployed: true }))
 
     const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
@@ -271,6 +300,25 @@ describe('validateWorkflowAccess', () => {
         status: 403,
       },
     })
+    expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+  })
+
+  it('returns 404 for deployed access when workflow workspace is archived', async () => {
+    mockGetActiveWorkflowRecord.mockResolvedValue(null)
+    mockGetWorkflowById.mockResolvedValue(createWorkflow({ isDeployed: true }))
+
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Workflow not found',
+        status: 404,
+      },
+    })
+    expect(mockGetWorkflowById).toHaveBeenCalledWith(WORKFLOW_ID)
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
     expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })

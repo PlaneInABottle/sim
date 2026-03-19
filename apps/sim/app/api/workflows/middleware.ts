@@ -7,6 +7,7 @@ import {
 } from '@/lib/api-key/service'
 import { type AuthResult, AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { env } from '@/lib/core/config/env'
+import { getActiveWorkflowRecord } from '@/lib/workflows/active-context'
 import { authorizeWorkflowByWorkspacePermission, getWorkflowById } from '@/lib/workflows/utils'
 
 const logger = createLogger('WorkflowMiddleware')
@@ -24,6 +25,11 @@ export interface WorkflowAccessOptions {
 }
 
 async function getValidatedWorkflow(workflowId: string): Promise<ValidationResult> {
+  const activeWorkflow = await getActiveWorkflowRecord(workflowId)
+  if (activeWorkflow) {
+    return { workflow: activeWorkflow }
+  }
+
   const workflow = await getWorkflowById(workflowId)
   if (!workflow) {
     return {
@@ -44,7 +50,12 @@ async function getValidatedWorkflow(workflowId: string): Promise<ValidationResul
     }
   }
 
-  return { workflow }
+  return {
+    error: {
+      message: 'Workflow not found',
+      status: 404,
+    },
+  }
 }
 
 export async function validateWorkflowAccess(
