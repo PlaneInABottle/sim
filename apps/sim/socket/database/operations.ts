@@ -1630,7 +1630,6 @@ async function handleBlocksOperationTx(
       )
 
       const allRemovedEdgeIds: string[] = []
-      const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
       const applicableUpdates: Array<(typeof updates)[number]> = []
 
       for (const update of updates) {
@@ -1649,11 +1648,8 @@ async function handleBlocksOperationTx(
           continue
         }
 
-        // Fetch current parent to update subflow node lists
+        // Confirm the block exists before applying the batch parent update
         const existing = blocksById[id]
-        const existingParentId = (existing?.data as Record<string, unknown> | null)?.parentId as
-          | string
-          | undefined
 
         if (!existing) {
           logger.warn(`Block ${id} not found for batch-update-parent`)
@@ -1672,6 +1668,10 @@ async function handleBlocksOperationTx(
         if (!id) continue
 
         const isRemovingFromParent = !parentId
+        const existing = blocksById[id]
+        const existingParentId = (existing?.data as Record<string, unknown> | null)?.parentId as
+          | string
+          | undefined
 
         // Get current data and position
         const [currentBlock] = await tx
@@ -1715,13 +1715,6 @@ async function handleBlocksOperationTx(
         )
         allRemovedEdgeIds.push(...removedEdgeIds)
 
-        // Auto-connect: if block is entering a container and has no incoming edges,
-        // connect it from the container's start handle
-        if (parentId) {
-          const autoConnect = await autoConnectToContainerStart(tx, workflowId, id, parentId)
-          allAddedEdges.push(...autoConnect.edges)
-        }
-
         // If the block now has a parent, update the new parent's subflow node list
         if (parentId) {
           await updateSubflowNodeList(tx, workflowId, parentId)
@@ -1733,7 +1726,7 @@ async function handleBlocksOperationTx(
       }
 
       logger.debug(`Batch updated parent for ${updates.length} blocks`)
-      return { removedEdgeIds: allRemovedEdgeIds, addedEdges: allAddedEdges }
+      return { removedEdgeIds: allRemovedEdgeIds }
     }
 
     default:

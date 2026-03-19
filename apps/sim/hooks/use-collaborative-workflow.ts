@@ -32,6 +32,19 @@ import { findAllDescendantNodes, isBlockProtected } from '@/stores/workflows/wor
 
 const logger = createLogger('CollaborativeWorkflow')
 
+function parseUndoRedoStackKey(key: string): { workflowId: string; userId: string } | null {
+  const separatorIndex = key.indexOf(':')
+
+  if (separatorIndex <= 0 || separatorIndex === key.length - 1) {
+    return null
+  }
+
+  return {
+    workflowId: key.slice(0, separatorIndex),
+    userId: key.slice(separatorIndex + 1),
+  }
+}
+
 export function useCollaborativeWorkflow() {
   const undoRedo = useUndoRedo()
   const isUndoRedoInProgress = useRef(false)
@@ -239,9 +252,9 @@ export function useCollaborativeWorkflow() {
                 const undoRedoStore = useUndoRedoStore.getState()
                 const stackKeys = Object.keys(undoRedoStore.stacks)
                 stackKeys.forEach((key) => {
-                  const [wfId, uId] = key.split(':')
-                  if (wfId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(wfId, uId, graph)
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (parsedKey?.workflowId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
                   }
                 })
               }
@@ -281,9 +294,9 @@ export function useCollaborativeWorkflow() {
                 const undoRedoStore = useUndoRedoStore.getState()
                 const stackKeys = Object.keys(undoRedoStore.stacks)
                 stackKeys.forEach((key) => {
-                  const [wfId, uId] = key.split(':')
-                  if (wfId === activeWorkflowId) {
-                    undoRedoStore.pruneInvalidEntries(wfId, uId, graph)
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (parsedKey?.workflowId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
                   }
                 })
 
@@ -646,10 +659,12 @@ export function useCollaborativeWorkflow() {
                 const undoRedoStore = useUndoRedoStore.getState()
                 const stackKeys = Object.keys(undoRedoStore.stacks)
                 stackKeys.forEach((key) => {
-                  const [wfId, userId] = key.split(':')
-                  if (wfId === workflowId) {
-                    undoRedoStore.pruneInvalidEntries(wfId, userId, graph)
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (!parsedKey || parsedKey.workflowId !== workflowId) {
+                    return
                   }
+
+                  undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
                 })
               } finally {
                 isApplyingRemoteChange.current = false
