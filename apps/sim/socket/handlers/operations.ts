@@ -17,6 +17,22 @@ import { WorkflowOperationSchema } from '@/socket/validation/schemas'
 
 const logger = createLogger('OperationsHandlers')
 
+function getBroadcastPayload(
+  result: Awaited<ReturnType<typeof persistWorkflowOperation>>,
+  fallbackPayload: unknown
+): unknown {
+  return result?.appliedPayload ?? fallbackPayload
+}
+
+function getPayloadArray(payload: unknown, key: string): unknown[] {
+  if (!payload || typeof payload !== 'object') {
+    return []
+  }
+
+  const value = (payload as Record<string, unknown>)[key]
+  return Array.isArray(value) ? value : []
+}
+
 export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager: IRoomManager) {
   socket.on('workflow-operation', async (data) => {
     const emitOperationError = (
@@ -323,7 +339,7 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
         // so DB and real-time clients receive the same enriched data
         const enrichedPayload = enrichBatchAddBlocksPayload(payload)
 
-        await persistWorkflowOperation(workflowId, {
+        const result = await persistWorkflowOperation(workflowId, {
           operation,
           target,
           payload: enrichedPayload,
@@ -333,10 +349,20 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         await roomManager.updateRoomLastModified(workflowId)
 
+        const broadcastPayload = getBroadcastPayload(result, enrichedPayload)
+
+        if (getPayloadArray(broadcastPayload, 'blocks').length === 0) {
+          if (operationId) {
+            socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          }
+
+          return
+        }
+
         socket.to(workflowId).emit('workflow-operation', {
           operation,
           target,
-          payload: enrichedPayload,
+          payload: broadcastPayload,
           timestamp: operationTimestamp,
           senderId: socket.id,
           userId: session.userId,
@@ -490,10 +516,20 @@ export function setupOperationsHandlers(socket: AuthenticatedSocket, roomManager
 
         await roomManager.updateRoomLastModified(workflowId)
 
+        const broadcastPayload = getBroadcastPayload(result, payload)
+
+        if (getPayloadArray(broadcastPayload, 'updates').length === 0) {
+          if (operationId) {
+            socket.emit('operation-confirmed', { operationId, serverTimestamp: Date.now() })
+          }
+
+          return
+        }
+
         socket.to(workflowId).emit('workflow-operation', {
           operation,
           target,
-          payload,
+          payload: broadcastPayload,
           timestamp: operationTimestamp,
           senderId: socket.id,
           userId: session.userId,

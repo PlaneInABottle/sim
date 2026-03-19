@@ -117,6 +117,14 @@ export interface OperationResult {
     targetHandle: string | null
     type: string
   }>
+  appliedPayload?: Record<string, unknown>
+}
+
+function getParentTransitionKey(
+  oldParentId: string | null | undefined,
+  newParentId: string | null | undefined
+): string {
+  return JSON.stringify([oldParentId ?? null, newParentId ?? null])
 }
 
 /**
@@ -308,6 +316,21 @@ async function autoConnectToContainerStart(
 
   if (incomingEdges.length > 0) {
     return empty // Block already has incoming edges — no auto-connect needed
+  }
+
+  const siblingChildren = await tx
+    .select({ id: workflowBlocks.id })
+    .from(workflowBlocks)
+    .where(
+      and(
+        eq(workflowBlocks.workflowId, workflowId),
+        sql`${workflowBlocks.data}->>'parentId' = ${parentId}`,
+        sql`${workflowBlocks.id} <> ${blockId}`
+      )
+    )
+
+  if (siblingChildren.length > 0) {
+    return empty
   }
 
   // Fetch container block type to determine start handle
@@ -1062,7 +1085,9 @@ async function handleBlocksOperationTx(
     }
 
     case BLOCKS_OPERATIONS.BATCH_ADD_BLOCKS: {
-      const { blocks, edges, loops, parallels } = payload
+      const { blocks, edges, loops, parallels, subBlockValues } = payload
+      let allowedBlocks: Array<Record<string, unknown>> = []
+      let existingBlockIds = new Set<string>()
 
       logger.info(`Batch adding blocks to workflow ${workflowId}`, {
         blockCount: blocks?.length || 0,
@@ -1079,6 +1104,7 @@ async function handleBlocksOperationTx(
           .where(eq(workflowBlocks.workflowId, workflowId))
 
         type ExistingBlockRecord = (typeof existingBlocks)[number]
+        existingBlockIds = new Set(existingBlocks.map((block: ExistingBlockRecord) => block.id))
         const lockedParentIds = new Set(
           existingBlocks
             .filter((b: ExistingBlockRecord) => b.locked)
@@ -1086,7 +1112,7 @@ async function handleBlocksOperationTx(
         )
 
         // Filter out blocks being added to locked parents
-        const allowedBlocks = (blocks as Array<Record<string, unknown>>).filter((block) => {
+        allowedBlocks = (blocks as Array<Record<string, unknown>>).filter((block) => {
           const parentId = (block.data as Record<string, unknown> | null)?.parentId as
             | string
             | undefined
@@ -1099,7 +1125,16 @@ async function handleBlocksOperationTx(
 
         if (allowedBlocks.length === 0) {
           logger.info('All blocks filtered out due to locked parents, skipping add')
-          break
+          return {
+            appliedPayload: {
+              ...payload,
+              blocks: [],
+              edges: [],
+              loops: {},
+              parallels: {},
+              subBlockValues: {},
+            },
+          }
         }
 
         // Blocks are pre-enriched by enrichBatchAddBlocksPayload() upstream,
@@ -1208,8 +1243,38 @@ async function handleBlocksOperationTx(
         }
       }
 
-      if (edges && edges.length > 0) {
-        const edgeValues = edges.map((edge: Record<string, unknown>) => ({
+      const allowedBlockIds = new Set(allowedBlocks.map((block) => block.id as string))
+      const validEdgeEndpointIds = new Set([...existingBlockIds, ...allowedBlockIds])
+      const allowedEdges = ((edges as Array<Record<string, unknown>> | undefined) ?? []).filter(
+        (edge) => {
+          const sourceId = edge.source as string
+          const targetId = edge.target as string
+
+          return (
+            validEdgeEndpointIds.has(sourceId) &&
+            validEdgeEndpointIds.has(targetId) &&
+            (allowedBlockIds.has(sourceId) || allowedBlockIds.has(targetId))
+          )
+        }
+      )
+      const allowedLoops = Object.fromEntries(
+        Object.entries((loops as Record<string, unknown> | undefined) ?? {}).filter(([id]) =>
+          allowedBlockIds.has(id)
+        )
+      )
+      const allowedParallels = Object.fromEntries(
+        Object.entries((parallels as Record<string, unknown> | undefined) ?? {}).filter(([id]) =>
+          allowedBlockIds.has(id)
+        )
+      )
+      const allowedSubBlockValues = Object.fromEntries(
+        Object.entries((subBlockValues as Record<string, unknown> | undefined) ?? {}).filter(
+          ([id]) => allowedBlockIds.has(id)
+        )
+      )
+
+      if (allowedEdges.length > 0) {
+        const edgeValues = allowedEdges.map((edge: Record<string, unknown>) => ({
           id: edge.id as string,
           workflowId,
           sourceBlockId: edge.source as string,
@@ -1232,8 +1297,8 @@ async function handleBlocksOperationTx(
           })
       }
 
-      if (loops && Object.keys(loops).length > 0) {
-        const loopValues = Object.entries(loops).map(([id, loop]) => ({
+      if (Object.keys(allowedLoops).length > 0) {
+        const loopValues = Object.entries(allowedLoops).map(([id, loop]) => ({
           id,
           workflowId,
           type: 'loop',
@@ -1252,8 +1317,8 @@ async function handleBlocksOperationTx(
           })
       }
 
-      if (parallels && Object.keys(parallels).length > 0) {
-        const parallelValues = Object.entries(parallels).map(([id, parallel]) => ({
+      if (Object.keys(allowedParallels).length > 0) {
+        const parallelValues = Object.entries(allowedParallels).map(([id, parallel]) => ({
           id,
           workflowId,
           type: 'parallel',
@@ -1273,7 +1338,17 @@ async function handleBlocksOperationTx(
       }
 
       logger.info(`Successfully batch added blocks to workflow ${workflowId}`)
-      break
+
+      return {
+        appliedPayload: {
+          ...payload,
+          blocks: allowedBlocks,
+          edges: allowedEdges,
+          loops: allowedLoops,
+          parallels: allowedParallels,
+          subBlockValues: allowedSubBlockValues,
+        },
+      }
     }
 
     case BLOCKS_OPERATIONS.BATCH_REMOVE_BLOCKS: {
@@ -1608,6 +1683,7 @@ async function handleBlocksOperationTx(
       const allRemovedEdgeIds: string[] = []
       const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
       const applicableUpdates: Array<(typeof updates)[number]> = []
+      const coMovingBlockIdsByTransition = new Map<string, Set<string>>()
 
       for (const update of updates) {
         const { id, parentId, position } = update
@@ -1634,11 +1710,16 @@ async function handleBlocksOperationTx(
         }
 
         applicableUpdates.push(update)
-      }
 
-      // Collect only block IDs that will actually be moved in this batch so
-      // removeBoundaryEdges can treat them as already inside the target container.
-      const allMovingBlockIds = new Set(applicableUpdates.map((update) => update.id))
+        const existingParentId = (existing.data as Record<string, unknown> | null)?.parentId as
+          | string
+          | undefined
+        const transitionKey = getParentTransitionKey(existingParentId, parentId)
+        const coMovingBlockIds =
+          coMovingBlockIdsByTransition.get(transitionKey) ?? new Set<string>()
+        coMovingBlockIds.add(id)
+        coMovingBlockIdsByTransition.set(transitionKey, coMovingBlockIds)
+      }
 
       for (const update of applicableUpdates) {
         const { id, parentId, position } = update
@@ -1688,7 +1769,7 @@ async function handleBlocksOperationTx(
           id,
           parentId ?? null,
           existingParentId ?? null,
-          allMovingBlockIds
+          coMovingBlockIdsByTransition.get(getParentTransitionKey(existingParentId, parentId))
         )
         allRemovedEdgeIds.push(...removedEdgeIds)
 
@@ -1708,7 +1789,14 @@ async function handleBlocksOperationTx(
       }
 
       logger.debug(`Batch updated parent for ${updates.length} blocks`)
-      return { removedEdgeIds: allRemovedEdgeIds, addedEdges: allAddedEdges }
+      return {
+        removedEdgeIds: allRemovedEdgeIds,
+        addedEdges: allAddedEdges,
+        appliedPayload: {
+          ...payload,
+          updates: applicableUpdates,
+        },
+      }
     }
 
     default:

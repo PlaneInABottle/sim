@@ -207,6 +207,15 @@ export function useCollaborativeWorkflow() {
               break
             case BLOCK_OPERATIONS.UPDATE_POSITION: {
               if (payload.id && payload.position) {
+                // Check if this node is currently being dragged locally
+                const dragStart = useWorkflowStore.getState().getDragStartPosition()
+                if (dragStart?.id === payload.id) {
+                  logger.debug('Ignoring remote position update for locally dragged node', {
+                    nodeId: payload.id,
+                  })
+                  break
+                }
+
                 useWorkflowStore
                   .getState()
                   .batchUpdatePositions([{ id: payload.id, position: payload.position }])
@@ -214,13 +223,48 @@ export function useCollaborativeWorkflow() {
               break
             }
             case BLOCK_OPERATIONS.UPDATE_PARENT: {
-              const block = useWorkflowStore.getState().blocks[payload.id]
+              const store = useWorkflowStore.getState()
+              const block = store.blocks[payload.id]
               if (block) {
-                useWorkflowStore
-                  .getState()
-                  .batchUpdateBlocksWithParent([
-                    { id: payload.id, position: block.position, parentId: payload.parentId },
-                  ])
+                // Reconcile with local dragging
+                const dragStart = store.getDragStartPosition()
+                if (dragStart?.id === payload.id) {
+                  logger.info('Remote parent update for locally dragged node - reconciling', {
+                    nodeId: payload.id,
+                    newParentId: payload.parentId,
+                  })
+
+                  // When parent changes remotely while dragging, we update the store immediately.
+                  // React Flow's onNodeDragStop uses store data to calculate final positions.
+                  // By updating parentId and extent now, we ensure the next drag event
+                  // and the final drop use the correct coordinate space.
+                }
+
+                store.batchUpdateBlocksWithParent([
+                  {
+                    id: payload.id,
+                    position: block.position,
+                    parentId: payload.parentId || undefined,
+                  },
+                ])
+
+                // Prune undo/redo stacks since remote parent change may invalidate local history
+                const freshStore = useWorkflowStore.getState()
+                const updatedBlocks = freshStore.blocks
+                const updatedEdges = freshStore.edges
+                const graph = {
+                  blocksById: updatedBlocks,
+                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                }
+
+                const undoRedoStore = useUndoRedoStore.getState()
+                const stackKeys = Object.keys(undoRedoStore.stacks)
+                stackKeys.forEach((key) => {
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (parsedKey?.workflowId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
+                  }
+                })
               }
               break
             }
@@ -230,8 +274,69 @@ export function useCollaborativeWorkflow() {
             case BLOCKS_OPERATIONS.BATCH_UPDATE_POSITIONS: {
               const { updates } = payload
               if (Array.isArray(updates)) {
-                useWorkflowStore.getState().batchUpdatePositions(updates)
+                const store = useWorkflowStore.getState()
+                const dragStart = store.getDragStartPosition()
+                const localDraggedId = dragStart?.id
+
+                // Filter out updates for blocks currently being dragged locally
+                const filteredUpdates = localDraggedId
+                  ? updates.filter((u) => u.id !== localDraggedId)
+                  : updates
+
+                if (filteredUpdates.length > 0) {
+                  store.batchUpdatePositions(filteredUpdates)
+                }
               }
+              break
+            }
+            case BLOCKS_OPERATIONS.BATCH_UPDATE_PARENT: {
+              const { updates } = payload
+              logger.info('Received batch-update-parent from remote user', {
+                userId,
+                count: (updates || []).length,
+              })
+
+              if (updates && updates.length > 0) {
+                const store = useWorkflowStore.getState()
+                const dragStart = store.getDragStartPosition()
+                const localDraggedId = dragStart?.id
+
+                if (localDraggedId && updates.some((u: any) => u.id === localDraggedId)) {
+                  logger.info('Remote batch parent update contains locally dragged node', {
+                    localDraggedId,
+                  })
+                }
+
+                store.batchUpdateBlocksWithParent(
+                  updates.map(
+                    (u: { id: string; parentId: string; position: { x: number; y: number } }) => ({
+                      id: u.id,
+                      position: u.position,
+                      parentId: u.parentId || undefined,
+                    })
+                  )
+                )
+
+                // Prune undo/redo stacks
+                const freshStore = useWorkflowStore.getState()
+                const updatedBlocks = freshStore.blocks
+                const updatedEdges = freshStore.edges
+                const graph = {
+                  blocksById: updatedBlocks,
+                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                }
+
+                const undoRedoStore = useUndoRedoStore.getState()
+                const stackKeys = Object.keys(undoRedoStore.stacks)
+                stackKeys.forEach((key) => {
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (parsedKey?.workflowId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
+                  }
+                })
+              }
+
+              logger.info('Successfully applied batch-update-parent from remote user')
               break
             }
           }
@@ -440,7 +545,26 @@ export function useCollaborativeWorkflow() {
               })
 
               if (ids && ids.length > 0) {
-                useWorkflowStore.getState().batchRemoveBlocks(ids)
+                const store = useWorkflowStore.getState()
+                store.batchRemoveBlocks(ids)
+
+                // Prune undo/redo stacks
+                const freshStore = useWorkflowStore.getState()
+                const updatedBlocks = freshStore.blocks
+                const updatedEdges = freshStore.edges
+                const graph = {
+                  blocksById: updatedBlocks,
+                  edgesById: Object.fromEntries(updatedEdges.map((e) => [e.id, e])),
+                }
+
+                const undoRedoStore = useUndoRedoStore.getState()
+                const stackKeys = Object.keys(undoRedoStore.stacks)
+                stackKeys.forEach((key) => {
+                  const parsedKey = parseUndoRedoStackKey(key)
+                  if (parsedKey?.workflowId === activeWorkflowId) {
+                    undoRedoStore.pruneInvalidEntries(parsedKey.workflowId, parsedKey.userId, graph)
+                  }
+                })
               }
 
               logger.info('Successfully applied batch-remove-blocks from remote user')
@@ -486,28 +610,6 @@ export function useCollaborativeWorkflow() {
               }
 
               logger.info('Successfully applied batch-toggle-locked from remote user')
-              break
-            }
-            case BLOCKS_OPERATIONS.BATCH_UPDATE_PARENT: {
-              const { updates } = payload
-              logger.info('Received batch-update-parent from remote user', {
-                userId,
-                count: (updates || []).length,
-              })
-
-              if (updates && updates.length > 0) {
-                useWorkflowStore.getState().batchUpdateBlocksWithParent(
-                  updates.map(
-                    (u: { id: string; parentId: string; position: { x: number; y: number } }) => ({
-                      id: u.id,
-                      position: u.position,
-                      parentId: u.parentId || undefined,
-                    })
-                  )
-                )
-              }
-
-              logger.info('Successfully applied batch-update-parent from remote user')
               break
             }
           }
