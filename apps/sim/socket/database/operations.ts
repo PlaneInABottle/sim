@@ -49,6 +49,31 @@ interface DbBlockRef {
   data: unknown
 }
 
+export function filterBatchAddBlocksByProtection(
+  blocks: Array<Record<string, unknown>>,
+  existingBlocks: Array<{ id: string; locked?: boolean | null; data: unknown }>
+): Array<Record<string, unknown>> {
+  const blocksById: Record<string, DbBlockRef> = Object.fromEntries(
+    existingBlocks.map((block) => [block.id, block])
+  )
+
+  for (const block of blocks) {
+    const id = block.id as string | undefined
+    if (!id) continue
+
+    blocksById[id] = {
+      id,
+      locked: (block.locked as boolean | null | undefined) ?? false,
+      data: (block.data as Record<string, unknown> | null | undefined) ?? {},
+    }
+  }
+
+  return blocks.filter((block) => {
+    const id = block.id as string | undefined
+    return id !== undefined && !isDbBlockProtected(id, blocksById)
+  })
+}
+
 /**
  * Checks if a block is protected (locked or inside a locked ancestor).
  * Works with raw DB records.
@@ -125,6 +150,15 @@ function getParentTransitionKey(
   newParentId: string | null | undefined
 ): string {
   return JSON.stringify([oldParentId ?? null, newParentId ?? null])
+}
+
+export function getBatchUpdateParentCoMovingKey(
+  oldParentId: string | null | undefined,
+  newParentId: string | null | undefined
+): string {
+  return newParentId
+    ? JSON.stringify(['destination', newParentId])
+    : getParentTransitionKey(oldParentId, newParentId)
 }
 
 /**
@@ -1099,29 +1133,25 @@ async function handleBlocksOperationTx(
       if (blocks && blocks.length > 0) {
         // Fetch existing blocks to check for locked parents
         const existingBlocks = await tx
-          .select({ id: workflowBlocks.id, locked: workflowBlocks.locked })
+          .select({
+            id: workflowBlocks.id,
+            locked: workflowBlocks.locked,
+            data: workflowBlocks.data,
+          })
           .from(workflowBlocks)
           .where(eq(workflowBlocks.workflowId, workflowId))
 
         type ExistingBlockRecord = (typeof existingBlocks)[number]
         existingBlockIds = new Set(existingBlocks.map((block: ExistingBlockRecord) => block.id))
-        const lockedParentIds = new Set(
+        allowedBlocks = filterBatchAddBlocksByProtection(
+          blocks as Array<Record<string, unknown>>,
           existingBlocks
-            .filter((b: ExistingBlockRecord) => b.locked)
-            .map((b: ExistingBlockRecord) => b.id)
         )
 
-        // Filter out blocks being added to locked parents
-        allowedBlocks = (blocks as Array<Record<string, unknown>>).filter((block) => {
-          const parentId = (block.data as Record<string, unknown> | null)?.parentId as
-            | string
-            | undefined
-          if (parentId && lockedParentIds.has(parentId)) {
-            logger.info(`Skipping block ${block.id} - parent ${parentId} is locked`)
-            return false
-          }
-          return true
-        })
+        const skippedBlockCount = blocks.length - allowedBlocks.length
+        if (skippedBlockCount > 0) {
+          logger.info(`Filtered out ${skippedBlockCount} batch-added block(s) due to protection`)
+        }
 
         if (allowedBlocks.length === 0) {
           logger.info('All blocks filtered out due to locked parents, skipping add')
@@ -1683,7 +1713,7 @@ async function handleBlocksOperationTx(
       const allRemovedEdgeIds: string[] = []
       const allAddedEdges: NonNullable<OperationResult['addedEdges']> = []
       const applicableUpdates: Array<(typeof updates)[number]> = []
-      const coMovingBlockIdsByTransition = new Map<string, Set<string>>()
+      const coMovingBlockIdsByDestination = new Map<string, Set<string>>()
 
       for (const update of updates) {
         const { id, parentId, position } = update
@@ -1714,11 +1744,10 @@ async function handleBlocksOperationTx(
         const existingParentId = (existing.data as Record<string, unknown> | null)?.parentId as
           | string
           | undefined
-        const transitionKey = getParentTransitionKey(existingParentId, parentId)
-        const coMovingBlockIds =
-          coMovingBlockIdsByTransition.get(transitionKey) ?? new Set<string>()
+        const coMovingKey = getBatchUpdateParentCoMovingKey(existingParentId, parentId)
+        const coMovingBlockIds = coMovingBlockIdsByDestination.get(coMovingKey) ?? new Set<string>()
         coMovingBlockIds.add(id)
-        coMovingBlockIdsByTransition.set(transitionKey, coMovingBlockIds)
+        coMovingBlockIdsByDestination.set(coMovingKey, coMovingBlockIds)
       }
 
       for (const update of applicableUpdates) {
@@ -1769,7 +1798,9 @@ async function handleBlocksOperationTx(
           id,
           parentId ?? null,
           existingParentId ?? null,
-          coMovingBlockIdsByTransition.get(getParentTransitionKey(existingParentId, parentId))
+          coMovingBlockIdsByDestination.get(
+            getBatchUpdateParentCoMovingKey(existingParentId, parentId)
+          )
         )
         allRemovedEdgeIds.push(...removedEdgeIds)
 
