@@ -15,6 +15,7 @@ const {
   mockDbWhereUpdate,
   mockRecordAudit,
   mockSaveWorkflowToNormalizedTables,
+  mockSetWorkflowVariables,
   mockSyncMcpToolsForWorkflow,
   mockValidateWorkflowAccess,
 } = vi.hoisted(() => ({
@@ -27,6 +28,7 @@ const {
   mockDbWhereUpdate: vi.fn(),
   mockRecordAudit: vi.fn(),
   mockSaveWorkflowToNormalizedTables: vi.fn(),
+  mockSetWorkflowVariables: vi.fn(),
   mockSyncMcpToolsForWorkflow: vi.fn(),
   mockValidateWorkflowAccess: vi.fn(),
 }))
@@ -91,6 +93,10 @@ vi.mock('@/lib/mcp/workflow-mcp-sync', () => ({
   syncMcpToolsForWorkflow: (...args: unknown[]) => mockSyncMcpToolsForWorkflow(...args),
 }))
 
+vi.mock('@/lib/workflows/utils', () => ({
+  setWorkflowVariables: (...args: unknown[]) => mockSetWorkflowVariables(...args),
+}))
+
 vi.mock('@/lib/audit/log', () => ({
   AuditAction: { WORKFLOW_DEPLOYMENT_REVERTED: 'WORKFLOW_DEPLOYMENT_REVERTED' },
   AuditResourceType: { WORKFLOW: 'WORKFLOW' },
@@ -119,6 +125,7 @@ describe('Workflow deployment version revert route', () => {
     mockDbSet.mockReturnValue({ where: mockDbWhereUpdate })
     mockDbWhereUpdate.mockResolvedValue(undefined)
     mockSaveWorkflowToNormalizedTables.mockResolvedValue({ success: true })
+    mockSetWorkflowVariables.mockResolvedValue(undefined)
     mockFetch.mockResolvedValue({ ok: true })
   })
 
@@ -188,14 +195,9 @@ describe('Workflow deployment version revert route', () => {
 
     await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
-    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalledWith(
-      'wf-1',
-      expect.objectContaining({
-        variables: {
-          var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
-        },
-      })
-    )
+    expect(mockSetWorkflowVariables).toHaveBeenCalledWith('wf-1', {
+      var1: { id: 'var1', name: 'API Token', type: 'string', value: 'secret' },
+    })
   })
 
   it('defaults variables safely when missing from the deployment snapshot', async () => {
@@ -217,12 +219,7 @@ describe('Workflow deployment version revert route', () => {
 
     await POST(req, { params: Promise.resolve({ id: 'wf-1', version: '3' }) })
 
-    expect(mockSaveWorkflowToNormalizedTables).toHaveBeenCalledWith(
-      'wf-1',
-      expect.objectContaining({
-        variables: {},
-      })
-    )
+    expect(mockSetWorkflowVariables).toHaveBeenCalledWith('wf-1', {})
   })
 
   it('returns success when MCP sync throws after revert succeeds', async () => {

@@ -8,6 +8,7 @@ import { env } from '@/lib/core/config/env'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { syncMcpToolsForWorkflow } from '@/lib/mcp/workflow-mcp-sync'
 import { saveWorkflowToNormalizedTables } from '@/lib/workflows/persistence/utils'
+import { setWorkflowVariables } from '@/lib/workflows/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 import { createErrorResponse, createSuccessResponse } from '@/app/api/workflows/utils'
 
@@ -97,6 +98,8 @@ export async function POST(
     if (!saveResult.success) {
       return createErrorResponse(saveResult.error || 'Failed to save deployed state', 500)
     }
+
+    await setWorkflowVariables(id, deployedState.variables || {})
 
     await db
       .update(workflow)
