@@ -118,13 +118,50 @@ export async function validateWorkflowAccess(
       return { workflow, auth }
     }
 
-    const workflowResult = await getValidatedWorkflow(workflowId)
-    if (workflowResult.error || !workflowResult.workflow) {
-      return workflowResult
-    }
-    const workflow = workflowResult.workflow
-
     if (requireDeployment) {
+      const internalSecret = request.headers.get('X-Internal-Secret')
+      const hasValidInternalSecret =
+        allowInternalSecret && env.INTERNAL_API_SECRET && internalSecret === env.INTERNAL_API_SECRET
+
+      let apiKeyHeader: string | null = null
+
+      if (!hasValidInternalSecret) {
+        for (const [key, value] of request.headers.entries()) {
+          if (key.toLowerCase() === 'x-api-key' && value) {
+            apiKeyHeader = value
+            break
+          }
+        }
+
+        if (!apiKeyHeader) {
+          return {
+            error: {
+              message: 'Unauthorized: API key required',
+              status: 401,
+            },
+          }
+        }
+
+        const preflightResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
+          keyTypes: ['workspace', 'personal'],
+        })
+
+        if (!preflightResult.success) {
+          return {
+            error: {
+              message: 'Unauthorized: Invalid API key',
+              status: 401,
+            },
+          }
+        }
+      }
+
+      const workflowResult = await getValidatedWorkflow(workflowId)
+      if (workflowResult.error || !workflowResult.workflow) {
+        return workflowResult
+      }
+      const workflow = workflowResult.workflow
+
       if (!workflow.isDeployed) {
         return {
           error: {
@@ -134,35 +171,13 @@ export async function validateWorkflowAccess(
         }
       }
 
-      const internalSecret = request.headers.get('X-Internal-Secret')
-      if (
-        allowInternalSecret &&
-        env.INTERNAL_API_SECRET &&
-        internalSecret === env.INTERNAL_API_SECRET
-      ) {
+      if (hasValidInternalSecret) {
         return { workflow }
-      }
-
-      let apiKeyHeader = null
-      for (const [key, value] of request.headers.entries()) {
-        if (key.toLowerCase() === 'x-api-key' && value) {
-          apiKeyHeader = value
-          break
-        }
-      }
-
-      if (!apiKeyHeader) {
-        return {
-          error: {
-            message: 'Unauthorized: API key required',
-            status: 401,
-          },
-        }
       }
 
       let validResult: ApiKeyAuthResult | null = null
 
-      const workspaceResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
+      const workspaceResult = await authenticateApiKeyFromHeader(apiKeyHeader!, {
         workspaceId: workflow.workspaceId as string,
         keyTypes: ['workspace', 'personal'],
       })
@@ -183,8 +198,16 @@ export async function validateWorkflowAccess(
       if (validResult.keyId) {
         await updateApiKeyLastUsed(validResult.keyId)
       }
+
+      return { workflow }
     }
-    return { workflow }
+
+    return {
+      error: {
+        message: 'Internal server error',
+        status: 500,
+      },
+    }
   } catch (error) {
     logger.error('Validation error:', { error })
     return {

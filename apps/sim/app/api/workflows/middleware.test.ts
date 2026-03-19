@@ -268,10 +268,21 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 404 for deployed access when workflow is missing', async () => {
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      keyId: 'key-1',
+      keyType: 'workspace',
+      workspaceId: WORKSPACE_ID,
+    })
     mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(null)
 
-    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'valid-key' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
       requireDeployment: true,
     })
 
@@ -282,14 +293,70 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
+      keyTypes: ['workspace', 'personal'],
+    })
+  })
+
+  it('returns 401 before deployed workflow lookup when api key is missing', async () => {
+    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Unauthorized: API key required',
+        status: 401,
+      },
+    })
+    expect(mockGetActiveWorkflowRecord).not.toHaveBeenCalled()
+    expect(mockGetWorkflowById).not.toHaveBeenCalled()
     expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
   })
 
-  it('returns 403 for deployed access when workflow has no workspace', async () => {
+  it('returns 401 before deployed workflow lookup when api key is invalid', async () => {
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: false,
+      error: 'Invalid API key',
+    })
+
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'invalid-key' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Unauthorized: Invalid API key',
+        status: 401,
+      },
+    })
+    expect(mockGetActiveWorkflowRecord).not.toHaveBeenCalled()
+    expect(mockGetWorkflowById).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('invalid-key', {
+      keyTypes: ['workspace', 'personal'],
+    })
+  })
+
+  it('returns 403 for deployed access when authenticated workflow has no workspace', async () => {
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      keyId: 'key-1',
+      keyType: 'workspace',
+      workspaceId: WORKSPACE_ID,
+    })
     mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(createWorkflow({ workspaceId: null, isDeployed: true }))
 
-    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'valid-key' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
       requireDeployment: true,
     })
 
@@ -301,14 +368,27 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
-    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
+      keyTypes: ['workspace', 'personal'],
+    })
   })
 
-  it('returns 404 for deployed access when workflow workspace is archived', async () => {
+  it('returns 404 for deployed access when authenticated workflow workspace is archived', async () => {
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      keyId: 'key-1',
+      keyType: 'workspace',
+      workspaceId: WORKSPACE_ID,
+    })
     mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(createWorkflow({ isDeployed: true }))
 
-    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'valid-key' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
       requireDeployment: true,
     })
 
@@ -320,6 +400,38 @@ describe('validateWorkflowAccess', () => {
     })
     expect(mockGetWorkflowById).toHaveBeenCalledWith(WORKFLOW_ID)
     expect(mockCheckHybridAuth).not.toHaveBeenCalled()
-    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenNthCalledWith(1, 'valid-key', {
+      keyTypes: ['workspace', 'personal'],
+    })
+  })
+
+  it('returns 403 for deployed access when authenticated workflow is not deployed', async () => {
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      keyId: 'key-1',
+      keyType: 'workspace',
+      workspaceId: WORKSPACE_ID,
+    })
+    mockGetActiveWorkflowRecord.mockResolvedValue(createWorkflow({ isDeployed: false }))
+
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'valid-key' },
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: true,
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Workflow is not deployed',
+        status: 403,
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('valid-key', {
+      keyTypes: ['workspace', 'personal'],
+    })
+    expect(mockUpdateApiKeyLastUsed).not.toHaveBeenCalled()
   })
 })
