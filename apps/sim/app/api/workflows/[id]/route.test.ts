@@ -139,6 +139,7 @@ describe('Workflow By ID API Route', () => {
       const data = await response.json()
       expect(data.error).toBe('Unauthorized')
       expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'workflow-123', READ_VALIDATION)
+      expect(mockCheckHybridAuth).not.toHaveBeenCalled()
     })
 
     it('should return 404 when workflow does not exist', async () => {
@@ -159,13 +160,6 @@ describe('Workflow By ID API Route', () => {
     })
 
     it('should return 404 for workspace api key targeting a workflow in another workspace', async () => {
-      mockCheckHybridAuth.mockResolvedValue({
-        success: true,
-        userId: 'api-user',
-        authType: 'api_key',
-        apiKeyType: 'workspace',
-        workspaceId: 'workspace-a',
-      })
       mockValidateWorkflowAccess.mockResolvedValue({
         error: { message: 'Workflow not found', status: 404 },
       })
@@ -181,6 +175,7 @@ describe('Workflow By ID API Route', () => {
       const data = await response.json()
       expect(data.error).toBe('Workflow not found')
       expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'workflow-123', READ_VALIDATION)
+      expect(mockCheckHybridAuth).not.toHaveBeenCalled()
       expect(mockGetWorkflowById).not.toHaveBeenCalled()
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
@@ -259,12 +254,6 @@ describe('Workflow By ID API Route', () => {
     })
 
     it('should deny personal api key reads when middleware rejects workspace policy', async () => {
-      mockCheckHybridAuth.mockResolvedValue({
-        success: true,
-        userId: 'api-user',
-        authType: 'api_key',
-        apiKeyType: 'personal',
-      })
       mockValidateWorkflowAccess.mockResolvedValue({
         error: { message: 'Unauthorized: Invalid API key', status: 401 },
       })
@@ -279,6 +268,7 @@ describe('Workflow By ID API Route', () => {
       expect(response.status).toBe(401)
       expect(await response.json()).toEqual({ error: 'Unauthorized: Invalid API key' })
       expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'workflow-123', READ_VALIDATION)
+      expect(mockCheckHybridAuth).not.toHaveBeenCalled()
     })
 
     it('should allow personal api key reads when middleware returns scoped success', async () => {
@@ -299,12 +289,6 @@ describe('Workflow By ID API Route', () => {
         isFromNormalizedTables: true,
       }
 
-      mockCheckHybridAuth.mockResolvedValue({
-        success: true,
-        userId: 'api-user',
-        authType: 'api_key',
-        apiKeyType: 'personal',
-      })
       mockValidateWorkflowAccess.mockResolvedValue({
         workflow: mockWorkflow,
         auth: {
@@ -329,6 +313,7 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.id).toBe('workflow-123')
       expect(data.data.variables).toEqual({ secret: 'ok' })
       expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'workflow-123', READ_VALIDATION)
+      expect(mockCheckHybridAuth).not.toHaveBeenCalled()
       expect(mockGetWorkflowById).not.toHaveBeenCalled()
     })
 
@@ -457,6 +442,7 @@ describe('Workflow By ID API Route', () => {
 
       expect(response.status).toBe(200)
       expect(mockValidateWorkflowAccess).toHaveBeenCalledWith(req, 'workflow-123', READ_VALIDATION)
+      expect(mockCheckHybridAuth).toHaveBeenCalledWith(req, { requireWorkflowId: false })
       expect(mockGetWorkflowById).not.toHaveBeenCalled()
     })
 

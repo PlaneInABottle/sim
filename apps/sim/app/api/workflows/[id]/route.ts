@@ -69,30 +69,49 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const { id: workflowId } = await params
 
   try {
-    const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-    const internalNoUserPrecheck =
-      auth.success &&
-      auth.authType === AuthType.INTERNAL_JWT &&
-      !auth.userId &&
-      !request.headers.get('x-api-key') &&
-      request.headers.get('authorization')?.startsWith('Bearer ')
+    const hasBearerAuth = request.headers.get('authorization')?.startsWith('Bearer ') ?? false
+    const hasApiKey = Boolean(request.headers.get('x-api-key'))
 
     let workflowData
 
-    if (internalNoUserPrecheck) {
-      const workflowResult = await getVisibleWorkflowForInternalCompatibility(workflowId)
-      if (workflowResult.error || !workflowResult.workflow) {
-        logger.warn(
-          `[${requestId}] Workflow ${workflowId} not available for internal compatibility read`
-        )
-        return NextResponse.json(
-          { error: workflowResult.error?.message || 'Workflow not found' },
-          { status: workflowResult.error?.status || 404 }
-        )
-      }
+    if (hasBearerAuth && !hasApiKey) {
+      const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+      const internalNoUserPrecheck =
+        auth.success && auth.authType === AuthType.INTERNAL_JWT && !auth.userId
 
-      workflowData = workflowResult.workflow
-      logger.info(`[${requestId}] Internal bearer compatibility read for workflow ${workflowId}`)
+      if (!internalNoUserPrecheck) {
+        const validation = await validateWorkflowAccess(request, workflowId, {
+          requireDeployment: false,
+          action: 'read',
+        })
+        if (validation.error) {
+          logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
+          return NextResponse.json(
+            { error: validation.error.message },
+            { status: validation.error.status }
+          )
+        }
+
+        workflowData = validation.workflow
+        if (!workflowData) {
+          logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
+          return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+        }
+      } else {
+        const workflowResult = await getVisibleWorkflowForInternalCompatibility(workflowId)
+        if (workflowResult.error || !workflowResult.workflow) {
+          logger.warn(
+            `[${requestId}] Workflow ${workflowId} not available for internal compatibility read`
+          )
+          return NextResponse.json(
+            { error: workflowResult.error?.message || 'Workflow not found' },
+            { status: workflowResult.error?.status || 404 }
+          )
+        }
+
+        workflowData = workflowResult.workflow
+        logger.info(`[${requestId}] Internal bearer compatibility read for workflow ${workflowId}`)
+      }
     } else {
       const validation = await validateWorkflowAccess(request, workflowId, {
         requireDeployment: false,

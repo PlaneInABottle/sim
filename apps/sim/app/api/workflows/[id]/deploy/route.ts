@@ -1,7 +1,7 @@
 import { db, workflow, workflowDeploymentVersion } from '@sim/db'
 import { createLogger } from '@sim/logger'
 import { and, eq } from 'drizzle-orm'
-import type { NextRequest } from 'next/server'
+import { type NextRequest, NextResponse } from 'next/server'
 import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { generateRequestId } from '@/lib/core/utils/request'
@@ -131,6 +131,8 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const previousDeployedAt = currentActiveVersion?.deployedAt ?? null
 
     const rollbackDeployment = async (failedDeploymentVersionId?: string) => {
+      let rollbackError: Error | null = null
+
       const ensureFailedDeploymentVersionDeleted = async () => {
         if (!failedDeploymentVersionId) {
           return
@@ -165,8 +167,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               deploymentVersionId: previousVersionId,
             })
         if (reactivateResult.success) {
-          await ensureFailedDeploymentVersionDeleted()
-          return
+          try {
+            await ensureFailedDeploymentVersionDeleted()
+          } catch (error) {
+            rollbackError = error instanceof Error ? error : new Error('Rollback cleanup failed')
+          }
+
+          return rollbackError
         }
       }
 
@@ -179,7 +186,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         )
       }
 
-      await ensureFailedDeploymentVersionDeleted()
+      try {
+        await ensureFailedDeploymentVersionDeleted()
+      } catch (error) {
+        rollbackError = error instanceof Error ? error : new Error('Rollback cleanup failed')
+      }
+
+      return rollbackError
     }
 
     const deployResult = await deployWorkflow({
@@ -226,9 +239,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      const rollbackResponse = await rollbackDeployment(deploymentVersionId)
-      if (rollbackResponse) {
-        return rollbackResponse
+      const rollbackResult = await rollbackDeployment(deploymentVersionId)
+      if (rollbackResult instanceof NextResponse) {
+        return rollbackResult
+      }
+      if (rollbackResult instanceof Error) {
+        logger.error(
+          `[${requestId}] Rollback cleanup failed after trigger configuration error for workflow ${id}`,
+          rollbackResult
+        )
       }
       return createErrorResponse(
         triggerSaveResult.error?.message || 'Failed to save trigger configuration',
@@ -253,9 +272,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      const rollbackResponse = await rollbackDeployment(deploymentVersionId)
-      if (rollbackResponse) {
-        return rollbackResponse
+      const rollbackResult = await rollbackDeployment(deploymentVersionId)
+      if (rollbackResult instanceof NextResponse) {
+        return rollbackResult
+      }
+      if (rollbackResult instanceof Error) {
+        logger.error(
+          `[${requestId}] Rollback cleanup failed after schedule creation error for workflow ${id}`,
+          rollbackResult
+        )
       }
       return createErrorResponse(scheduleResult.error || 'Failed to create schedule', 500)
     }

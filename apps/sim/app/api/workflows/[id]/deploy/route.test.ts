@@ -10,6 +10,7 @@ const {
   mockCleanupWebhooksForWorkflow,
   mockCleanupDeploymentVersion,
   mockRecordAudit,
+  mockLoggerError,
   mockDbLimit,
   mockDbOrderBy,
   mockDbFrom,
@@ -36,6 +37,7 @@ const {
   mockCleanupWebhooksForWorkflow: vi.fn(),
   mockCleanupDeploymentVersion: vi.fn(),
   mockRecordAudit: vi.fn(),
+  mockLoggerError: vi.fn(),
   mockDbLimit: vi.fn(),
   mockDbOrderBy: vi.fn(),
   mockDbFrom: vi.fn(),
@@ -60,7 +62,7 @@ const {
 }))
 
 vi.mock('@sim/logger', () => ({
-  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() }),
+  createLogger: () => ({ info: vi.fn(), warn: vi.fn(), error: mockLoggerError }),
 }))
 
 vi.mock('@/lib/workflows/utils', () => ({
@@ -367,12 +369,19 @@ describe('Workflow deploy route', () => {
     const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
 
     expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({ error: 'delete failed', code: 'DELETE_FAILED' })
+    expect(await response.json()).toEqual({
+      error: 'Failed to save trigger configuration',
+      code: 'FAILED_TO_SAVE_TRIGGER_CONFIGURATION',
+    })
     expect(mockReactivateWorkflowVersionForRollback).toHaveBeenCalled()
     expect(mockDeleteDeploymentVersionById).toHaveBeenCalledWith({
       workflowId: 'wf-1',
       deploymentVersionId: 'dep-failed',
     })
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      '[req-123] Rollback cleanup failed after trigger configuration error for workflow wf-1',
+      expect.any(Error)
+    )
   })
 
   it('fails first deploy rollback when failed deployment version deletion reports failure', async () => {
@@ -409,12 +418,67 @@ describe('Workflow deploy route', () => {
     const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
 
     expect(response.status).toBe(500)
-    expect(await response.json()).toEqual({ error: 'delete failed', code: 'DELETE_FAILED' })
+    expect(await response.json()).toEqual({
+      error: 'Failed to save trigger configuration',
+      code: 'FAILED_TO_SAVE_TRIGGER_CONFIGURATION',
+    })
     expect(mockUndeployWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-1' })
     expect(mockDeleteDeploymentVersionById).toHaveBeenCalledWith({
       workflowId: 'wf-1',
       deploymentVersionId: 'dep-failed',
     })
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      '[req-123] Rollback cleanup failed after trigger configuration error for workflow wf-1',
+      expect.any(Error)
+    )
+  })
+
+  it('keeps schedule failure primary when rollback cleanup also fails', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockDeployWorkflow.mockResolvedValue({
+      success: true,
+      deployedAt: '2024-02-01T00:00:00Z',
+      deploymentVersionId: 'dep-failed',
+    })
+    mockCreateSchedulesForDeploy.mockResolvedValue({
+      success: false,
+      error: 'Failed to create schedule',
+    })
+    mockDbLimit.mockResolvedValue([])
+    mockUndeployWorkflow.mockResolvedValue({ success: true })
+    mockDeleteDeploymentVersionById.mockResolvedValue({
+      success: false,
+      error: 'delete failed',
+    })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+    const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({
+      error: 'Failed to create schedule',
+      code: 'FAILED_TO_CREATE_SCHEDULE',
+    })
+    expect(mockDeleteDeploymentVersionById).toHaveBeenCalledWith({
+      workflowId: 'wf-1',
+      deploymentVersionId: 'dep-failed',
+    })
+    expect(mockLoggerError).toHaveBeenCalledWith(
+      '[req-123] Rollback cleanup failed after schedule creation error for workflow wf-1',
+      expect.any(Error)
+    )
   })
 
   it('fails first deploy rollback when undeploy reports failure before deletion', async () => {
