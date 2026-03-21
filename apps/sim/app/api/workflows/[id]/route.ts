@@ -8,6 +8,7 @@ import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
 import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
+import { getActiveWorkflowContext } from '@/lib/workflows/active-context'
 import { archiveWorkflow } from '@/lib/workflows/lifecycle'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
 import { getWorkflowById } from '@/lib/workflows/utils'
@@ -22,6 +23,40 @@ const UpdateWorkflowSchema = z.object({
   folderId: z.string().nullable().optional(),
   sortOrder: z.number().int().min(0).optional(),
 })
+
+async function getVisibleWorkflowForInternalCompatibility(workflowId: string) {
+  const context = await getActiveWorkflowContext(workflowId)
+  if (context) {
+    return { workflow: context.workflow }
+  }
+
+  const workflow = await getWorkflowById(workflowId, { includeArchived: true })
+  if (!workflow) {
+    return {
+      error: {
+        message: 'Workflow not found',
+        status: 404,
+      },
+    }
+  }
+
+  if (!workflow.workspaceId) {
+    return {
+      error: {
+        message:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+        status: 403,
+      },
+    }
+  }
+
+  return {
+    error: {
+      message: 'Workflow not found',
+      status: 404,
+    },
+  }
+}
 
 /**
  * GET /api/workflows/[id]
@@ -45,13 +80,18 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
     let workflowData
 
     if (internalNoUserPrecheck) {
-      workflowData = await getWorkflowById(workflowId)
-
-      if (!workflowData) {
-        logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
-        return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+      const workflowResult = await getVisibleWorkflowForInternalCompatibility(workflowId)
+      if (workflowResult.error || !workflowResult.workflow) {
+        logger.warn(
+          `[${requestId}] Workflow ${workflowId} not available for internal compatibility read`
+        )
+        return NextResponse.json(
+          { error: workflowResult.error?.message || 'Workflow not found' },
+          { status: workflowResult.error?.status || 404 }
+        )
       }
 
+      workflowData = workflowResult.workflow
       logger.info(`[${requestId}] Internal bearer compatibility read for workflow ${workflowId}`)
     } else {
       const validation = await validateWorkflowAccess(request, workflowId, {

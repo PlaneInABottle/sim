@@ -19,6 +19,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mockCheckHybridAuth = vi.fn()
 const mockCheckSessionOrInternalAuth = vi.fn()
 const mockLoadWorkflowFromNormalizedTables = vi.fn()
+const mockGetActiveWorkflowContext = vi.fn()
 const mockGetWorkflowById = vi.fn()
 const mockAuthorizeWorkflowByWorkspacePermission = vi.fn()
 const mockArchiveWorkflow = vi.fn()
@@ -77,6 +78,10 @@ vi.mock('@/lib/workflows/persistence/utils', () => ({
     mockLoadWorkflowFromNormalizedTables(workflowId),
 }))
 
+vi.mock('@/lib/workflows/active-context', () => ({
+  getActiveWorkflowContext: (workflowId: string) => mockGetActiveWorkflowContext(workflowId),
+}))
+
 vi.mock('@/app/api/workflows/middleware', () => ({
   validateWorkflowAccess: (...args: unknown[]) => mockValidateWorkflowAccess(...args),
 }))
@@ -113,6 +118,7 @@ describe('Workflow By ID API Route', () => {
     })
 
     mockLoadWorkflowFromNormalizedTables.mockResolvedValue(null)
+    mockGetActiveWorkflowContext.mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -201,7 +207,10 @@ describe('Workflow By ID API Route', () => {
         success: true,
         authType: 'internal_jwt',
       })
-      mockGetWorkflowById.mockResolvedValue(mockWorkflow)
+      mockGetActiveWorkflowContext.mockResolvedValue({
+        workflow: mockWorkflow,
+        workspaceId: 'workspace-456',
+      })
       mockLoadWorkflowFromNormalizedTables.mockResolvedValue(mockNormalizedData)
 
       const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
@@ -217,7 +226,36 @@ describe('Workflow By ID API Route', () => {
       expect(data.data.state.blocks).toEqual(mockNormalizedData.blocks)
       expect(data.data.variables).toEqual({})
       expect(mockValidateWorkflowAccess).not.toHaveBeenCalled()
+      expect(mockGetActiveWorkflowContext).toHaveBeenCalledWith('workflow-123')
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    })
+
+    it('should deny internal compatibility reads for deprecated personal workflows', async () => {
+      mockCheckHybridAuth.mockResolvedValue({
+        success: true,
+        authType: 'internal_jwt',
+      })
+      mockGetActiveWorkflowContext.mockResolvedValue(null)
+      mockGetWorkflowById.mockResolvedValue({
+        id: 'workflow-123',
+        userId: 'other-user',
+        name: 'Personal Workflow',
+        workspaceId: null,
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        headers: { authorization: 'Bearer internal-token' },
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(403)
+      expect(await response.json()).toEqual({
+        error:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+      })
+      expect(mockValidateWorkflowAccess).not.toHaveBeenCalled()
     })
 
     it('should deny personal api key reads when middleware rejects workspace policy', async () => {

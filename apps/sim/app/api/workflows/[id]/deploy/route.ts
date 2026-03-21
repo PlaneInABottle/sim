@@ -131,6 +131,21 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const previousDeployedAt = currentActiveVersion?.deployedAt ?? null
 
     const rollbackDeployment = async (failedDeploymentVersionId?: string) => {
+      const ensureFailedDeploymentVersionDeleted = async () => {
+        if (!failedDeploymentVersionId) {
+          return
+        }
+
+        const deleteResult = await deleteDeploymentVersionById({
+          workflowId: id,
+          deploymentVersionId: failedDeploymentVersionId,
+        })
+
+        if (!deleteResult.success) {
+          throw new Error(deleteResult.error || 'Failed to delete failed deployment version')
+        }
+      }
+
       if (previousVersionId) {
         await restorePreviousVersionWebhooks({
           request,
@@ -150,24 +165,13 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
               deploymentVersionId: previousVersionId,
             })
         if (reactivateResult.success) {
-          if (failedDeploymentVersionId) {
-            await deleteDeploymentVersionById({
-              workflowId: id,
-              deploymentVersionId: failedDeploymentVersionId,
-            })
-          }
+          await ensureFailedDeploymentVersionDeleted()
           return
         }
       }
 
-      if (failedDeploymentVersionId) {
-        await deleteDeploymentVersionById({
-          workflowId: id,
-          deploymentVersionId: failedDeploymentVersionId,
-        })
-      }
-
       await undeployWorkflow({ workflowId: id })
+      await ensureFailedDeploymentVersionDeleted()
     }
 
     const deployResult = await deployWorkflow({
