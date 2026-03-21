@@ -81,14 +81,15 @@ export async function validateWorkflowAccess(
     const allowInternalSecret = normalizedOptions.allowInternalSecret ?? false
 
     if (!requireDeployment) {
-      const workflowResult = await getValidatedWorkflow(workflowId)
-      if (workflowResult.error || !workflowResult.workflow) {
-        return workflowResult
-      }
-      const workflow = workflowResult.workflow
       const apiKeyHeader = request.headers.get('x-api-key')
 
       if (apiKeyHeader) {
+        const workflowResult = await getValidatedWorkflow(workflowId)
+        if (workflowResult.error || !workflowResult.workflow) {
+          return workflowResult
+        }
+        const workflow = workflowResult.workflow
+
         const scopedApiKeyResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
           workspaceId: workflow.workspaceId as string,
           keyTypes: ['workspace', 'personal'],
@@ -153,6 +154,12 @@ export async function validateWorkflowAccess(
           },
         }
       }
+
+      const workflowResult = await getValidatedWorkflow(workflowId)
+      if (workflowResult.error || !workflowResult.workflow) {
+        return workflowResult
+      }
+      const workflow = workflowResult.workflow
 
       const authorization = await authorizeWorkflowByWorkspacePermission({
         workflowId,

@@ -105,6 +105,7 @@ describe('validateWorkflowAccess', () => {
       },
     })
     expect(mockCheckHybridAuth).toHaveBeenCalledWith(request, { requireWorkflowId: false })
+    expect(mockGetActiveWorkflowRecord).not.toHaveBeenCalled()
     expect(mockGetWorkflowById).not.toHaveBeenCalled()
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
   })
@@ -217,7 +218,7 @@ describe('validateWorkflowAccess', () => {
     })
   })
 
-  it('returns 404 for workspace api keys scoped to a different workspace', async () => {
+  it('returns 401 for workspace api keys rejected by scoped revalidation', async () => {
     const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
       headers: { 'x-api-key': 'workspace-key' },
     })
