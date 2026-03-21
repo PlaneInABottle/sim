@@ -27,6 +27,16 @@ export interface WorkflowAccessOptions {
 async function getValidatedWorkflow(workflowId: string): Promise<ValidationResult> {
   const activeWorkflow = await getActiveWorkflowRecord(workflowId)
   if (activeWorkflow) {
+    if (!activeWorkflow.workspaceId) {
+      return {
+        error: {
+          message:
+            'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+          status: 403,
+        },
+      }
+    }
+
     return { workflow: activeWorkflow }
   }
 
@@ -71,48 +81,20 @@ export async function validateWorkflowAccess(
     const allowInternalSecret = normalizedOptions.allowInternalSecret ?? false
 
     if (!requireDeployment) {
-      const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-      if (!auth.success || !auth.userId) {
-        return {
-          error: {
-            message: auth.error || 'Unauthorized',
-            status: 401,
-          },
-        }
-      }
-
       const workflowResult = await getValidatedWorkflow(workflowId)
       if (workflowResult.error || !workflowResult.workflow) {
         return workflowResult
       }
       const workflow = workflowResult.workflow
+      const apiKeyHeader = request.headers.get('x-api-key')
 
-      if (auth.authType === AuthType.API_KEY) {
-        const apiKeyHeader = request.headers.get('x-api-key')
-        if (!apiKeyHeader) {
-          return {
-            error: {
-              message: 'Unauthorized: Invalid API key',
-              status: 401,
-            },
-          }
-        }
-
+      if (apiKeyHeader) {
         const scopedApiKeyResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
           workspaceId: workflow.workspaceId as string,
           keyTypes: ['workspace', 'personal'],
         })
 
-        if (!scopedApiKeyResult.success) {
-          return {
-            error: {
-              message: 'Unauthorized: Invalid API key',
-              status: 401,
-            },
-          }
-        }
-
-        if (!scopedApiKeyResult.userId) {
+        if (!scopedApiKeyResult.success || !scopedApiKeyResult.userId) {
           return {
             error: {
               message: 'Unauthorized: Invalid API key',
@@ -125,22 +107,49 @@ export async function validateWorkflowAccess(
           await updateApiKeyLastUsed(scopedApiKeyResult.keyId)
         }
 
-        auth.workspaceId = scopedApiKeyResult.workspaceId
-        auth.userId = scopedApiKeyResult.userId
-        auth.userName = scopedApiKeyResult.userName
-        auth.userEmail = scopedApiKeyResult.userEmail
-        auth.apiKeyType = scopedApiKeyResult.keyType
+        if (!scopedApiKeyResult.workspaceId) {
+          return {
+            error: {
+              message: 'Unauthorized: Invalid API key',
+              status: 401,
+            },
+          }
+        }
+
+        const auth: AuthResult = {
+          success: true,
+          userId: scopedApiKeyResult.userId,
+          workspaceId: scopedApiKeyResult.workspaceId,
+          userName: scopedApiKeyResult.userName,
+          userEmail: scopedApiKeyResult.userEmail,
+          authType: AuthType.API_KEY,
+          apiKeyType: scopedApiKeyResult.keyType,
+        }
+
+        const authorization = await authorizeWorkflowByWorkspacePermission({
+          workflowId,
+          userId: scopedApiKeyResult.userId,
+          action,
+          workflow,
+        })
+        if (!authorization.allowed) {
+          return {
+            error: {
+              message: authorization.message || 'Access denied',
+              status: authorization.status,
+            },
+          }
+        }
+
+        return { workflow, auth }
       }
 
-      if (
-        auth.authType === AuthType.API_KEY &&
-        auth.apiKeyType === 'workspace' &&
-        auth.workspaceId !== workflow.workspaceId
-      ) {
+      const auth = await checkHybridAuth(request, { requireWorkflowId: false })
+      if (!auth.success || !auth.userId) {
         return {
           error: {
-            message: 'Workflow not found',
-            status: 404,
+            message: auth.error || 'Unauthorized',
+            status: 401,
           },
         }
       }

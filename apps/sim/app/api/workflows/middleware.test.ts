@@ -147,6 +147,29 @@ describe('validateWorkflowAccess', () => {
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
   })
 
+  it('returns 403 when active workflow record lacks workspaceId and skips api key auth', async () => {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'personal-key' },
+    })
+    mockGetActiveWorkflowRecord.mockResolvedValue(createWorkflow({ workspaceId: null }))
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: false,
+      action: 'read',
+    })
+
+    expect(result).toEqual({
+      error: {
+        message:
+          'This workflow is not attached to a workspace. Personal workflows are deprecated and cannot be accessed.',
+        status: 403,
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).not.toHaveBeenCalled()
+    expect(mockUpdateApiKeyLastUsed).not.toHaveBeenCalled()
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+  })
+
   it('returns 404 for authenticated workflow in an archived workspace', async () => {
     mockGetActiveWorkflowRecord.mockResolvedValue(null)
     mockGetWorkflowById.mockResolvedValue(createWorkflow())
@@ -310,6 +333,8 @@ describe('validateWorkflowAccess', () => {
       workspaceId: WORKSPACE_ID,
       keyTypes: ['workspace', 'personal'],
     })
+    expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledTimes(1)
     expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledWith('key-1')
     expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
       workflowId: WORKFLOW_ID,
@@ -382,6 +407,8 @@ describe('validateWorkflowAccess', () => {
       workspaceId: WORKSPACE_ID,
       keyTypes: ['workspace', 'personal'],
     })
+    expect(mockCheckHybridAuth).not.toHaveBeenCalled()
+    expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledTimes(1)
     expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledWith('key-1')
     expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
       workflowId: WORKFLOW_ID,
