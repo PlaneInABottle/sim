@@ -170,7 +170,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         }
       }
 
-      await undeployWorkflow({ workflowId: id })
+      const undeployResult = await undeployWorkflow({ workflowId: id })
+      if (!undeployResult.success) {
+        return createErrorResponse(
+          undeployResult.error || 'Failed to undeploy workflow',
+          500,
+          'UNDEPLOY_FAILED'
+        )
+      }
+
       await ensureFailedDeploymentVersionDeleted()
     }
 
@@ -188,7 +196,15 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     const deploymentVersionId = deployResult.deploymentVersionId
 
     if (!deploymentVersionId) {
-      await undeployWorkflow({ workflowId: id })
+      const undeployResult = await undeployWorkflow({ workflowId: id })
+      if (!undeployResult.success) {
+        return createErrorResponse(
+          undeployResult.error || 'Failed to undeploy workflow',
+          500,
+          'UNDEPLOY_FAILED'
+        )
+      }
+
       return createErrorResponse('Failed to resolve deployment version', 500)
     }
 
@@ -210,7 +226,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      await rollbackDeployment(deploymentVersionId)
+      const rollbackResponse = await rollbackDeployment(deploymentVersionId)
+      if (rollbackResponse) {
+        return rollbackResponse
+      }
       return createErrorResponse(
         triggerSaveResult.error?.message || 'Failed to save trigger configuration',
         triggerSaveResult.error?.status || 500
@@ -234,7 +253,10 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      await rollbackDeployment(deploymentVersionId)
+      const rollbackResponse = await rollbackDeployment(deploymentVersionId)
+      if (rollbackResponse) {
+        return rollbackResponse
+      }
       return createErrorResponse(scheduleResult.error || 'Failed to create schedule', 500)
     }
     if (scheduleResult.scheduleId) {

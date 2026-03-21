@@ -417,6 +417,71 @@ describe('Workflow deploy route', () => {
     })
   })
 
+  it('fails first deploy rollback when undeploy reports failure before deletion', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockDeployWorkflow.mockResolvedValue({
+      success: true,
+      deployedAt: '2024-02-01T00:00:00Z',
+      deploymentVersionId: 'dep-failed',
+    })
+    mockSaveTriggerWebhooksForDeploy.mockResolvedValue({
+      success: false,
+      error: { message: 'Failed to save trigger configuration', status: 500 },
+    })
+    mockDbLimit.mockResolvedValue([])
+    mockUndeployWorkflow.mockResolvedValue({ success: false, error: 'undeploy failed' })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+    const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: 'undeploy failed', code: 'UNDEPLOY_FAILED' })
+    expect(mockUndeployWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-1' })
+    expect(mockDeleteDeploymentVersionById).not.toHaveBeenCalled()
+  })
+
+  it('fails when deployment version id is missing and undeploy reports failure', async () => {
+    mockValidateWorkflowAccess.mockResolvedValue({
+      workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
+      auth: {
+        success: true,
+        userId: 'api-user',
+        userName: 'API Key Actor',
+        userEmail: 'api@example.com',
+        authType: 'api_key',
+      },
+    })
+    mockDeployWorkflow.mockResolvedValue({
+      success: true,
+      deployedAt: '2024-02-01T00:00:00Z',
+      deploymentVersionId: undefined,
+    })
+    mockUndeployWorkflow.mockResolvedValue({ success: false, error: 'undeploy failed' })
+
+    const req = new NextRequest('http://localhost:3000/api/workflows/wf-1/deploy', {
+      method: 'POST',
+      headers: { 'x-api-key': 'test-key' },
+    })
+    const response = await POST(req, { params: Promise.resolve({ id: 'wf-1' }) })
+
+    expect(response.status).toBe(500)
+    expect(await response.json()).toEqual({ error: 'undeploy failed', code: 'UNDEPLOY_FAILED' })
+    expect(mockUndeployWorkflow).toHaveBeenCalledWith({ workflowId: 'wf-1' })
+    expect(mockDeleteDeploymentVersionById).not.toHaveBeenCalled()
+  })
+
   it('allows API-key auth for undeploy using hybrid auth userId', async () => {
     mockValidateWorkflowAccess.mockResolvedValue({
       workflow: { id: 'wf-1', name: 'Test Workflow', workspaceId: 'ws-1' },
