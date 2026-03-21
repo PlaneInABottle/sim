@@ -195,6 +195,9 @@ describe('validateWorkflowAccess', () => {
   })
 
   it('returns 404 for workspace api keys scoped to a different workspace', async () => {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'workspace-key' },
+    })
     const auth = {
       success: true,
       userId: 'user-1',
@@ -204,19 +207,116 @@ describe('validateWorkflowAccess', () => {
     }
 
     mockCheckHybridAuth.mockResolvedValue(auth)
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: false,
+      error: 'Invalid API key',
+    })
 
-    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
       requireDeployment: false,
       action: 'read',
     })
 
     expect(result).toEqual({
       error: {
-        message: 'Workflow not found',
-        status: 404,
+        message: 'Unauthorized: Invalid API key',
+        status: 401,
       },
     })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('workspace-key', {
+      workspaceId: WORKSPACE_ID,
+      keyTypes: ['workspace', 'personal'],
+    })
     expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+  })
+
+  it('denies personal api keys when the workflow workspace disallows them', async () => {
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'personal-key' },
+    })
+    const auth = {
+      success: true,
+      userId: 'user-1',
+      authType: 'api_key' as const,
+      apiKeyType: 'personal' as const,
+    }
+
+    mockCheckHybridAuth.mockResolvedValue(auth)
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: false,
+      error: 'Invalid API key',
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: false,
+      action: 'read',
+    })
+
+    expect(result).toEqual({
+      error: {
+        message: 'Unauthorized: Invalid API key',
+        status: 401,
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('personal-key', {
+      workspaceId: WORKSPACE_ID,
+      keyTypes: ['workspace', 'personal'],
+    })
+    expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+  })
+
+  it('allows personal api keys when the workflow workspace permits them', async () => {
+    const workflow = createWorkflow({ name: 'Personal Key Workflow' })
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'personal-key' },
+    })
+    const auth = {
+      success: true,
+      userId: 'user-1',
+      authType: 'api_key' as const,
+      apiKeyType: 'personal' as const,
+    }
+
+    mockCheckHybridAuth.mockResolvedValue(auth)
+    mockGetActiveWorkflowRecord.mockResolvedValue(workflow)
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      userName: 'Personal Key User',
+      userEmail: 'personal@example.com',
+      keyId: 'key-1',
+      keyType: 'personal',
+      workspaceId: WORKSPACE_ID,
+    })
+
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
+      requireDeployment: false,
+      action: 'read',
+    })
+
+    expect(result).toEqual({
+      workflow,
+      auth: {
+        success: true,
+        userId: 'user-1',
+        workspaceId: WORKSPACE_ID,
+        userName: 'Personal Key User',
+        userEmail: 'personal@example.com',
+        authType: 'api_key',
+        apiKeyType: 'personal',
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('personal-key', {
+      workspaceId: WORKSPACE_ID,
+      keyTypes: ['workspace', 'personal'],
+    })
+    expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledWith('key-1')
+    expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
+      workflowId: WORKFLOW_ID,
+      userId: 'user-1',
+      action: 'read',
+      workflow,
+    })
   })
 
   it('preserves session auth semantics for accessible workflows', async () => {
@@ -242,6 +342,9 @@ describe('validateWorkflowAccess', () => {
 
   it('allows workspace api keys scoped to the same workspace', async () => {
     const workflow = createWorkflow({ name: 'Scoped Workflow' })
+    const request = new NextRequest(`http://localhost:3000/api/workflows/${WORKFLOW_ID}/status`, {
+      headers: { 'x-api-key': 'workspace-key' },
+    })
     const auth = {
       success: true,
       userId: 'user-1',
@@ -252,13 +355,34 @@ describe('validateWorkflowAccess', () => {
 
     mockCheckHybridAuth.mockResolvedValue(auth)
     mockGetActiveWorkflowRecord.mockResolvedValue(workflow)
+    mockAuthenticateApiKeyFromHeader.mockResolvedValue({
+      success: true,
+      userId: 'user-1',
+      keyId: 'key-1',
+      keyType: 'workspace',
+      workspaceId: WORKSPACE_ID,
+    })
 
-    const result = await validateWorkflowAccess(createRequest(), WORKFLOW_ID, {
+    const result = await validateWorkflowAccess(request, WORKFLOW_ID, {
       requireDeployment: false,
       action: 'read',
     })
 
-    expect(result).toEqual({ workflow, auth })
+    expect(result).toEqual({
+      workflow,
+      auth: {
+        success: true,
+        userId: 'user-1',
+        workspaceId: WORKSPACE_ID,
+        authType: 'api_key',
+        apiKeyType: 'workspace',
+      },
+    })
+    expect(mockAuthenticateApiKeyFromHeader).toHaveBeenCalledWith('workspace-key', {
+      workspaceId: WORKSPACE_ID,
+      keyTypes: ['workspace', 'personal'],
+    })
+    expect(mockUpdateApiKeyLastUsed).toHaveBeenCalledWith('key-1')
     expect(mockAuthorizeWorkflowByWorkspacePermission).toHaveBeenCalledWith({
       workflowId: WORKFLOW_ID,
       userId: 'user-1',

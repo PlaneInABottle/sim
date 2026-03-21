@@ -87,6 +87,51 @@ export async function validateWorkflowAccess(
       }
       const workflow = workflowResult.workflow
 
+      if (auth.authType === AuthType.API_KEY) {
+        const apiKeyHeader = request.headers.get('x-api-key')
+        if (!apiKeyHeader) {
+          return {
+            error: {
+              message: 'Unauthorized: Invalid API key',
+              status: 401,
+            },
+          }
+        }
+
+        const scopedApiKeyResult = await authenticateApiKeyFromHeader(apiKeyHeader, {
+          workspaceId: workflow.workspaceId as string,
+          keyTypes: ['workspace', 'personal'],
+        })
+
+        if (!scopedApiKeyResult.success) {
+          return {
+            error: {
+              message: 'Unauthorized: Invalid API key',
+              status: 401,
+            },
+          }
+        }
+
+        if (!scopedApiKeyResult.userId) {
+          return {
+            error: {
+              message: 'Unauthorized: Invalid API key',
+              status: 401,
+            },
+          }
+        }
+
+        if (scopedApiKeyResult.keyId) {
+          await updateApiKeyLastUsed(scopedApiKeyResult.keyId)
+        }
+
+        auth.workspaceId = scopedApiKeyResult.workspaceId
+        auth.userId = scopedApiKeyResult.userId
+        auth.userName = scopedApiKeyResult.userName
+        auth.userEmail = scopedApiKeyResult.userEmail
+        auth.apiKeyType = scopedApiKeyResult.keyType
+      }
+
       if (
         auth.authType === AuthType.API_KEY &&
         auth.apiKeyType === 'workspace' &&
