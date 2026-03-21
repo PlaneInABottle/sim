@@ -6,11 +6,11 @@ import { type NextRequest, NextResponse } from 'next/server'
 import { z } from 'zod'
 import { getAuditActorMetadata } from '@/lib/audit/actor-metadata'
 import { AuditAction, AuditResourceType, recordAudit } from '@/lib/audit/log'
-import { checkHybridAuth } from '@/lib/auth/hybrid'
+import { AuthType, checkHybridAuth } from '@/lib/auth/hybrid'
 import { generateRequestId } from '@/lib/core/utils/request'
 import { archiveWorkflow } from '@/lib/workflows/lifecycle'
 import { loadWorkflowFromNormalizedTables } from '@/lib/workflows/persistence/utils'
-import { authorizeWorkflowByWorkspacePermission, getWorkflowById } from '@/lib/workflows/utils'
+import { getWorkflowById } from '@/lib/workflows/utils'
 import { validateWorkflowAccess } from '@/app/api/workflows/middleware'
 
 const logger = createLogger('WorkflowByIdAPI')
@@ -35,46 +35,42 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
   try {
     const auth = await checkHybridAuth(request, { requireWorkflowId: false })
-    if (!auth.success) {
-      logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
+    const internalNoUserPrecheck =
+      auth.success &&
+      auth.authType === AuthType.INTERNAL_JWT &&
+      !auth.userId &&
+      !request.headers.get('x-api-key') &&
+      request.headers.get('authorization')?.startsWith('Bearer ')
 
-    const userId = auth.userId || null
+    let workflowData
 
-    let workflowData = await getWorkflowById(workflowId)
+    if (internalNoUserPrecheck) {
+      workflowData = await getWorkflowById(workflowId)
 
-    if (!workflowData) {
-      logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
-      return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-    }
+      if (!workflowData) {
+        logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
+        return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+      }
 
-    if (auth.apiKeyType === 'workspace' && auth.workspaceId !== workflowData.workspaceId) {
-      return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-    }
+      logger.info(`[${requestId}] Internal bearer compatibility read for workflow ${workflowId}`)
+    } else {
+      const validation = await validateWorkflowAccess(request, workflowId, {
+        requireDeployment: false,
+        action: 'read',
+      })
+      if (validation.error) {
+        logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
+        return NextResponse.json(
+          { error: validation.error.message },
+          { status: validation.error.status }
+        )
+      }
 
-    if (!userId) {
-      logger.warn(`[${requestId}] Unauthorized access attempt for workflow ${workflowId}`)
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const authorization = await authorizeWorkflowByWorkspacePermission({
-      workflowId,
-      userId,
-      action: 'read',
-    })
-    if (!authorization.workflow) {
-      logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
-      return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
-    }
-
-    workflowData = authorization.workflow
-    if (!authorization.allowed) {
-      logger.warn(`[${requestId}] User ${userId} denied access to workflow ${workflowId}`)
-      return NextResponse.json(
-        { error: authorization.message || 'Access denied' },
-        { status: authorization.status }
-      )
+      workflowData = validation.workflow
+      if (!workflowData) {
+        logger.warn(`[${requestId}] Workflow ${workflowId} not found`)
+        return NextResponse.json({ error: 'Workflow not found' }, { status: 404 })
+      }
     }
 
     const normalizedData = await loadWorkflowFromNormalizedTables(workflowId)
