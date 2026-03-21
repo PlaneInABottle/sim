@@ -1218,6 +1218,55 @@ describe('Database Helpers', () => {
     })
   })
 
+  describe('rollback deployment helpers', () => {
+    it('reactivates a deployment version while preserving deployedAt during rollback', async () => {
+      const preservedDeployedAt = new Date('2024-01-01T00:00:00.000Z')
+      const txWhere = vi.fn().mockResolvedValue(undefined)
+      const txSet = vi.fn().mockReturnValue({ where: txWhere })
+      const tx = {
+        update: vi.fn().mockReturnValue({ set: txSet }),
+      }
+
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({
+            limit: vi.fn().mockResolvedValue([{ id: 'dep-1', state: { blocks: {} } }]),
+          }),
+        }),
+      })
+      mockDb.transaction = vi.fn().mockImplementation(async (callback) => callback(tx))
+
+      const result = await dbHelpers.reactivateWorkflowVersionForRollback({
+        workflowId: mockWorkflowId,
+        deploymentVersionId: 'dep-1',
+        deployedAt: preservedDeployedAt,
+      })
+
+      expect(result).toEqual({
+        success: true,
+        deployedAt: preservedDeployedAt,
+        state: { blocks: {} },
+      })
+      expect(mockDb.transaction).toHaveBeenCalledTimes(1)
+      expect(tx.update).toHaveBeenCalledTimes(3)
+      expect(txSet).toHaveBeenCalledWith({ isDeployed: true, deployedAt: preservedDeployedAt })
+    })
+
+    it('deletes a failed deployment version row by id', async () => {
+      const deleteWhere = vi.fn().mockResolvedValue(undefined)
+      mockDb.delete.mockReturnValue({ where: deleteWhere })
+
+      const result = await dbHelpers.deleteDeploymentVersionById({
+        workflowId: mockWorkflowId,
+        deploymentVersionId: 'dep-failed',
+      })
+
+      expect(result).toEqual({ success: true })
+      expect(mockDb.delete).toHaveBeenCalled()
+      expect(deleteWhere).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe('migrateAgentBlocksToMessagesFormat', () => {
     it('should migrate agent block with both systemPrompt and userPrompt', () => {
       const blocks = {

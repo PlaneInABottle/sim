@@ -1171,6 +1171,109 @@ export async function activateWorkflowVersionById(params: {
   }
 }
 
+export async function reactivateWorkflowVersionForRollback(params: {
+  workflowId: string
+  deploymentVersionId: string
+  deployedAt: Date
+}): Promise<{
+  success: boolean
+  deployedAt?: Date
+  state?: unknown
+  error?: string
+}> {
+  const { workflowId, deploymentVersionId, deployedAt } = params
+
+  try {
+    const [versionData] = await db
+      .select({ id: workflowDeploymentVersion.id, state: workflowDeploymentVersion.state })
+      .from(workflowDeploymentVersion)
+      .where(
+        and(
+          eq(workflowDeploymentVersion.workflowId, workflowId),
+          eq(workflowDeploymentVersion.id, deploymentVersionId)
+        )
+      )
+      .limit(1)
+
+    if (!versionData) {
+      return { success: false, error: 'Deployment version not found' }
+    }
+
+    await db.transaction(async (tx) => {
+      await tx
+        .update(workflowDeploymentVersion)
+        .set({ isActive: false })
+        .where(eq(workflowDeploymentVersion.workflowId, workflowId))
+
+      await tx
+        .update(workflowDeploymentVersion)
+        .set({ isActive: true })
+        .where(
+          and(
+            eq(workflowDeploymentVersion.workflowId, workflowId),
+            eq(workflowDeploymentVersion.id, deploymentVersionId)
+          )
+        )
+
+      await tx
+        .update(workflow)
+        .set({ isDeployed: true, deployedAt })
+        .where(eq(workflow.id, workflowId))
+    })
+
+    logger.info(
+      `Reactivated deployment version ${deploymentVersionId} for workflow ${workflowId} with preserved deployedAt`
+    )
+
+    return {
+      success: true,
+      deployedAt,
+      state: versionData.state,
+    }
+  } catch (error) {
+    logger.error(
+      `Error reactivating deployment version ${deploymentVersionId} for rollback on workflow ${workflowId}:`,
+      error
+    )
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to reactivate version',
+    }
+  }
+}
+
+export async function deleteDeploymentVersionById(params: {
+  workflowId: string
+  deploymentVersionId: string
+  tx?: DbOrTx
+}): Promise<{ success: boolean; error?: string }> {
+  const { workflowId, deploymentVersionId, tx } = params
+
+  try {
+    const dbCtx = tx ?? db
+    await dbCtx
+      .delete(workflowDeploymentVersion)
+      .where(
+        and(
+          eq(workflowDeploymentVersion.workflowId, workflowId),
+          eq(workflowDeploymentVersion.id, deploymentVersionId)
+        )
+      )
+
+    logger.info(`Deleted deployment version ${deploymentVersionId} for workflow ${workflowId}`)
+    return { success: true }
+  } catch (error) {
+    logger.error(
+      `Error deleting deployment version ${deploymentVersionId} for workflow ${workflowId}:`,
+      error
+    )
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Failed to delete deployment version',
+    }
+  }
+}
+
 /**
  * List all deployment versions for a workflow.
  */

@@ -13,8 +13,10 @@ import {
 } from '@/lib/webhooks/deploy'
 import {
   activateWorkflowVersionById,
+  deleteDeploymentVersionById,
   deployWorkflow,
   loadWorkflowFromNormalizedTables,
+  reactivateWorkflowVersionForRollback,
   undeployWorkflow,
 } from '@/lib/workflows/persistence/utils'
 import {
@@ -115,8 +117,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     }
 
     const [currentActiveVersion] = await db
-      .select({ id: workflowDeploymentVersion.id })
+      .select({ id: workflowDeploymentVersion.id, deployedAt: workflow.deployedAt })
       .from(workflowDeploymentVersion)
+      .innerJoin(workflow, eq(workflowDeploymentVersion.workflowId, workflow.id))
       .where(
         and(
           eq(workflowDeploymentVersion.workflowId, id),
@@ -125,8 +128,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
       )
       .limit(1)
     const previousVersionId = currentActiveVersion?.id
+    const previousDeployedAt = currentActiveVersion?.deployedAt ?? null
 
-    const rollbackDeployment = async () => {
+    const rollbackDeployment = async (failedDeploymentVersionId?: string) => {
       if (previousVersionId) {
         await restorePreviousVersionWebhooks({
           request,
@@ -135,13 +139,32 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
           previousVersionId,
           requestId,
         })
-        const reactivateResult = await activateWorkflowVersionById({
-          workflowId: id,
-          deploymentVersionId: previousVersionId,
-        })
+        const reactivateResult = previousDeployedAt
+          ? await reactivateWorkflowVersionForRollback({
+              workflowId: id,
+              deploymentVersionId: previousVersionId,
+              deployedAt: previousDeployedAt,
+            })
+          : await activateWorkflowVersionById({
+              workflowId: id,
+              deploymentVersionId: previousVersionId,
+            })
         if (reactivateResult.success) {
+          if (failedDeploymentVersionId) {
+            await deleteDeploymentVersionById({
+              workflowId: id,
+              deploymentVersionId: failedDeploymentVersionId,
+            })
+          }
           return
         }
+      }
+
+      if (failedDeploymentVersionId) {
+        await deleteDeploymentVersionById({
+          workflowId: id,
+          deploymentVersionId: failedDeploymentVersionId,
+        })
       }
 
       await undeployWorkflow({ workflowId: id })
@@ -183,7 +206,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      await rollbackDeployment()
+      await rollbackDeployment(deploymentVersionId)
       return createErrorResponse(
         triggerSaveResult.error?.message || 'Failed to save trigger configuration',
         triggerSaveResult.error?.status || 500
@@ -207,7 +230,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
         requestId,
         deploymentVersionId,
       })
-      await rollbackDeployment()
+      await rollbackDeployment(deploymentVersionId)
       return createErrorResponse(scheduleResult.error || 'Failed to create schedule', 500)
     }
     if (scheduleResult.scheduleId) {
