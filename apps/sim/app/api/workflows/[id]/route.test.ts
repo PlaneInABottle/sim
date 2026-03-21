@@ -174,6 +174,31 @@ describe('Workflow By ID API Route', () => {
       expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
     })
 
+    it('should return 401 for verified internal jwt without userId', async () => {
+      mockCheckHybridAuth.mockResolvedValue({
+        success: true,
+        authType: 'internal_jwt',
+      })
+      mockGetWorkflowById.mockResolvedValue({
+        id: 'workflow-123',
+        userId: 'other-user',
+        name: 'Internal Workflow',
+        workspaceId: 'workspace-456',
+      })
+
+      const req = new NextRequest('http://localhost:3000/api/workflows/workflow-123', {
+        headers: { authorization: 'Bearer internal-token' },
+      })
+      const params = Promise.resolve({ id: 'workflow-123' })
+
+      const response = await GET(req, { params })
+
+      expect(response.status).toBe(401)
+      const data = await response.json()
+      expect(data.error).toBe('Unauthorized')
+      expect(mockAuthorizeWorkflowByWorkspacePermission).not.toHaveBeenCalled()
+    })
+
     it('should allow access when user has admin workspace permission', async () => {
       const mockWorkflow = {
         id: 'workflow-123',
